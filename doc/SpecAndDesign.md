@@ -65,8 +65,8 @@ Design:
  as a script runner without leaving build artifacts, without touching an `a.out` already there,
  and with several sources in one directory run at the same time.
  Before linking, the build manager unions the `libs` and `objs` arrays (see SASpec.md's Root)
- across every source module's sa.json and every used library's interface, in the same pass it makes
- to collect `alloc-shapes`. It appends `-l<name>` to the `ld` invocation for each library named by a
+ across every source module's sa.json, in the same pass it makes to collect `alloc-shapes`, and adds
+ every used library's `link` statements (3.7). It appends `-l<name>` to the `ld` invocation for each library named by a
  `link` clause on a `cinclude` statement (e.g. `cinclude <math.h> link "m";`) anywhere in the
  program, and passes each `.o` file named by one after the program's own objects. Palan archives
  are linked in one `--start-group`/`--end-group`, since the union keeps no order.
@@ -80,6 +80,7 @@ Usage: palan-gen-ast [options] <source file>
  options:
    -o, --output <file path> Specify output AST file path. If not specified, standard output is used.
    -i, --indent             Generate indented (pretty-printed) JSON output
+   --interface <file path>  Also write the module's own declarations as an interface (see 3.7)
    --target <name>          Specify the target (see 6.1), recorded in the AST and passed to palan-c2ast
    -h, --help               Display help information
    -v, --version            Display version information
@@ -105,6 +106,9 @@ Design:
  The `for` list of a `global` declaration is emitted as a `global-permit` statement right after
  its `var-decl`, the statement a later `global hits for log!;` also produces, so a permission has
  one AST form.
+ A file named `.pai` is read as an interface (3.7): it may declare a function without a body and
+ hold `link` statements, and must hold a `built` statement of the tools' version. `--interface`
+ writes the module's own declarations in that form; merging a library's modules is `--lib`'s.
 
 ### 3.3 C-to-AST Translator (palan-c2ast)
 Responsibility:
@@ -364,6 +368,13 @@ palan-sa names the module `__allocators` (`PALAN_ALLOCATORS_MODULE` in `src/comm
 which the build manager also uses for the file name) and the parameter types of each signature
 above when it calls one (`allocHelperCall`).
 
+A module declaring `library` has allocators of its own, from its own shapes: `std.utf8` calls
+`std.utf8.__allocators`. They come from its source alone, so its object is the same whichever
+program or archive holds it, and they are kept with its work files, or in its library's archive,
+which publishes nothing about the private types they serve. Allocators of two modules may hold
+functions of one key, under different symbols; they agree, since a key names a layout and all of
+them release through `free`.
+
 ### 3.7 Modules and Libraries
 
 **Module identity.** A module's identity is the module part of its symbols (SASpec.md's Symbol
@@ -384,30 +395,69 @@ which `as` needs and which reads better than escaping it; so `1x.pa` and `_1x.pa
 in a program is an error; declaring `library proj.a;` and `library proj.b;` lets them coexist. The
 allocators' identity stays `__allocators`, given by the build manager through their file name.
 
-**Finding a library.** `import <std/io/file>` reads `<dir>/<target>/std/io/file.pai`. `<dir>` is
+**Finding a library.** `import <std/io/file>` reads `<dir>/<target>/std/io/file.pai`, and links
+`file.a` beside it. `<dir>` is
 each `libpath "dir";`, relative to the file writing it. Like `link`, a `libpath` may be written in
 any module and only adds a place to look, for the whole program. `std` is not looked for there: it
 always comes from the tools' own version (6.1), which `libpath` cannot replace. One package name
 found in two places is an error rather than decided by order, since the union has none. A library
-needing another lists it in its interface; the program's `libpath`s must find it. The lookup is one
+needing another imports it in its interface; the program's `libpath`s must find it. The lookup is one
 function in `src/common/`. An `import "..."` is made absolute by palan-gen-ast, relative to the
 importing file and with symbolic links resolved, so the build manager and palan-sa do not each
 resolve it, and one file reached by two spellings is one module.
 
-**Interface (`.pai`).** What importing a module needs: its identity, target, tool version, exports,
-and top-level declarations, including the C declarations its `cinclude`s brought in, without
-function bodies or executable statements. palan-gen-ast produces it, before palan-sa, because
-imports may be circular. palan-sa reads an imported module through it alone, whether from source or
-from a library, so it has one input. Being AST based, it can carry a body later should a feature
-need one at the importer. A library's interface also holds what palan-sa found, as sa.json does for
-a source module: `libs`, `objs` and `alloc-shapes`, and the libraries it needs. A target or version
-different from the build's is an error.
+**Interface (`.pai`).** What a library publishes for one main source, in Palan source, which a
+person reads to learn how to use it and palan-gen-ast reads like any source:
+
+```
+library std;
+built "0.2.4";
+link "uv";
+cinclude <uv.h> export uv_loop_t;
+export type Writer { @uv_loop_t loop; };
+export func open([]uint8 path) -> @!Writer;
+```
+
+It is written only by `--lib`. An ordinary `import "..."` needs none: palan-sa reads the imported
+module's AST, and a library's AST comes from its `.pai`, so palan-sa has one kind of input. An error
+in an imported source module is reported at its own line, and one in a library at its `.pai`'s.
+
+The modules a main source reaches are merged into its one `.pai`, so how the library's source is
+divided is not published:
+
+- Public: the main's exports, and the exported types of other modules that they use. Any other
+  export of an internal module is visible only inside the library.
+- Private: the types and consts the public declarations need. The main's come first in source
+  order, since a private type's symbol holds its position, and those of internal modules after,
+  renamed if two share a name.
+- `import <...>` of another library stays as written, whether public declarations need it or not,
+  since its archive is linked. An `import "..."` of an internal module disappears.
+- `link "m";` lists the libraries of every merged module's `link` clauses. The statement is accepted
+  only in a `.pai`. An object file named by a `link` clause goes into the archive instead.
+- `built "<version>";` records the tools' version. Reading a `.pai` of another version is an error.
+  The target needs no record: the path holds it.
+
+There are no bodies or executable statements, and a macro constant is written as its value. A
+function without a body is accepted only in a `.pai`. A top-level variable appears only if a const
+uses it, as its type with the sizes filled in (`[]int32 a = [1, 2, 3];` is `[3]int32 a;`), so
+changing a value leaves the interface as it was. `--lib` rejects a module permitting a function to
+use its global, since a library's top level never runs.
+
+`cinclude <stdio.h> export FILE, fpos_t;` names the C types the module's public declarations use.
+It limits nothing in the module, which uses the whole header as without it; it only puts the
+`cinclude` in the `.pai`, whose reader then needs the header, as any user of a C type needs its SDK.
+A `cinclude` used only in bodies does not reach the user. The importer still cannot write `FILE`
+without its own `cinclude`. An ordinary import reads the whole AST, so the clause matters only to
+`--lib`.
 
 **Building a library.** `palan --lib -o <dir> main.pa` compiles the modules `main.pa` reaches, which
-must all declare the same first name, and writes `<dir>/<target>/<package>/` (`.pai` by identity,
-and `lib<package>.a`). The source tree's layout does not matter to the result. The archive's
-allocators are not included: shapes in the interface are generated with the program's, so one
-program has one copy. Every module's top level remains in its object (a test written there is linked
+must all declare the same first name, and writes `<dir>/<target>/` + the main's identity as a path:
+`std/utf8.pai` and `std/utf8.a`. Each public module is built this way, one archive each, so a
+program links only what it imports. A module two mains reach is in both archives, under one symbol,
+so a package's mains are built together: rebuilding one alone could leave an older copy in another.
+The source tree's layout does not matter to the result. `--lib` then reads the interface back
+through palan-gen-ast and palan-sa, so one that lacks something, such as a C type no `export` clause
+names, fails here and not at the library's first user. Every module's top level remains in its object (a test written there is linked
 when the object is), but runs only for an entry.
 
 ## 4. Expression Value Categories
@@ -480,7 +530,7 @@ are of two kinds:
 
 ```
 ~/.palan/work/<target>/
-  home/user/proj/util.pa.{ast.json,pai,sa.json,s,o,key}     a module's, reused by every entry
+  home/user/proj/util.pa.{ast.json,sa.json,s,o,key}         a module's, reused by every entry
   home/user/proj/main.pa.d/{__allocators.*,entry.*,out}     an entry's own
 ```
 
@@ -488,10 +538,13 @@ A module's files mirror the absolute path of its source and do not depend on the
 util.pa` (its top-level tests) and `palan main.pa` (importing it) share them. `.key` records what
 they were built from; a step runs only if that changed:
 
-- generating the AST and interface: the source, the C headers it read, the tools, the target;
-- compiling: the AST, the interfaces of its imports as resolved, the tools.
+- generating the AST: the source, the C headers it read, the tools, the target;
+- compiling: the AST, the interface of each of its imports, the tools.
 
-A change to a function's body leaves the interface as it was, so importers are not compiled again.
+For a source import, the interface is a hash palan-gen-ast records in ast.json of the module's
+declarations as a `.pai` writes them, with no file written; for a library, the `.pai` itself. The text has no
+locations, so a change to a function's body, even one that moves later lines, leaves it as it was,
+and importers are not compiled again.
 The tools are identified by size and modification time, since a development build keeps its
 version. Files are written under a temporary name and renamed: two builds racing produce the same
 content, at worst compiled twice. What differs per program, the generated allocators and the
@@ -501,7 +554,7 @@ executable, is kept per entry, so programs in one directory can run at the same 
 - palan-gen-ast:
   - Output AST file: `<source file path>.ast.json`
     e.g., for source file `main.pa`, the output AST file will be `main.pa.ast.json`
-  - Output interface file: `<source file path>.pai`
+  - Output interface file of one module, with `--interface` (3.7)
   - C header declarations from `cinclude` are embedded within the ast.json; no separate file is produced by palan-c2ast in the normal pipeline.
 - palan-sa:
   - Output analyzed AST file: `<source file path>.sa.json`
@@ -534,7 +587,7 @@ All tools write error messages to **stderr** and exit with code **1** on error.
   lib/palan/<version>/
     tools/palan, palan-gen-ast, palan-c2ast, palan-sa, palan-codegen
     <target>/c2ast/predefined.h
-    <target>/std/utf8.pai, libstd.a
+    <target>/std/utf8.pai, utf8.a
     src/std/utf8.pa                  for reference; not read when compiling
     uninstall
   share/doc/palan/<version>/
@@ -544,7 +597,7 @@ versions can be installed side by side and the root can move. `bin/palan` select
 last installed, or whichever it is pointed at. `lib/palan/<version>` is also where `std` is found,
 in the form a `libpath` has.
 A target is named `<arch>-<os>-<abi>`; `x86_64-linux-gnu` is the only one supported now, and any
-other is an error. ast.json, sa.json and `.pai` record it, since C declarations and the ABI
+other is an error. ast.json and sa.json record it, since C declarations and the ABI
 information in them (`eightbytes`) depend on it. `predefined.h` defines the architecture and OS, so
 it is per target.
 

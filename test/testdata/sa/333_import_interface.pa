@@ -1,0 +1,15 @@
+import "lib_interface.pa";
+func twice(int32 x) -> int32 { return x * 2; }
+Pair p = make(1);
+Pair q = make(2);
+int32 s = p + q;
+int32 a;
+int64 b;
+both(@p, 3) -> (a, b);
+Handle h;
+Sized z;
+[3]int32 v;
+fill(@v, @!z);
+Mode m = Mode.Write;
+int32 c = cb(twice);
+int64 id = getpid();

@@ -122,6 +122,7 @@ struct BodyList {
 	#include "PlnGenAstMessage.h"
 	#include "PlnGenAstInternal.h"
 	#include "PlnGenAstC2Ast.h"
+	#include "../common/PlnDefs.h"
 
 	static std::set<std::string> typeNames = {
 		"int8",  "int16",  "int32",  "int64",
@@ -182,6 +183,26 @@ struct BodyList {
 		json j = {{"stmt-type", "global-permit"}, {"name", name}, {"funcs", funcs.toVector()}}; // LCOV_EXCL_BR_LINE
 		LOC(j, loc); // LCOV_EXCL_BR_LINE
 		return j;
+	} // LCOV_EXCL_BR_LINE
+
+	// `link` and `built` stay identifiers elsewhere, like 'in'. Neither is a
+	// statement of the program, so no node comes out (an empty statement list).
+	static json interfaceStmt(json& ast, const string& word, const string& value, const string& file,
+	                          const palan::PlnParser::location_type& loc)
+	{
+		auto fail = [&](PlnMessageCode code, const string& arg) {
+			throw runtime_error(PlnGenAstMessage::locatedError(file, loc.begin.line, loc.begin.column,
+				PlnGenAstMessage::getMessage(code, arg)));
+		};
+		if (word != "link" && word != "built") fail(E_UnexpectedString, word);
+		if (!isInterfaceFile(file)) fail(E_InterfaceOnly, "'" + word + "'");
+		if (word == "link") {
+			ast["libs"].push_back(value);
+		} else {
+			if (value != PALAN_VERSION) fail(E_InterfaceOtherVersion, value);
+			ast["built"] = value;
+		}
+		return json::array();
 	} // LCOV_EXCL_BR_LINE
 
 	static void requireInKeyword(const string& file, const string& word,
@@ -281,7 +302,7 @@ struct BodyList {
 %type <PList<NodeRef>>	stmt_list_e stmt_list_b
 %type <BodyList>	body_list_e body_list_b
 %type <json>	import cinclude import_path
-%type <PList<string>>	import_ids link_libs
+%type <PList<string>>	import_ids link_libs c_type_names cinclude_export
 %type <vector<string>>	link_clause
 %type <string>	import_as func_name op_func_name library_decl library_name
 %type <json>	expression term store_loc
@@ -332,6 +353,9 @@ module: library_decl statements
 		if (!ast["ast"].contains("functions"))
 			ast["ast"]["functions"] = json::array();
 		ast["ast"]["statements"] = LazyNode::toJsonArray($2);
+		if (isInterfaceFile(lexer.inputFile) && !ast.contains("built"))
+			throw runtime_error(PlnGenAstMessage::locatedError(lexer.inputFile, 1, 1,
+				PlnGenAstMessage::getMessage(E_InterfaceNoVersion)));
 	}
 	;
 
@@ -444,6 +468,8 @@ expr_stmt: import
 	{ $$ = globalPermit($2, PList<json>(), @$); }
 	| KW_GLOBAL ID KW_FOR global_funcs
 	{ $$ = globalPermit($2, $4, @$); }
+	| ID STRING
+	{ $$ = interfaceStmt(ast, $1, $2, lexer.inputFile, @$); }
 	| const_decl
 	{ $$ = {{"stmt-type", "const-decl"}, {"name", $1["name"]}, {"value", move($1["value"])}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| type_decl
@@ -573,14 +599,15 @@ import_as: /* empty */
 	{ $$ = move($2); }
 	;
 
-cinclude: KW_CINCLUDE import_path import_as link_clause
+cinclude: KW_CINCLUDE import_path import_as cinclude_export link_clause
 	{
 		$$ = move($2);
 		if ($3.size()) {
 			$$["alias"] = $3;
 		}
+		if ($4.size) $$["export-types"] = $4.toVector();
 		json libs = json::array(), objs = json::array();
-		for (auto& name : $4) {
+		for (auto& name : $5) {
 			if (isLinkObjName(name))
 				objs.push_back(resolveLinkObjPath(name, lexer.inputFile));
 			else
@@ -589,6 +616,18 @@ cinclude: KW_CINCLUDE import_path import_as link_clause
 		if (libs.size()) $$["libs"] = move(libs);
 		if (objs.size()) $$["objs"] = move(objs);
 	}
+	;
+
+cinclude_export: /* empty */
+	{ }
+	| KW_EXPORT c_type_names
+	{ $$ = $2; }
+	;
+
+c_type_names: ID
+	{ $$ = PList<string>().push($1); }
+	| c_type_names ',' ID
+	{ $$ = $1.push($3); }
 	;
 
 link_clause: /* empty */
@@ -1213,6 +1252,13 @@ func_def: KW_FUNC func_name '(' paramaters ')' return_def block_obj
 	{
 		json fn = funcDecl(ast, true, {{"name", $3}, {"func-type", "palan"}}, $5, $7, @$); // LCOV_EXCL_BR_LINE
 		$$ = std::make_shared<const LazyNode>(LazyNode{ move(fn), {{"block", $8}}, {} }); // LCOV_EXCL_BR_LINE
+	}
+	| KW_EXPORT KW_FUNC func_name '(' paramaters ')' return_def ';'
+	{
+		if (!isInterfaceFile(lexer.inputFile))
+			throw runtime_error(PlnGenAstMessage::locatedError(lexer.inputFile, @$.begin.line, @$.begin.column,
+				PlnGenAstMessage::getMessage(E_InterfaceOnly, "a function without a body")));
+		$$ = leafNode(funcDecl(ast, true, {{"name", $3}, {"func-type", "palan"}}, $5, $7, @$)); // LCOV_EXCL_BR_LINE
 	}
 	;
 

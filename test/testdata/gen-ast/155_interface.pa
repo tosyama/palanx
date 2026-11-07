@@ -1,0 +1,31 @@
+library std.io;
+import "other.pa";
+import a, + from "other2.pa" as o;
+cinclude <stdio.h> export FILE, fpos_t;
+cinclude <math.h> link "m";
+type Hidden { int32 a; };
+export type Shown { Hidden h; @FILE fp; };
+export type Color enum { Red, Green = 5 };
+export type Size = int64;
+const N = 3 * (BUFSIZ + 1);
+[]int32 lit = [1, 2, 3];
+[]$[]int32 rows = [[1, 2], [3, 4]];
+int32 count = f(1);
+[count]int32 unknown;
+const M = lit->len();
+const GR = rows[0]->len();
+const NO = count;
+const NO2 = NO + 1;
+const LATE = later->len();
+[]int32 later = [1];
+printf("%d\n", count);
+{
+	int32 inner = 1;
+	cinclude <time.h> link "rt";
+}
+export func f(int32 x, @!Shown s) -> int32 { return x; }
+export func g() -> int32 a, int32 b { 1 -> a; 2 -> b; }
+export func +(@Shown a, @Shown b) -> int32 { return 1; }
+export func h() { }
+export syscall sys(int64 x) -> int64 = 39;
+func hidden() -> int32 { return 1; }

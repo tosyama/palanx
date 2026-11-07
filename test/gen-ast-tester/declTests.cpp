@@ -6,6 +6,9 @@
 #include <gtest/gtest.h>
 #include <filesystem>
 #include <fstream>
+#include <map>
+#include <vector>
+#include "../../src/common/PlnDefs.h"
 #include "../test-base/testBase.h"
 #include "genAstTestUtil.h"
 
@@ -1080,4 +1083,132 @@ TEST(gen_ast, ro_ptr_slot_decl) {
 	ASSERT_EQ(stmts[0]["stmt-type"], "var-decl");
 	ASSERT_EQ(stmts[0]["vars"][0]["var-type"]["base-type"]["mutable"], false);
 	ASSERT_EQ(stmts[1]["vars"][0]["var-type"]["base-type"]["mutable"], true);
+}
+
+static string readText(const string& path) {
+	ifstream f(path);
+	return string(istreambuf_iterator<char>(f), {});
+}
+
+static json readJson(const string& path) {
+	ifstream f(path);
+	return json::parse(f);
+}
+
+TEST(gen_ast, cinclude_export_clause) {
+	cleanTestEnv();
+	ofstream("out/m.pa") << "cinclude <stdio.h> as C export FILE, fpos_t link \"m\";\ncinclude <time.h>;\n";
+	ASSERT_EQ(execTestCommand("palan-gen-ast out/m.pa -o out/m.json"), "");
+	const auto stmts = readJson("out/m.json")["ast"]["statements"];
+	ASSERT_EQ(stmts[0]["export-types"], json::array({"FILE", "fpos_t"}));
+	ASSERT_EQ(stmts[0]["alias"], "C");
+	ASSERT_EQ(stmts[0]["libs"], json::array({"m"}));
+	ASSERT_FALSE(stmts[0]["functions"].empty());
+	ASSERT_FALSE(stmts[1].contains("export-types"));
+}
+
+TEST(gen_ast, interface_text) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand("palan-gen-ast ../test/testdata/gen-ast/155_interface.pa"
+		" -o out/m.json --interface out/io.pai"), "");
+	string abs = fs::weakly_canonical("../test/testdata/gen-ast").string();
+	ASSERT_EQ(readText("out/io.pai"),
+		"library std.io;\n"
+		"built \"" PALAN_VERSION "\";\n"
+		"link \"m\";\n"
+		"link \"rt\";\n"
+		"import \"" + abs + "/other.pa\";\n"
+		"import a, + from \"" + abs + "/other2.pa\" as o;\n"
+		"cinclude <stdio.h> export FILE, fpos_t;\n"
+		"type Hidden {\n\tint32 a;\n};\n"
+		"export type Shown {\n\tHidden h;\n\t@FILE fp;\n};\n"
+		"export type Color enum {\n\tRed,\n\tGreen = 5,\n};\n"
+		"export type Size = int64;\n"
+		"const N = 3 * (8192 + 1);\n"
+		"[3]int32 lit;\n"
+		"[2]$[2]int32 rows;\n"
+		"const M = lit -> len();\n"
+		"const GR = rows[0] -> len();\n"
+		"export func f(int32 x, @!Shown s) -> int32;\n"
+		"export func g() -> int32 a, int32 b;\n"
+		"export func +(@Shown a, @Shown b) -> int32;\n"
+		"export func h();\n"
+		"export syscall sys(int64 x) -> int64 = 39;\n");
+}
+
+static json withoutLoc(json j) {
+	if (j.is_object()) j.erase("loc");
+	if (j.is_structured())
+		for (auto& child : j) child = withoutLoc(child);
+	return j;
+}
+
+// A library's users see the AST of the text, so it must say what the source said.
+TEST(gen_ast, interface_reads_back_as_the_source) {
+	for (string file : {"155_interface.pa", "156_interface_forms.pa"}) {
+		cleanTestEnv();
+		if (file == "156_interface_forms.pa") {
+			// A signature here has no body: read once as a .pai to get a source to write.
+			execTestCommand("cp ../test/testdata/gen-ast/" + file + " out/forms.pai");
+			ofstream("out/forms.pai", ios::app) << "built \"" PALAN_VERSION "\";\n";
+			ASSERT_EQ(execTestCommand("palan-gen-ast out/forms.pai -o out/source.json --interface out/m.pai"), "");
+		} else {
+			ASSERT_EQ(execTestCommand("palan-gen-ast ../test/testdata/gen-ast/" + file
+				+ " -o out/source.json --interface out/m.pai"), "");
+		}
+		ASSERT_EQ(execTestCommand("palan-gen-ast out/m.pai -o out/pai.json"), "") << file;
+		json source = readJson("out/source.json"), pai = readJson("out/pai.json");
+		ASSERT_EQ(pai["built"], PALAN_VERSION);
+		ASSERT_EQ(withoutLoc(pai["export"]), withoutLoc(source["export"])) << file;
+
+		// Each kept statement as written, but for a variable's type and the C declarations.
+		vector<json> kept;
+		for (auto& s : source["ast"]["statements"]) {
+			string kind = s.value("stmt-type", "");
+			if (kind == "struct-def" || kind == "enum-def" || kind == "type-alias" || kind == "import")
+				kept.push_back(withoutLoc(s));
+		}
+		vector<json> read;
+		for (auto& s : pai["ast"]["statements"]) {
+			string kind = s.value("stmt-type", "");
+			if (kind == "struct-def" || kind == "enum-def" || kind == "type-alias" || kind == "import")
+				read.push_back(withoutLoc(s));
+		}
+		ASSERT_EQ(json(read), json(kept)) << file;
+	}
+}
+
+TEST(gen_ast, interface_const_values_read_back) {
+	cleanTestEnv();
+	execTestCommand("cp ../test/testdata/gen-ast/156_interface_forms.pa out/forms.pai");
+	ofstream("out/forms.pai", ios::app) << "built \"" PALAN_VERSION "\";\n";
+	ASSERT_EQ(execTestCommand("palan-gen-ast out/forms.pai -o out/source.json --interface out/m.pai"), "");
+	ASSERT_EQ(execTestCommand("palan-gen-ast out/m.pai -o out/pai.json"), "");
+	map<string, json> source, pai;
+	const json sourceAst = readJson("out/source.json"), paiAst = readJson("out/pai.json");
+	for (auto& s : sourceAst["ast"]["statements"])
+		if (s["stmt-type"] == "const-decl") source[s["name"]] = withoutLoc(s["value"]);
+	for (auto& s : paiAst["ast"]["statements"])
+		if (s["stmt-type"] == "const-decl") pai[s["name"]] = withoutLoc(s["value"]);
+	ASSERT_EQ(pai.size(), 17u);
+	for (auto& [name, value] : pai) ASSERT_EQ(value, source.at(name)) << name;
+}
+
+// What only runs must not reach importers, even if it moves the declarations' lines.
+TEST(gen_ast, interface_ignores_what_only_runs) {
+	cleanTestEnv();
+	auto paiOf = [](const string& source) {
+		ofstream("out/m.pa") << source;
+		EXPECT_EQ(execTestCommand("palan-gen-ast out/m.pa -o out/m.json --interface out/m.pai"), "");
+		return readText("out/m.pai");
+	};
+	const string sig = "export func f() -> int32 { return 1; }\nexport func g() -> int32 { return 1; }\n";
+	string base = paiOf("[]int32 a = [1, 2];\nconst N = a->len();\n" + sig);
+	ASSERT_EQ(base, paiOf("[]int32 a = [3, 4];\nconst N = a->len();\n" + sig));
+	ASSERT_EQ(base, paiOf("[]int32 a = [1, 2];\nconst N = a->len();\n"
+		"export func f() -> int32 {\n\tint32 x = 2;\n\treturn x;\n}\nexport func g() -> int32 { return 1; }\n"));
+	ASSERT_EQ(base, paiOf("[]int32 a = [1, 2];\nint32 b = 1;\nconst N = a->len();\nb + 1 -> b;\n" + sig));
+	ASSERT_NE(base, paiOf("[]int32 a = [1, 2, 3];\nconst N = a->len();\n" + sig));
+	ASSERT_NE(base, paiOf("[]int32 a = [1, 2];\nconst N = a->len();\n"
+		"export func f() -> int64 { return 1; }\nexport func g() -> int32 { return 1; }\n"));
 }

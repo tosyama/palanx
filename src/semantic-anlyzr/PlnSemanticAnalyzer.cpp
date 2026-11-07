@@ -1013,6 +1013,10 @@ static optional<string> workRootOf(const string& astPath, const string& original
 
 void PlnSemanticAnalyzer::analysis(const json &ast, const string& astPath)
 {
+	if (ast["original"].get<string>().ends_with(".pai")) {
+		cerr << PlnSaMessage::getMessage(E_InterfaceAsProgram, ast["original"]) << endl;
+		exit(1);
+	}
 	program_->workRoot = workRootOf(astPath, ast["original"]);
 	beginModule(ast);
 	if (ast["ast"].contains("statements")) {

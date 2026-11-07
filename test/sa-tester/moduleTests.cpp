@@ -4,6 +4,8 @@
 /// @copyright 2026 YAMAGUCHI Toshinobu
 
 #include <gtest/gtest.h>
+#include <fstream>
+#include "../../src/common/PlnDefs.h"
 #include <regex>
 #include <set>
 #include "../test-base/testBase.h"
@@ -774,4 +776,32 @@ TEST(sa, nested_func_symbols)
 	const string m = "_291_nested_2dfunc_2dsymbols..";
 	ASSERT_EQ(names, (set<string>{m + "a.v", m + "a.v..f.v", m + "a.v..f.v..g.v",
 		m + "a.v..b1..k.v", m + "a.v..b2..k.v", m + "b1..k.v"}));
+}
+
+// The .pai is what a library's users compile against, so a program must come out
+// the same from it as from the source it was written from.
+TEST(sa, import_through_interface) {
+	cleanTestEnv();
+	const string lib = "../test/testdata/sa/lib_interface.pa";
+	const string entry = "../test/testdata/sa/333_import_interface.pa";
+	string libAst = moduleAstPath(lib);
+	ASSERT_EQ(execTestCommand("palan-gen-ast " + lib + " -o " + libAst + " --interface out/lib_interface.pai"), "");
+	json fromSource = run_sa(entry);
+	ASSERT_TRUE(fromSource.is_object());
+	ASSERT_FALSE(fromSource["statements"].empty());
+
+	ASSERT_EQ(execTestCommand("palan-gen-ast out/lib_interface.pai -o " + libAst), "");
+	string entryAst = moduleAstPath(entry);
+	ASSERT_EQ(execTestCommand("palan-gen-ast " + entry + " -o " + entryAst), "");
+	ASSERT_EQ(execTestCommand("palan-sa " + entryAst + " -o out/from_pai.sa.json"), "");
+	ifstream f("out/from_pai.sa.json");
+	ASSERT_EQ(json::parse(f), fromSource);
+}
+
+TEST(sa_error, interface_as_program) {
+	cleanTestEnv();
+	ofstream("out/m.pai") << "built \"" PALAN_VERSION "\";\nexport func f();\n";
+	ASSERT_EQ(execTestCommand("palan-gen-ast out/m.pai -o out/m.json"), "");
+	string out = execTestCommand("palan-sa out/m.json -o out/m.sa.json");
+	ASSERT_NE(out.find("is an interface, which has no code to compile."), string::npos) << out;
 }

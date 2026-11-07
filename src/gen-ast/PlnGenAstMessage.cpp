@@ -20,6 +20,7 @@ string PlnGenAstMessage::getMessage(PlnMessageCode msg_code, string arg1)
 				"Options\n"
 				" -o, --output=<output-path>   Output AST to file.\n"
 				" -i, --indent                 Output AST json with indent.\n"
+				" --interface=<output-path>    Also output the module's declarations as an interface.\n"
 				" --target=<name>              Specify the target.\n"
 				" -v, --version                Display version.\n"
 				" -h, --help                   Display help.\n";
@@ -34,6 +35,21 @@ string PlnGenAstMessage::getMessage(PlnMessageCode msg_code, string arg1)
 		case E_CouldNotOpenOutputFile:
 			BOOST_ASSERT(arg1 != "\x01");
 			return "Could not open output file '" + arg1 + "'.";
+
+		case E_InterfaceOnly:
+			BOOST_ASSERT(arg1 != "\x01");
+			return arg1 + " is accepted only in an interface file (.pai).";
+
+		case E_InterfaceOtherVersion:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "this interface was built by version " + arg1 + ", not " PALAN_VERSION ".";
+
+		case E_InterfaceNoVersion:
+			return "an interface file needs a 'built' statement.";
+
+		case E_UnexpectedString:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "syntax error, unexpected string after '" + arg1 + "'.";
 
 		case E_NoInputFile:
 			return "palan-gen-ast: no input file";

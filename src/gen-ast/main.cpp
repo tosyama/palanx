@@ -15,6 +15,7 @@ namespace fs = std::filesystem;
 #include "../common/PlnDefs.h"
 #include "PlnGenAstMessage.h"
 #include "PlnGenAstMacroFold.h"
+#include "../common/PlnInterface.h"
 #include "PlnParser.h"
 #include "PlnLexer.h"
 
@@ -29,11 +30,13 @@ int main(int argc, char* argv[])
 		{ "output", required_argument, NULL, 'o' },
 		{ "indent", no_argument, NULL, 'i' },
 		{ "target", required_argument, NULL, 't' },
+		{ "interface", required_argument, NULL, 'I' },
 		{ 0 }
 	};
 
 	int opt, option_index = 0;
 	char *output_file = NULL;
+	char *interface_file = NULL;
 	bool do_indent = false;
 	string target = PALAN_TARGET;
 
@@ -53,6 +56,9 @@ int main(int argc, char* argv[])
 				break;
 			case 't':
 				target = optarg;
+				break;
+			case 'I':
+				interface_file = optarg;
 				break;
 			default:
 				break;
@@ -86,6 +92,15 @@ int main(int argc, char* argv[])
 		if (ret == 0) {
 			foldMacroConstants(ast["ast"], macros);
 			if (ast.contains("export")) foldMacroConstants(ast["export"], macros);
+			if (interface_file) {
+				string interface = writeInterface(ast);
+				ofstream of(interface_file);
+				if (!of) {
+					cerr << PlnGenAstMessage::getMessage(E_CouldNotOpenOutputFile, interface_file) << endl;
+					return 1;
+				}
+				of << interface;
+			}
 			string out_str = do_indent ? ast.dump(2) : ast.dump();
 			if (output_file) {
 				ofstream of(output_file);

@@ -502,6 +502,10 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			return "cannot import a module whose functions use its global variable '" + arg1
 			       + "': an imported module's top level does not run, so '" + arg1 + "' is never initialized.";
 
+		case E_InterfaceAsProgram:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'" + arg1 + "' is an interface, which has no code to compile.";
+
 		case E_AssignToForIndex:
 			BOOST_ASSERT(arg1 != "\x01");
 			return "cannot assign to '" + arg1 + "': the index of a 'for' loop is read-only.";

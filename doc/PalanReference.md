@@ -1,6 +1,6 @@
 # Palan Language Reference
 
-**Version:** v0.2.3
+**Version:** v0.2.4
 
 Palan is a compiled systems programming language designed as a simpler, safer, and more enjoyable alternative to C. It targets developers who want low-level control and direct access to C libraries, without the sharp edges of C syntax. Palan code compiles to native x86-64 binaries via AT&T assembly, with no runtime overhead.
 
@@ -743,6 +743,8 @@ Palan function definitions inside a block are block-scoped and support forward r
 Types and consts declared inside a block follow the same rules (see [Declaration order](#declaration-order)).
 
 `cinclude` inside a block makes the imported C functions available only within that block. A C function brought in again is the same function.
+
+`cinclude <stdio.h> export FILE, fpos_t;` names the C types a module's public declarations use, for building it as a library. The module still uses the whole header. A program importing the module needs the header too, and writes `FILE` only after its own `cinclude`.
 
 ### Optional Semicolons
 

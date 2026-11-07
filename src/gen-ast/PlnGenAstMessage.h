@@ -24,6 +24,10 @@ enum PlnMessageCode {
 	E_ExpectedInKeyword,		// identifier
 	E_ForElemNoMode,		// loop variable name
 	E_ExpectedCopyKeyword,	// identifier
+	E_InterfaceOnly,		// what was written
+	E_InterfaceOtherVersion,	// the version it records
+	E_InterfaceNoVersion,
+	E_UnexpectedString,		// the identifier before it
 };
 
 class PlnGenAstMessage

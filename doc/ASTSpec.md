@@ -14,6 +14,8 @@ Root
   and name (`std.utf8`, `util`)
 - target\* - Target name string (`<arch>-<os>-<abi>`), which the C declarations depend on
 - ast\* - AST model
+- libs - Link library name string list from `link` statements; only from a `.pai`
+- built - Version string from the `built` statement; only from a `.pai`
 
 Import file list
 ----------------
@@ -50,7 +52,8 @@ Function definition model
      - parameters\* - Parameter list (Palan parameter, see below; empty array when no parameters)
      - ret-type - Return variable type (unnamed single return only; omitted for void and named returns)
      - rets - Named return list (Palan parameter, see below; omitted for an unnamed return and void)
-     - block\* - Block object (function body; see Block object below)
+     - block\* - Block object (function body; see Block object below). Absent for a function a
+       `.pai` declares (SpecAndDesign.md 3.7)
 
   2. **c** - C function prototype (from `cinclude`)
      - parameters\* - Parameter list (C parameter, see below; empty array when no parameters)
@@ -423,6 +426,8 @@ Statement model
       when the header defines no capturable extern objects
     - typedefs - Typedef definition model list (see Typedef definition model above);
       omitted when the header defines no capturable typedef
+    - export-types - C type name string list from the `export` clause (SpecAndDesign.md 3.7);
+      omitted when the statement has no such clause
     - libs - Link library name string list, in source order (from the `link` clause);
       omitted when the statement has no `link` clause. See SASpec.md's Root `libs` for
       how these are aggregated (sorted, deduplicated, and unioned across scopes and

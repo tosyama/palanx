@@ -12,6 +12,11 @@
 using json = nlohmann::json;
 using std::string;
 
+inline bool isInterfaceFile(const string& path)
+{
+	return path.ends_with(".pai");
+}
+
 // A module's identity comes from the source alone, so a symbol is the same
 // wherever the source is checked out and whichever module is the entry. An
 // escape is `_` and two lowercase hex digits, so a `_` that looks like one is

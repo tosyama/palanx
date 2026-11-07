@@ -51,6 +51,55 @@ TEST(gen_ast_error, could_not_open_file) {
 	ASSERT_NE(out.find("Could not open file"), string::npos);
 }
 
+TEST(gen_ast_error, interface_only_forms_in_source) {
+	struct { string source, expected; } cases[] = {
+		{"int32 x = 1;\nexport func f() -> int32;\n",
+		 "m.pa:2:1: error: a function without a body is accepted only in an interface file (.pai)."},
+		{"link \"m\";\n", "m.pa:1:1: error: 'link' is accepted only in an interface file (.pai)."},
+		{"built \"0\";\n", "m.pa:1:1: error: 'built' is accepted only in an interface file (.pai)."},
+		{"foo \"m\";\n", "m.pa:1:1: error: syntax error, unexpected string after 'foo'."},
+	};
+	for (auto& c : cases) {
+		cleanTestEnv();
+		ofstream("out/m.pa") << c.source;
+		string out = execTestCommand("palan-gen-ast out/m.pa");
+		ASSERT_NE(out.find(c.expected), string::npos) << out;
+	}
+}
+
+TEST(gen_ast_error, interface_version) {
+	cleanTestEnv();
+	ofstream("out/old.pai") << "built \"0.0.0\";\nexport func f();\n";
+	string out = execTestCommand("palan-gen-ast out/old.pai");
+	ASSERT_NE(out.find("old.pai:1:1: error: this interface was built by version 0.0.0"), string::npos) << out;
+
+	ofstream("out/none.pai") << "export func f();\n";
+	out = execTestCommand("palan-gen-ast out/none.pai");
+	ASSERT_NE(out.find("none.pai:1:1: error: an interface file needs a 'built' statement."), string::npos) << out;
+}
+
+TEST(gen_ast_error, interface_cannot_state) {
+	struct { string source, expected; } cases[] = {
+		{"export func f(int32 a = 1) { }\n", "error: an interface cannot state a parameter's default value."},
+		{"export func f($int32 a) { }\n", "error: an interface cannot state this parameter or return."},
+		{"export func f() -> $int32 { }\n", "error: an interface cannot state this type."},
+		{"const N = [1, 2];\n", "error: an interface cannot state this expression."},
+	};
+	for (auto& c : cases) {
+		cleanTestEnv();
+		ofstream("out/m.pa") << c.source;
+		string out = execTestCommand("palan-gen-ast out/m.pa -o out/m.json --interface out/m.pai");
+		ASSERT_NE(out.find(c.expected), string::npos) << c.source << out;
+	}
+}
+
+TEST(gen_ast_error, interface_file_not_writable) {
+	cleanTestEnv();
+	ofstream("out/m.pa") << "export func f() { }\n";
+	string out = execTestCommand("palan-gen-ast out/m.pa -o out/m.json --interface /nonexistent/dir/m.pai");
+	ASSERT_NE(out.find("Could not open output file"), string::npos);
+}
+
 TEST(gen_ast_error, could_not_open_output_file) {
 	cleanTestEnv();
 	string out = execTestCommand(

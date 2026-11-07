@@ -1,0 +1,29 @@
+library sa_test;
+cinclude <stdio.h> export FILE;
+cinclude <math.h> link "m";
+
+type Inner { int32 v; };
+type Other enum { One, Two };
+export type Pair { Inner i; int32 n; Other o; };
+export type Handle { @FILE fp; [3]int32 owned; };
+export type Mode enum { Read, Write = 4 };
+export type Count = int64;
+
+[]int32 lit = [1, 2, 3];
+const Lit = lit->len();
+const Twice = Lit * 2;
+export type Sized { $[Twice]int32 v; };
+
+export func make(int32 n) -> Pair p {
+	n -> p.n;
+	sqrt(2.0);
+}
+export func both(@Pair a, Count c) -> int32 x, int64 y {
+	a.n -> x;
+	c -> y;
+}
+export func +(@Pair a, @Pair b) -> int32 { return a.n + b.n; }
+export func fill(@[Lit]int32 a, @!Sized s) { }
+export func cb(@func(int32) -> int32 f) -> int32 { return f(1); }
+export syscall getpid() -> int64 = 39;
+func hidden(@Inner i) -> int32 { return i.v; }
