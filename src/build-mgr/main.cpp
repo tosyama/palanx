@@ -125,15 +125,17 @@ static int generateAst(const string& source, const string& ast_path, const strin
 }
 
 // `base` is the source's path in the working directory; deps are the ASTs the result comes from.
-static int compileModule(const string& base, const string& exec_path,
-                         fs::file_time_type tools_time, const vector<string>& deps)
+static int compileModule(const string& base, const string& exec_path, fs::file_time_type tools_time,
+                         const vector<string>& deps, const vector<string>& library_args = {})
 {
 	string sa_file = base + ".sa.json";
 	string asm_file = base + ".s";
 	string obj_file = base + ".o";
 	if (fs::exists(sa_file) && isUpToDate(obj_file, tools_time, deps))
 		return 0;
-	if (int ret = runToolTo({exec_path + "/palan-sa", base + ".ast.json"}, sa_file)) // LCOV_EXCL_BR_LINE
+	vector<string> sa_argv{exec_path + "/palan-sa", base + ".ast.json"};
+	sa_argv.insert(sa_argv.end(), library_args.begin(), library_args.end());
+	if (int ret = runToolTo(sa_argv, sa_file)) // LCOV_EXCL_BR_LINE
 		return ret;
 	if (int ret = runToolTo({exec_path + "/palan-codegen", sa_file}, asm_file))
 		return ret;
@@ -193,6 +195,33 @@ static int buildAllocators(const PlnAllocShapes& shapes, const string& dir, cons
 	return 0;
 }
 
+// The `.pai` of an `import <module>`, or empty after reporting why there is none.
+static string findLibrary(const string& module, const set<string>& libpaths, const string& std_root, const string& importer)
+{
+	string package = module.substr(0, module.find('/'));
+	vector<string> roots;
+	if (package == "std") {
+		roots.push_back(std_root);
+	} else {
+		for (auto& dir : libpaths)
+			if (fs::is_directory(dir + "/" + package)) roots.push_back(dir);
+		if (roots.size() > 1) {
+			cerr << PlnBuildMgrMessage::getMessage(E_LibraryInTwoPlaces, package, roots[0], roots[1]) << endl;
+			return "";
+		}
+	}
+	string pai = roots.empty() ? "" : fs::weakly_canonical(roots[0] + "/" + module + ".pai").string();
+	if (pai.empty() || !fs::exists(pai)) {
+		cerr << PlnBuildMgrMessage::getMessage(E_LibraryNotFound, importer, module) << endl;
+		return "";
+	}
+	if (!fs::exists(fs::path(pai).replace_extension(".a"))) {
+		cerr << PlnBuildMgrMessage::getMessage(E_LibraryNoArchive, pai) << endl;
+		return "";
+	}
+	return pai;
+}
+
 static bool checkLibraryModules(const vector<json>& asts)
 {
 	auto packageOf = [](const string& id) { return id.substr(0, id.find('.')); };
@@ -231,7 +260,8 @@ static void installFile(const string& from, const string& to)
 // base: the main source's path in the working directory.
 static int buildLibrary(const vector<json>& asts, const string& base, const vector<string>& obj_files,
                         vector<pair<string, string>> members, const set<string>& link_objs,
-                        const string& out_dir, const string& exec_path, const string& target)
+                        const string& out_dir, const string& exec_path, const string& target,
+                        const vector<string>& library_args)
 {
 	string main_id = asts[0]["module"];
 	fs::path source = asts[0]["original"].get<string>();
@@ -253,7 +283,9 @@ static int buildLibrary(const vector<json>& asts, const string& base, const vect
 	string symbols_file = pai + ".symbols.json";
 	if (int ret = runToolTo({exec_path + "/palan-gen-ast", pai, "--target", target}, pai_ast))
 		return ret;
-	if (int ret = runToolTo({exec_path + "/palan-sa", pai_ast, "--interface"}, symbols_file))
+	vector<string> sa_argv{exec_path + "/palan-sa", pai_ast, "--interface"};
+	sa_argv.insert(sa_argv.end(), library_args.begin(), library_args.end());
+	if (int ret = runToolTo(sa_argv, symbols_file))
 		return ret;
 	ifstream symbols_in(symbols_file), sa_in(base + ".sa.json");
 	json symbols = json::parse(symbols_in), sa = json::parse(sa_in);
@@ -375,6 +407,8 @@ int main(int argc, char* argv[])
 	vector<pair<string, string>> lib_members;
 	map<string, string> module_ids;
 	map<string, vector<string>> module_imports;
+	set<string> libpaths;
+	vector<pair<string, string>> library_imports; // importing file, module
 	fs::file_time_type tools_time = newestToolTime(exec_path, target);
 	target_files.push_back(fs::weakly_canonical(argv[optind]).string());
 	string entry_dir = palan_work_path + target_files[0] + ".d";
@@ -402,6 +436,7 @@ int main(int argc, char* argv[])
 			return ret;
 		ast_files.emplace_back(output_ast_path);
 		asts.push_back(ast);
+		for (auto& dir : ast.value("libpaths", json::array())) libpaths.insert(dir.get<string>());
 
 		// check import files and add targets
 		if (!claimModuleId(module_ids, ast["module"], input_file.string()))
@@ -418,6 +453,8 @@ int main(int argc, char* argv[])
 							target_files.emplace_back(import_path);
 						}
 					}
+				} else {
+					library_imports.push_back({input_file.string(), imp["path"]});
 				}
 			}
 		}
@@ -426,12 +463,44 @@ int main(int argc, char* argv[])
 	if (do_lib && !checkLibraryModules(asts))
 		return 1;
 
-	vector<string> obj_files;
 	// Union of libraries requested by cinclude `link` clauses across every
-	// module. Declared here (not scoped to the aggregation block below) so it
-	// is still alive when the ld command line is built.
+	// module, and by the `link` statements of the libraries used. Declared here
+	// (not scoped to the aggregation block below) so it is still alive when the
+	// ld command line is built.
 	set<string> link_libs;
 	set<string> link_objs;
+
+	// Only here are all libpaths known: a library's sources are not read, and its
+	// `.pai` holds none. This loop grows the list by what each `.pai` imports.
+	map<string, string> library_files; // module, .pai
+	vector<string> library_args;
+	vector<string> archives;
+	string std_root = fs::weakly_canonical(exec_path + "/../" + target).string();
+	for (int i=0; i<library_imports.size(); i++) {
+		auto [importer, module] = library_imports[i];
+		auto known = library_files.find(module);
+		if (known == library_files.end()) {
+			string pai = findLibrary(module, libpaths, std_root, importer);
+			if (pai.empty())
+				return 1;
+			string pai_ast = palan_work_path + pai + ".ast.json";
+			fs::create_directories(fs::path(pai_ast).parent_path());
+			json ast;
+			if (int ret = generateAst(pai, pai_ast, exec_path, target, tools_time, ast))
+				return ret;
+			if (!claimModuleId(module_ids, ast["module"], pai))
+				return 1;
+			for (auto& lib : ast.value("libs", json::array())) link_libs.insert(lib.get<string>());
+			for (auto& imp : ast.value("import", json::array()))
+				if (imp["path-type"] == "inc") library_imports.push_back({pai, imp["path"]});
+			library_args.push_back("--library=" + module + "=" + pai_ast);
+			archives.push_back(fs::path(pai).replace_extension(".a").string());
+			known = library_files.emplace(module, pai).first;
+		}
+		module_imports[importer].push_back(known->second);
+	}
+
+	vector<string> obj_files;
 
 	for (int i=0; i<ast_files.size(); i++) {
 		string ast_file = ast_files[i];
@@ -449,7 +518,7 @@ int main(int argc, char* argv[])
 		};
 		reach(target_files[i]);
 
-		if (int ret = compileModule(base, exec_path, tools_time, deps))
+		if (int ret = compileModule(base, exec_path, tools_time, deps, library_args))
 			return ret;
 
 		obj_files.push_back(base + ".o");
@@ -481,7 +550,7 @@ int main(int argc, char* argv[])
 	}
 
 	if (do_lib)
-		return buildLibrary(asts, palan_work_path + target_files[0], obj_files, lib_members, link_objs, binary_name, exec_path, target);
+		return buildLibrary(asts, palan_work_path + target_files[0], obj_files, lib_members, link_objs, binary_name, exec_path, target, library_args);
 
 	// The entry is chosen here, at link time: every module compiles the same
 	// whichever role it plays, and only this stub names the first one's
@@ -512,12 +581,16 @@ int main(int argc, char* argv[])
 	// dependency independent of any header. link_libs then adds one -l per
 	// cinclude `link` clause; names are validated at SA ingest, not here.
 	// link_libs is a set, so declaration order from source is already lost --
-	// harmless for shared libraries (order doesn't gate symbol resolution),
-	// but this would need to change if static archives with inter-library
-	// dependencies were ever supported.
+	// harmless for shared libraries (order doesn't gate symbol resolution).
+	// Palan archives have no order either and do depend on each other, hence the group.
 	vector<string> ldArgv{"ld"}; // LCOV_EXCL_BR_LINE
 	for (auto& obj : obj_files) ldArgv.push_back(obj);
 	for (auto& obj : link_objs) ldArgv.push_back(obj);
+	if (!archives.empty()) {
+		ldArgv.push_back("--start-group");
+		ldArgv.insert(ldArgv.end(), archives.begin(), archives.end());
+		ldArgv.push_back("--end-group");
+	}
 	ldArgv.push_back("-lc");
 	for (auto& lib : link_libs) ldArgv.push_back("-l" + lib);
 	ldArgv.push_back("-dynamic-linker");

@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 #include <cstdlib>
+#include <fstream>
 #include <filesystem>
 #include <set>
 #include "../test-base/testBase.h"
@@ -105,6 +106,26 @@ TEST(install, root_can_move) {
 	fs::rename(root, moved);
 
 	ASSERT_EQ(execTestCommand(moved + "/bin/palan " + HELLO), "Hello World!\n");
+}
+
+// `std` comes from the tools' own version, and a libpath holding one cannot stand in for it.
+TEST(install, std_library_is_found_with_the_tools) {
+	cleanTestEnv();
+	string root = outPath("root");
+	ASSERT_EQ(install(root), 0);
+	fs::create_directories("out/src");
+	ofstream("out/src/one.pa") << "library std;\nexport func one() -> int32 { return 1; }\n";
+	ASSERT_EQ(execTestCommand(root + "/bin/palan --lib -o " + root + "/lib/palan/" + VERSION + "/" PALAN_TARGET " out/src/one.pa"), "");
+	ofstream("out/src/two.pa") << "library std;\nexport func two() -> int32 { return 2; }\n";
+	ASSERT_EQ(execTestCommand(root + "/bin/palan --lib -o out/decoy out/src/two.pa"), "");
+
+	ofstream("out/uses.pa") << "import <std/one>;\ncinclude <stdio.h>;\nprintf(\"%d\\n\", one());\n";
+	EXPECT_EQ(execTestCommand(root + "/bin/palan out/uses.pa"), "1\n");
+
+	string decoyed = outPath("decoyed.pa");
+	ofstream(decoyed) << "libpath \"decoy\";\nimport <std/two>;\n";
+	EXPECT_EQ(execTestCommand(root + "/bin/palan " + decoyed),
+		"return1::palan: '" + decoyed + "' imports <std/two>, which no libpath has\n");
 }
 
 TEST(install, destdir) {

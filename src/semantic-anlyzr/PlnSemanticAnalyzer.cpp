@@ -23,6 +23,7 @@ struct PlnSemanticAnalyzer::TypeProgram {
 	vector<Resolving> resolving;
 	deque<function<void()>> settled;
 	optional<string> workRoot;  // none: the AST is outside the work tree layout
+	map<string, string> libraries;
 };
 
 // Collect release stmts for arrayScopeVars_[from_idx, to_idx) in reverse scope/decl order
@@ -1011,6 +1012,11 @@ static optional<string> workRootOf(const string& astPath, const string& original
 	return path.substr(0, path.size() - tail.size());
 }
 
+void PlnSemanticAnalyzer::setLibraries(map<string, string> libraries)
+{
+	program_->libraries = move(libraries);
+}
+
 void PlnSemanticAnalyzer::analysis(const json &ast, const string& astPath)
 {
 	if (ast["original"].get<string>().ends_with(".pai")) {
@@ -1232,11 +1238,17 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 json PlnSemanticAnalyzer::loadImportAst(const json& stmt) const
 {
 	string path = stmt["path"];
-	if (!path.ends_with(".pa")) return json();
-	string astPath = program_->workRoot.value_or("") + path + ".ast.json";
-
+	bool isLibrary = stmt["path-type"] == "inc";
+	if (!isLibrary && !path.ends_with(".pa")) return json();
+	string astPath = path;
 	ifstream astfile;
-	if (program_->workRoot) astfile.open(astPath);
+	if (isLibrary) {
+		auto library = program_->libraries.find(path);
+		if (library != program_->libraries.end()) astfile.open(astPath = library->second);
+	} else {
+		astPath = program_->workRoot.value_or("") + path + ".ast.json";
+		if (program_->workRoot) astfile.open(astPath);
+	}
 	if (!astfile.is_open()) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ImportFileNotFound, astPath) << endl;
 		exit(1);

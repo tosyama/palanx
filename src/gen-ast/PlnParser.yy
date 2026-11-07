@@ -198,7 +198,15 @@ struct BodyList {
 			for (auto& child : node) rejectCIncludeExport(child, file);
 	}
 
-	// `link`, `built` and `target` stay identifiers elsewhere, like 'in'. None is a
+	static json libraryImport(json pathInf, const string& file, const palan::PlnParser::location_type& loc)
+	{
+		if (pathInf["path-type"] == "inc" && !isLibraryImportPath(pathInf["path"]))
+			throw runtime_error(PlnGenAstMessage::locatedError(file, loc.begin.line, loc.begin.column,
+				PlnGenAstMessage::getMessage(E_BadLibraryImport, pathInf["path"])));
+		return resolveImportPath(move(pathInf), file);
+	}
+
+	// `libpath`, `link`, `built` and `target` stay identifiers elsewhere, like 'in'. None is a
 	// statement of the program, so no node comes out (an empty statement list).
 	static json interfaceStmt(json& ast, const string& word, const string& value, const string& file,
 	                          const string& buildTarget, const palan::PlnParser::location_type& loc)
@@ -207,6 +215,12 @@ struct BodyList {
 			throw runtime_error(PlnGenAstMessage::locatedError(file, loc.begin.line, loc.begin.column,
 				PlnGenAstMessage::getMessage(code, arg)));
 		};
+		if (word == "libpath") {
+			if (isInterfaceFile(file)) fail(E_LibpathInInterface, "");
+			auto dir = std::filesystem::path(file).parent_path() / value;
+			ast["libpaths"].push_back(std::filesystem::weakly_canonical(dir).string());
+			return json::array();
+		}
 		if (word != "link" && word != "built" && word != "target") fail(E_UnexpectedString, word);
 		if (!isInterfaceFile(file)) fail(E_InterfaceOnly, "'" + word + "'");
 		if (word == "link") {
@@ -578,7 +592,7 @@ stmt_list_b: block_stmt
 
 import: KW_IMPORT import_path import_as
 	{
-		$$ = resolveImportPath($2, lexer.inputFile);
+		$$ = libraryImport($2, lexer.inputFile, @2);
 		ast["import"].emplace_back($$);
 		if ($3.size()) {
 			$$["alias"] = $3;
@@ -586,7 +600,7 @@ import: KW_IMPORT import_path import_as
 	}
 	| KW_IMPORT import_ids KW_FROM import_path import_as
 	{
-		$$ = resolveImportPath($4, lexer.inputFile);
+		$$ = libraryImport($4, lexer.inputFile, @4);
 		ast["import"].emplace_back($$);
 		$$["targets"] = $2.toVector();
 		if ($5.size()) { $$["alias"] = $5; }

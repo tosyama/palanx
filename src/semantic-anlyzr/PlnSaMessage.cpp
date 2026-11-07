@@ -47,6 +47,7 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 				" -o, --output=<output-path>   Output SA result to file.\n"
 				" -i, --indent                 Output SA json with indent.\n"
 				" --interface                  Check a .pai's AST; output its functions' symbols.\n"
+				" --library=<pkg/mod>=<ast>    Where the AST of an import <pkg/mod> is.\n"
 				" -v, --version                Display version.\n"
 				" -h, --help                   Display help.\n";
 

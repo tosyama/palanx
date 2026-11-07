@@ -61,6 +61,13 @@ string PlnGenAstMessage::getMessage(PlnMessageCode msg_code, string arg1)
 			BOOST_ASSERT(arg1 != "\x01");
 			return "syntax error, unexpected string after '" + arg1 + "'.";
 
+		case E_LibpathInInterface:
+			return "an interface file cannot hold 'libpath'; the program's libpaths find what it imports.";
+
+		case E_BadLibraryImport:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'<" + arg1 + ">' does not name a library module, which is written <package/module>, without '.'.";
+
 		case E_NoInputFile:
 			return "palan-gen-ast: no input file";
 

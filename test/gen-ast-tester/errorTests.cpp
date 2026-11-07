@@ -124,6 +124,26 @@ TEST(gen_ast_error, interface_cannot_state) {
 	}
 }
 
+TEST(gen_ast_error, library_import_form) {
+	for (string path : {"stdio.h", "utf8", "../x", "/x/y", "x/", "x//y", "x/./y"}) {
+		cleanTestEnv();
+		ofstream("out/m.pa") << "\nimport <" << path << ">;\n";
+		string out = execTestCommand("palan-gen-ast out/m.pa -o out/m.json");
+		string expected = "m.pa:2:8: error: '<" + path + ">' does not name a library module";
+		ASSERT_NE(out.find(expected), string::npos) << path << out;
+	}
+	cleanTestEnv();
+	ofstream("out/m.pa") << "cinclude <stdio.h>;\nimport <a/b/c>;\n";
+	ASSERT_EQ(execTestCommand("palan-gen-ast out/m.pa -o out/m.json"), "");
+}
+
+TEST(gen_ast_error, libpath_in_interface) {
+	cleanTestEnv();
+	ofstream("out/m.pai") << "built \"" PALAN_VERSION "\";\ntarget \"" PALAN_TARGET "\";\nlibpath \"x\";\n";
+	string out = execTestCommand("palan-gen-ast out/m.pai -o out/m.json");
+	ASSERT_NE(out.find("m.pai:3:1: error: an interface file cannot hold 'libpath'"), string::npos) << out;
+}
+
 TEST(gen_ast_error, interface_file_not_writable) {
 	cleanTestEnv();
 	ofstream("out/m.pa") << "export func f() { }\n";

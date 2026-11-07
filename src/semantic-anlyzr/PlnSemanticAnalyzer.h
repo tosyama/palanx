@@ -731,4 +731,5 @@ public:
 	const json& result();
 	// The symbols of a .pai's public functions, as an importer of it resolves them.
 	json interfaceSymbols(const json& ast);
+	void setLibraries(map<string, string> libraries);  // import <pkg/mod> -> its AST file
 };

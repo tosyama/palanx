@@ -109,6 +109,7 @@ Design:
  A file named `.pai` is read as an interface (3.7): it may declare a function without a body and
  hold `link` statements, and must hold `built` and `target` statements of the tools' version and the target. `--interface`
  writes the module's own declarations in that form; merging a library's modules is `--lib`'s.
+ `libpath "dir";` is recorded in ast.json as an absolute path, and is rejected in a `.pai`.
 
 ### 3.3 C-to-AST Translator (palan-c2ast)
 Responsibility:
@@ -161,6 +162,8 @@ Usage: palan-sa [options] <AST file>
    -i, --indent             Generate indented (pretty-printed) JSON output
    --interface              Read the AST of a .pai as an importer would, and output its public
                             functions' symbols as a JSON array instead of an analyzed AST (see 3.7)
+   --library <pkg/mod>=<AST file>
+                            Where the AST of an `import <pkg/mod>` is (see 3.7); may be repeated
    -h, --help               Display help information
    -v, --version            Display version information
 ```
@@ -169,7 +172,9 @@ Design:
  The semantic analyzer reads the ast.json file and builds a new sa.json independently, carrying
  over its target. An imported module's AST is read from the same work tree as its own: the root is
  the AST file's path without its `original` and `.ast.json`, since work files mirror their sources'
- absolute paths (5.1). An AST outside that layout can import no Palan module.
+ absolute paths (5.1). An AST outside that layout can import no Palan module. An `import <...>` is
+ looked up in the `--library` table instead, for the importing module and for the `.pai`s it reaches;
+ one that is not there is an error, since finding it is the build manager's.
  It processes statements in order, maintaining a scope stack for C function declarations
  registered via cinclude statements (scope-aware: functions are visible from the cinclude
  point until the end of the enclosing scope).
@@ -387,7 +392,7 @@ into a program uses them too, in place of the program's.
 Implemented: module identity, `import "..."` resolution, the `.pai` form and reading it,
 `palan-gen-ast --interface` for one module, skipping steps whose result is still valid (5.1), `palan
 --lib` and archives, merging and narrowing a library's modules, and a library module's own allocators
-(3.6). Not yet: `import <...>` and `libpath`.
+(3.6), `import <...>` and `libpath`.
 
 **Module identity.** A module's identity is the module part of its symbols (SASpec.md's Symbol
 names). It comes from its source alone, never from the entry or the source's location:
@@ -409,13 +414,15 @@ program's allocators have the identity `__allocators`, given by the build manage
 name, and a library module's have its own identity with `.__allocators` added (3.6).
 
 **Finding a library.** `import <std/io/file>` reads `<dir>/std/io/file.pai`, and links
-`file.a` beside it. `<dir>` is
+`file.a` beside it. The path has a package and at least one more part, none empty, and no `.`, since a
+module is named and not a file; palan-gen-ast reports anything else at its line. `<dir>` is
 each `libpath "dir";`, relative to the file writing it, used as written. Like `link`, a `libpath` may be written in
 any module and only adds a place to look, for the whole program. `std` is not looked for there: it
 always comes from the tools' own version and the target being built for (6.1), which `libpath` cannot replace. One package name
 found in two places is an error rather than decided by order, since the union has none. A library
-needing another imports it in its interface; the program's `libpath`s must find it. The lookup is one
-function in `src/common/`. An `import "..."` is made absolute by palan-gen-ast, relative to the
+needing another imports it in its interface; the program's `libpath`s must find it. A `.pai` holds no
+`libpath`. Only the build manager sees every module, so only it looks a library up; it generates the
+`.pai`'s AST and tells palan-sa where that is with `--library`. An `import "..."` is made absolute by palan-gen-ast, relative to the
 importing file and with symbolic links resolved, so the build manager and palan-sa do not each
 resolve it, and one file reached by two spellings is one module.
 
@@ -568,6 +575,7 @@ are of two kinds:
   home/user/proj/main.pa.d/{__allocators.*,entry.*,out}     an entry's own
   home/user/proj/utf8.pa.alloc/__allocators.*               a library module's allocators (3.6)
   home/user/proj/utf8.pa.lib/{utf8.pai*,*.o}                what `--lib` builds from a main source
+  home/user/libs/foo/bar.pai.ast.json                       the AST of a library's interface
 ```
 
 A module's files mirror the absolute path of its source and do not depend on the entry, so `palan
@@ -575,9 +583,9 @@ util.pa` (its top-level tests) and `palan main.pa` (importing it) share them. As
 is skipped if its result is newer than everything it depends on; an equal time counts as older, so
 an edit right after a build is not missed:
 
-- generating the AST (`.ast.json`): the source, the C headers it read (`c-headers` in ast.json), the tools;
-- compiling (`.o`, with `.sa.json` present): its `.ast.json`, the `.ast.json` of every module its
-  imports reach, the tools.
+- generating the AST (`.ast.json`): the source or `.pai`, the C headers it read (`c-headers` in ast.json), the tools;
+- compiling (`.o`, with `.sa.json` present): its `.ast.json`, the `.ast.json` of every module and
+  `.pai` its imports reach, the tools.
 
 The tools are `palan-gen-ast`, `palan-c2ast`, `palan-sa`, `palan-codegen` and `predefined.h`. Any
 change to an imported source compiles its importers again, a change to a function's body too. A step
@@ -586,7 +594,7 @@ follow the same rule, written only when their content changed. The entry stub an
 
 Not detected, and cleared by `palan --clean`: a file whose time went back (`cp -p`), a header newly
 placed earlier on the search path, a symbolic link pointed elsewhere, a switch to an older version's
-tools.
+tools, a module shared by programs whose `libpath`s find its `import <...>` in different places.
 
 Files are written under a temporary name and renamed: two builds racing produce the same
 content, at worst compiled twice. What differs per program, the generated allocators and the

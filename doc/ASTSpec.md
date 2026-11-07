@@ -18,13 +18,14 @@ Root
 - target\* - Target name string (`<arch>-<os>-<abi>`), which the C declarations depend on; a `.pai`'s
   `target` statement must name the same
 - ast\* - AST model
+- libpaths - Absolute directory string list from `libpath` statements; never from a `.pai`
 - libs - Link library name string list from `link` statements; only from a `.pai`
 - built - Version string from the `built` statement; only from a `.pai`
 
 Import file list
 ----------------
 - path-type\* - Path type string: "src" "inc"
-- path\* - Path string. For "src", absolute with symbolic links resolved (SpecAndDesign.md 3.7)
+- path\* - Path string. For "src", absolute with symbolic links resolved (SpecAndDesign.md 3.7); for "inc", the library module as written (`std/utf8`)
 
 Export declaration list
 -------------------------

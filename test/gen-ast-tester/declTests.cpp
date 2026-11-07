@@ -334,7 +334,7 @@ TEST(gen_ast, import_path_absolute) {
 	cleanTestEnv();
 	fs::create_directories("out/d");
 	ofstream("out/d/h.h") << "";
-	ofstream("out/d/m.pa") << "import \"../x.pa\";\nimport a from \"./sub/../y.txt\";\nimport <z.pa>;\ncinclude \"h.h\";\n";
+	ofstream("out/d/m.pa") << "import \"../x.pa\";\nimport a from \"./sub/../y.txt\";\nimport <p/z>;\ncinclude \"h.h\";\n";
 	string output = execTestCommand("palan-gen-ast out/d/m.pa");
 	ASSERT_TRUE(checkerr(output));
 	json jout = json::parse(output);
@@ -342,11 +342,11 @@ TEST(gen_ast, import_path_absolute) {
 
 	ASSERT_EQ(jout["import"][0]["path"], out + "/x.pa");
 	ASSERT_EQ(jout["import"][1]["path"], out + "/d/y.txt");
-	ASSERT_EQ(jout["import"][2]["path"], "z.pa");
+	ASSERT_EQ(jout["import"][2]["path"], "p/z");
 	const auto& stmts = jout["ast"]["statements"];
 	ASSERT_EQ(stmts[0]["path"], out + "/x.pa");
 	ASSERT_EQ(stmts[1]["path"], out + "/d/y.txt");
-	ASSERT_EQ(stmts[2]["path"], "z.pa");
+	ASSERT_EQ(stmts[2]["path"], "p/z");
 	ASSERT_EQ(stmts[3]["path"], "h.h");
 }
 

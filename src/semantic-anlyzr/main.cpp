@@ -7,6 +7,7 @@
 #include <iostream>
 #include <fstream>
 #include <filesystem>
+#include <map>
 #include <getopt.h>
 #include "PlnSemanticAnalyzer.h"
 #include "PlnSaMessage.h"
@@ -21,6 +22,7 @@ int main(int argc, char* argv[])
 		{ "output",  required_argument, NULL, 'o' },
 		{ "indent",  no_argument,       NULL, 'i' },
 		{ "interface", no_argument,     NULL, 'I' },
+		{ "library", required_argument, NULL, 'L' },
 		{ 0 }
 	};
 
@@ -28,6 +30,7 @@ int main(int argc, char* argv[])
 	char *output_file = NULL;
 	bool do_indent = false;
 	bool is_interface = false;
+	map<string, string> libraries;
 
 	while (0 < (opt = getopt_long(argc, argv, "hvo:i", long_options, NULL))) {
 		switch (opt) {
@@ -46,6 +49,12 @@ int main(int argc, char* argv[])
 			case 'I':
 				is_interface = true;
 				break;
+			case 'L': {
+				string library = optarg;
+				auto eq = library.find('=');
+				libraries[library.substr(0, eq)] = library.substr(eq + 1);
+				break;
+			}
 			default:
 				break;
 		}
@@ -75,6 +84,7 @@ int main(int argc, char* argv[])
 	}
 
 	PlnSemanticAnalyzer analyzer(c2ast_path);
+	analyzer.setLibraries(move(libraries));
 	json symbols;
 	if (is_interface) symbols = analyzer.interfaceSymbols(ast);
 	else analyzer.analysis(ast, ast_path.string());

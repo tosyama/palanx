@@ -798,6 +798,14 @@ TEST(sa, import_through_interface) {
 	ASSERT_EQ(json::parse(f), fromSource);
 }
 
+TEST(sa_error, library_import_without_its_location) {
+	cleanTestEnv();
+	ofstream("out/m.pa") << "import <p/z>;\n";
+	ASSERT_EQ(execTestCommand("palan-gen-ast out/m.pa -o out/m.json"), "");
+	string out = execTestCommand("palan-sa out/m.json -o out/m.sa.json");
+	ASSERT_NE(out.find("Could not open import file 'p/z'."), string::npos) << out;
+}
+
 TEST(sa_error, interface_as_program) {
 	cleanTestEnv();
 	ofstream("out/m.pai") << "built \"" PALAN_VERSION "\";\ntarget \"" PALAN_TARGET "\";\nexport func f();\n";

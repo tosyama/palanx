@@ -2419,7 +2419,7 @@ export func length([]uint8 s) -> int64 { ... }
 ```
 
 This writes `<dir>/std/utf8.pai`, the interface a person reads to learn the library, and
-`<dir>/std/utf8.a`, the code, for the target being built for. Using a library with `import <std/utf8>` is not available yet.
+`<dir>/std/utf8.a`, the code, for the target being built for.
 
 - The interface holds the main file's `export`s, the exported types of other files they use, and
   whatever private types and constants those need. Any other `export` of an imported file is
@@ -2427,6 +2427,25 @@ This writes `<dir>/std/utf8.pai`, the interface a person reads to learn the libr
 - A file permitting a function to use its `global` is a compile error, since a library's top level never runs.
 - Names starting with `__` should not be declared: the interface may rename a private type to one.
 - Publishing a function with a type alias of another file's private type is a compile error.
+
+### Using a Library
+
+`import <package/module>` imports a library's module, with the same forms as importing a file.
+`libpath` says where to look, relative to the file writing it:
+
+```palan
+libpath "../libs";
+import <geo/vec>;          // reads ../libs/geo/vec.pai, links ../libs/geo/vec.a
+
+Vec a = vec(3.0, 4.0);
+```
+
+- The library's sources are not needed, only its `.pai` and `.a`.
+- A `libpath` may be written in any file and adds a place to look for the whole program.
+- `std` is found with the compiler, and a `libpath` cannot replace it.
+- A package found under two `libpath`s is an error, as is a library built by another version of
+  Palan or for another target.
+- A library that imports another needs that one found too, through the program's `libpath`s.
 
 ### Program Structure
 

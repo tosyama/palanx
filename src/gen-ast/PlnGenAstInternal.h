@@ -256,3 +256,9 @@ inline json resolveImportPath(json pathInf, const string& inputFile)
 	}
 	return pathInf;
 }
+
+inline bool isLibraryImportPath(const string& path)
+{
+	if (path.find('.') != string::npos || path.find('/') == string::npos) return false;
+	return path.front() != '/' && path.back() != '/' && path.find("//") == string::npos;
+}
