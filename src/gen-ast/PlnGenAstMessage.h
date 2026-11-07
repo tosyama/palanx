@@ -27,6 +27,7 @@ enum PlnMessageCode {
 	E_InterfaceOnly,		// what was written
 	E_InterfaceOtherVersion,	// the version it records
 	E_InterfaceNoVersion,
+	E_NestedCIncludeExport,
 	E_UnexpectedString,		// the identifier before it
 };
 

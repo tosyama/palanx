@@ -744,8 +744,6 @@ Types and consts declared inside a block follow the same rules (see [Declaration
 
 `cinclude` inside a block makes the imported C functions available only within that block. A C function brought in again is the same function.
 
-`cinclude <stdio.h> export FILE, fpos_t;` names the C types a module's public declarations use, for building it as a library. The module still uses the whole header. A program importing the module needs the header too, and writes `FILE` only after its own `cinclude`.
-
 ### Optional Semicolons
 
 The semicolon at the end of the last statement in a block (or at top level) may be omitted. Statements ending with `}` (`if`, `while`, standalone block) never require a trailing semicolon. Other statements require a semicolon when followed by another statement.
@@ -2534,6 +2532,19 @@ cinclude <math.h> link "m";  // link against libm (-lm) when building
 - `link` is not a reserved word — it is only recognized as introducing this clause immediately after
   a `cinclude` path (and optional `as` alias). `unistd.h`'s `link()` function, for example, remains
   callable as an ordinary C function.
+
+### Exporting C Types
+
+`cinclude <stdio.h> export FILE, fpos_t;` names the C types a module's public declarations use, for
+building it as a library (building libraries is not available yet).
+
+- The module still uses the whole header, so `printf` works as it does without the clause.
+- A program using the library needs the header too. A `cinclude` without the clause, used only in
+  function bodies, asks nothing of it.
+- The program can write `FILE` only after a `cinclude` of its own.
+- The clause comes before `link`: `cinclude <uv.h> export uv_loop_t link "uv";`.
+- It is accepted only on a top-level `cinclude`; in a block or a function it is a compile error.
+- An ordinary `import` of a source file does not read the clause.
 
 ### Typedefs
 

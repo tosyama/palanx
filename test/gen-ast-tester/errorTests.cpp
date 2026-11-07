@@ -78,6 +78,21 @@ TEST(gen_ast_error, interface_version) {
 	ASSERT_NE(out.find("none.pai:1:1: error: an interface file needs a 'built' statement."), string::npos) << out;
 }
 
+TEST(gen_ast_error, cinclude_export_not_top_level) {
+	const string message = "error: an 'export' clause is accepted only on a top-level cinclude.";
+	struct { string source, location; } cases[] = {
+		{"{\n\tcinclude <stdio.h> export FILE;\n}\n", "m.pa:2:2: "},
+		{"func f() {\n\tcinclude <stdio.h> export FILE;\n}\n", "m.pa:2:2: "},
+		{"if 1 < 2 {\n\tcinclude <stdio.h> export FILE;\n}\n", "m.pa:2:2: "},
+	};
+	for (auto& c : cases) {
+		cleanTestEnv();
+		ofstream("out/m.pa") << c.source;
+		string out = execTestCommand("palan-gen-ast out/m.pa");
+		ASSERT_NE(out.find(c.location + message), string::npos) << c.source << out;
+	}
+}
+
 TEST(gen_ast_error, interface_cannot_state) {
 	struct { string source, expected; } cases[] = {
 		{"export func f(int32 a = 1) { }\n", "error: an interface cannot state a parameter's default value."},

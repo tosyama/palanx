@@ -185,6 +185,19 @@ struct BodyList {
 		return j;
 	} // LCOV_EXCL_BR_LINE
 
+	// Only a top-level cinclude is part of what a module publishes.
+	static void rejectCIncludeExport(const json& node, const string& file)
+	{
+		if (node.is_object() && node.value("stmt-type", "") == "cinclude") {
+			if (node.contains("export-types"))
+				throw runtime_error(PlnGenAstMessage::locatedError(file, node["loc"][0], node["loc"][1],
+					PlnGenAstMessage::getMessage(E_NestedCIncludeExport)));
+			return;
+		}
+		if (node.is_structured())
+			for (auto& child : node) rejectCIncludeExport(child, file);
+	}
+
 	// `link` and `built` stay identifiers elsewhere, like 'in'. Neither is a
 	// statement of the program, so no node comes out (an empty statement list).
 	static json interfaceStmt(json& ast, const string& word, const string& value, const string& file,
@@ -353,6 +366,9 @@ module: library_decl statements
 		if (!ast["ast"].contains("functions"))
 			ast["ast"]["functions"] = json::array();
 		ast["ast"]["statements"] = LazyNode::toJsonArray($2);
+		for (auto& stmt : ast["ast"]["statements"])
+			if (stmt.value("stmt-type", "") != "cinclude") rejectCIncludeExport(stmt, lexer.inputFile);
+		rejectCIncludeExport(ast["ast"]["functions"], lexer.inputFile);
 		if (isInterfaceFile(lexer.inputFile) && !ast.contains("built"))
 			throw runtime_error(PlnGenAstMessage::locatedError(lexer.inputFile, 1, 1,
 				PlnGenAstMessage::getMessage(E_InterfaceNoVersion)));

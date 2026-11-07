@@ -204,6 +204,8 @@ Design:
  of a `$T` or fixed-size array global is a `static-alloc` instead of a `frame-alloc`, so a
  function C calls after the top level returns (an `atexit` handler) still finds it. Importing a module that permits a function to use one of its
  Palan globals is an error, since an imported module's top level never runs.
+ An AST made from a `.pai` can only be imported, not analyzed itself: it has functions without bodies
+ and so no code to compile.
  An arithmetic operator (`+ - * / %`, unary `-`) with a struct operand (its storage or a borrow)
  is a call of the functions named by its symbol, resolved as values chained into a call are: each
  operand is analyzed once, and the function chosen decides whether it is borrowed or copied.
@@ -377,6 +379,12 @@ them release through `free`.
 
 ### 3.7 Modules and Libraries
 
+**Status.** This section and 5.1 describe the structure version 0.2.4 is being built toward.
+Implemented: module identity, `import "..."` resolution, the `.pai` form and reading it, and
+`palan-gen-ast --interface` for one module. Not yet: `palan --lib` and archives, merging and narrowing
+a library's modules, `import <...>` and `libpath`, a library module's own allocators (3.6), and
+skipping steps whose result is still valid (5.1).
+
 **Module identity.** A module's identity is the module part of its symbols (SASpec.md's Symbol
 names). It comes from its source alone, never from the entry or the source's location:
 
@@ -392,8 +400,9 @@ in ast.json; later tools only receive it. A byte of the file name outside `[A-Za
 `my_2dlib.pa` do not meet. A leading digit gets a `_` in front (`001_hello.pa` is `_001_hello`),
 which `as` needs and which reads better than escaping it; so `1x.pa` and `_1x.pa`, or `-x.pa` and
 `2dx.pa`, do meet. `a/util.pa` and `b/util.pa` declaring nothing also have one identity. One identity
-in a program is an error; declaring `library proj.a;` and `library proj.b;` lets them coexist. The
-allocators' identity stays `__allocators`, given by the build manager through their file name.
+in a program is an error; declaring `library proj.a;` and `library proj.b;` lets them coexist. A
+program's allocators have the identity `__allocators`, given by the build manager through their file
+name, and a library module's have its own identity with `.__allocators` added (3.6).
 
 **Finding a library.** `import <std/io/file>` reads `<dir>/<target>/std/io/file.pai`, and links
 `file.a` beside it. `<dir>` is
@@ -418,7 +427,9 @@ export type Writer { @uv_loop_t loop; };
 export func open([]uint8 path) -> @!Writer;
 ```
 
-It is written only by `--lib`. An ordinary `import "..."` needs none: palan-sa reads the imported
+A library's is written by `--lib`, and `palan-gen-ast --interface` writes one module's own
+declarations in the same form (3.2), keeping every private one and each `import "..."` as an absolute
+path, since merging is `--lib`'s. An ordinary `import "..."` needs none: palan-sa reads the imported
 module's AST, and a library's AST comes from its `.pai`, so palan-sa has one kind of input. An error
 in an imported source module is reported at its own line, and one in a library at its `.pai`'s.
 
@@ -437,10 +448,13 @@ divided is not published:
 - `built "<version>";` records the tools' version. Reading a `.pai` of another version is an error.
   The target needs no record: the path holds it.
 
-There are no bodies or executable statements, and a macro constant is written as its value. A
-function without a body is accepted only in a `.pai`. A top-level variable appears only if a const
-uses it, as its type with the sizes filled in (`[]int32 a = [1, 2, 3];` is `[3]int32 a;`), so
-changing a value leaves the interface as it was. `--lib` rejects a module permitting a function to
+A `.pai` is written in the order `library`, `built`, `link`s, the imports, `cinclude`s, types,
+consts and variables in source order, then the functions. There are no bodies or executable
+statements, and a macro constant is written as its value. A function without a body is accepted only
+in a `.pai`. A top-level variable appears only if a const uses it, as its type with the sizes filled
+in (`[]int32 a = [1, 2, 3];` is `[3]int32 a;`), so changing a value leaves the interface as it was. A
+const naming anything else that cannot be written, such as a variable whose value only running gives,
+is left out with it: no declaration could use it either (`E_ConstUsedBeforeKnown`). `--lib` rejects a module permitting a function to
 use its global, since a library's top level never runs.
 
 `cinclude <stdio.h> export FILE, fpos_t;` names the C types the module's public declarations use.
@@ -448,7 +462,8 @@ It limits nothing in the module, which uses the whole header as without it; it o
 `cinclude` in the `.pai`, whose reader then needs the header, as any user of a C type needs its SDK.
 A `cinclude` used only in bodies does not reach the user. The importer still cannot write `FILE`
 without its own `cinclude`. An ordinary import reads the whole AST, so the clause matters only to
-`--lib`.
+`--lib`. The clause is accepted only on a top-level `cinclude`, since a block's is not part of what
+the module publishes; palan-gen-ast rejects it elsewhere rather than leave a type silently unpublished.
 
 **Building a library.** `palan --lib -o <dir> main.pa` compiles the modules `main.pa` reaches, which
 must all declare the same first name, and writes `<dir>/<target>/` + the main's identity as a path:
