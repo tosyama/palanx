@@ -8,6 +8,7 @@ all: build/CMakeCache.txt
 	@cd build && rm -f bin/core && bin/sa-unit-tester
 	@cd build && rm -f bin/core && bin/codegen-unit-tester
 	@cd build && rm -f bin/core && bin/build-mgr-tester
+	@cd build && rm -f bin/core && bin/std-tester
 
 # Optimized so the end-to-end tests run fast, but without RelWithDebInfo's
 # default -DNDEBUG so that assertions still fire under test.
@@ -34,6 +35,7 @@ coverage: build-cov/CMakeCache.txt
 	cd build-cov && bin/codegen-tester
 	rm -rf $$HOME/.palan/work
 	cd build-cov && bin/build-mgr-tester
+	cd build-cov && bin/std-tester
 	cd build-cov && lcov -c -d . -b src -o all.info $(LCOV_FLAGS) --ignore-errors mismatch,inconsistent
 	cd build-cov && lcov -e all.info '*/palanx/src/*' -o lcov.info $(LCOV_FLAGS) $(LCOV_FILTER)
 	cd build-cov && lcov -r lcov.info '*/PlnLexer.cpp' '*/PlnParser.cpp' '*/PlnParser.h' '*/location.hh' -o lcov.info $(LCOV_FLAGS) $(LCOV_FILTER)

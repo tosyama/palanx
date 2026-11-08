@@ -1,0 +1,39 @@
+library std;
+
+// The number of bytes of the UTF-8 sequence starting with `lead`, or 0 when no sequence starts
+// with it: a continuation byte, an overlong lead (0xC0, 0xC1) or one beyond U+10FFFF (0xF5-0xFF).
+export func seqLen(uint8 lead) -> int32
+{
+	if (lead < 128) { return 1; }
+	if (lead < 194) { return 0; }
+	if (lead < 224) { return 2; }
+	if (lead < 240) { return 3; }
+	if (lead < 245) { return 4; }
+	return 0;
+}
+
+cinclude <stdio.h>;
+cinclude <stdlib.h>;
+
+func expectSeqLen(uint8 lead, int32 expected)
+{
+	int32 actual = seqLen(lead);
+	if (actual != expected) {
+		printf("seqLen(%d): %d, expected %d\n", lead, actual, expected);
+		exit(1);
+	}
+}
+
+expectSeqLen(0, 1);
+expectSeqLen(127, 1);
+expectSeqLen(128, 0);
+expectSeqLen(191, 0);
+expectSeqLen(193, 0);
+expectSeqLen(194, 2);
+expectSeqLen(223, 2);
+expectSeqLen(224, 3);
+expectSeqLen(239, 3);
+expectSeqLen(240, 4);
+expectSeqLen(244, 4);
+expectSeqLen(245, 0);
+expectSeqLen(255, 0);

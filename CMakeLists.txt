@@ -48,6 +48,9 @@ add_subdirectory(test/codegen-unit-tester)
 add_subdirectory(src/build-mgr)
 add_subdirectory(test/build-mgr-tester)
 
+add_subdirectory(src/std)
+add_subdirectory(test/std-tester)
+
 set(PALAN_INSTALL_DOC_DIR share/doc/palan/${PALAN_VERSION})
 install(FILES README.md LICENSE DESTINATION ${PALAN_INSTALL_DOC_DIR} COMPONENT doc)
 install(DIRECTORY doc DESTINATION ${PALAN_INSTALL_DOC_DIR} COMPONENT doc PATTERN Issues.md EXCLUDE)

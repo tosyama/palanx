@@ -29,7 +29,7 @@ make coverage-sa        # semantic analyzer only (faster)
 make coverage-reset     # full clean rebuild of build-cov/
 ```
 
-Coverage targets intentionally run only the end-to-end testers, not `sa-unit-tester`/`codegen-unit-tester` — the goal is measuring what's reachable through the real binaries and finding dead code; unit tests would exercise paths a real binary never reaches. `make` (no coverage) runs all seven testers. `build/` is optimized because the end-to-end testers spend most of their time running the tools themselves (an unoptimized build makes the test run about 3x slower); an existing `build/` configured as Debug needs `make clean` first.
+Coverage targets intentionally run only the end-to-end testers, not `sa-unit-tester`/`codegen-unit-tester` — the goal is measuring what's reachable through the real binaries and finding dead code; unit tests would exercise paths a real binary never reaches. `make` (no coverage) runs all eight testers. `build/` is optimized because the end-to-end testers spend most of their time running the tools themselves (an unoptimized build makes the test run about 3x slower); an existing `build/` configured as Debug needs `make clean` first.
 
 **Dependencies:** g++ (C++20), CMake 3.16+, Flex, Bison 3.8+, libboost-dev, libfl-dev, lcov
 
@@ -43,6 +43,7 @@ cd build && bin/sa-unit-tester        # Semantic analyzer unit tests
 cd build && bin/codegen-tester        # Code generator tests
 cd build && bin/codegen-unit-tester   # Code generator unit tests
 cd build && bin/build-mgr-tester      # Build manager integration tests
+cd build && bin/std-tester            # Standard library tests (std is built into build/ by CMake)
 ```
 
 ### Running a Single Test
@@ -134,11 +135,12 @@ src/
 │   ├── PlnX86Mem.cpp    Memory/address instruction emission
 │   ├── PlnDeserialize.* sa.json → Module
 │   └── PlnCodeGen.h     Abstract base class
-└── common/          Shared utilities (PlnProcess — argv-based child process spawning; PlnInterface — writes a module's interface)
+├── common/          Shared utilities (PlnProcess — argv-based child process spawning; PlnInterface — writes a module's interface)
+└── std/             The standard library, in Palan (CMakeLists.txt lists its public mains)
 test/
 ├── testdata/        Test input files (numbered sequentially per tool)
 ├── test-base/       Shared test helpers (execTestCommand, cleanTestEnv)
-└── *-tester/        Seven gtest binaries, one per suite listed above
+└── *-tester/        Eight gtest binaries, one per suite listed above
 doc/
 ├── SpecAndDesign.md  Language spec and toolchain design
 ├── ASTSpec.md        JSON AST format specification (palan-gen-ast output)

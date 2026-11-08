@@ -34,6 +34,13 @@ static string outPath(const string& name)
 	return (fs::current_path() / "out" / name).string();
 }
 
+static string usesStd()
+{
+	string path = outPath("uses_std.pa");
+	ofstream(path) << "import <std/utf8>;\ncinclude <stdio.h>;\nprintf(\"%d\\n\", seqLen(226));\n";
+	return path;
+}
+
 static set<string> filesUnder(const fs::path& root)
 {
 	set<string> files;
@@ -55,6 +62,9 @@ static set<string> expectedFiles()
 		lib + "tools/palan-sa",
 		lib + "tools/palan-codegen",
 		lib + "x86_64-linux-gnu/c2ast/predefined.h",
+		lib + "x86_64-linux-gnu/std/utf8.pai",
+		lib + "x86_64-linux-gnu/std/utf8.a",
+		lib + "src/std/utf8.pa",
 		lib + "uninstall",
 		doc + "README.md",
 		doc + "LICENSE",
@@ -106,6 +116,7 @@ TEST(install, root_can_move) {
 	fs::rename(root, moved);
 
 	ASSERT_EQ(execTestCommand(moved + "/bin/palan " + HELLO), "Hello World!\n");
+	ASSERT_EQ(execTestCommand(moved + "/bin/palan " + usesStd()), "3\n");
 }
 
 // `std` comes from the tools' own version, and a libpath holding one cannot stand in for it.
@@ -113,14 +124,11 @@ TEST(install, std_library_is_found_with_the_tools) {
 	cleanTestEnv();
 	string root = outPath("root");
 	ASSERT_EQ(install(root), 0);
+	EXPECT_EQ(execTestCommand(root + "/bin/palan " + usesStd()), "3\n");
+
 	fs::create_directories("out/src");
-	ofstream("out/src/one.pa") << "library std;\nexport func one() -> int32 { return 1; }\n";
-	ASSERT_EQ(execTestCommand(root + "/bin/palan --lib -o " + root + "/lib/palan/" + VERSION + "/" PALAN_TARGET " out/src/one.pa"), "");
 	ofstream("out/src/two.pa") << "library std;\nexport func two() -> int32 { return 2; }\n";
 	ASSERT_EQ(execTestCommand(root + "/bin/palan --lib -o out/decoy out/src/two.pa"), "");
-
-	ofstream("out/uses.pa") << "import <std/one>;\ncinclude <stdio.h>;\nprintf(\"%d\\n\", one());\n";
-	EXPECT_EQ(execTestCommand(root + "/bin/palan out/uses.pa"), "1\n");
 
 	string decoyed = outPath("decoyed.pa");
 	ofstream(decoyed) << "libpath \"decoy\";\nimport <std/two>;\n";

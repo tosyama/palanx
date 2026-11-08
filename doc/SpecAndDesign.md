@@ -392,7 +392,7 @@ into a program uses them too, in place of the program's.
 Implemented: module identity, `import "..."` resolution, the `.pai` form and reading it,
 `palan-gen-ast --interface` for one module, skipping steps whose result is still valid (5.1), `palan
 --lib` and archives, merging and narrowing a library's modules, and a library module's own allocators
-(3.6), `import <...>` and `libpath`.
+(3.6), `import <...>` and `libpath`, building `std` in the build tree (6.2).
 
 **Module identity.** A module's identity is the module part of its symbols (SASpec.md's Symbol
 names). It comes from its source alone, never from the entry or the source's location:
@@ -653,10 +653,13 @@ it is per target.
 
 ### 6.2 Build Tree, Installation and Release
 - Build tree: `build/` has this layout with `dev` in place of `<version>`, since a tool never reads
-  the name and the path stays the same when the version changes. `uninstall` and the documents are
-  left out, since only an installation needs them, and the testers are in `build/bin/`, since the
+  the name and the path stays the same when the version changes. `uninstall`, the documents and
+  `src/std/` are left out, since only an installation needs them, and the testers are in `build/bin/`, since the
   layout holds only what is installed. CMake builds the tools, then builds `std` from `src/std/`
-  with them (again when a tool or a source changes), then the testers. `std-tester` runs it.
+  with them, then the testers. `std-tester` runs it. CMake lists the public mains and runs `--lib`
+  for each in one step, again when a tool or any source in `src/std/` changes, since `--lib` does not
+  detect an older copy of a shared module (3.7). That step keeps its work files in the build tree,
+  not in the user's `~/.palan/work/`.
 - Installation: `cmake --install` writes the layout to the prefix, or under `DESTDIR` as a package
   build does. Every destination is relative to the prefix, and `uninstall` and the documents are
   separate components, so that a package can leave them out. A test installs to a temporary
