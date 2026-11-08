@@ -1,0 +1,4 @@
+type Str { $[+]uint8 bytes; };
+Str s;
+[+]uint8 b;
+b ->> s.bytes;

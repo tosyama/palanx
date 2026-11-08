@@ -786,14 +786,11 @@ TEST(sa_error, ptr_slot_arr)
 
 TEST(sa_error, embed_owning_struct)
 {
-	// Owned array fields count as owning just like owned struct fields,
-	// and a plain $T field is rejected the same way as [n]$T.
+	// Owned array fields count as owning just like owned struct fields.
 	const pair<string, string> cases[] = {
 		{"error_326_embed_arr_owning_arr_field.pa", ":2:1: error: cannot embed 'W' with '$': it owns storage of its own"},
 		{"error_327_embed_arr_2d_owning_arr_field.pa", ":2:1: error: cannot embed 'W' with '$': it owns storage of its own"},
 		{"error_328_embed_arr_field_owning_arr_field.pa", ":2:1: error: cannot embed 'W' with '$': it owns storage of its own"},
-		{"error_329_embed_field_owning_arr_field.pa", ":2:1: error: cannot embed 'W' with '$': it owns storage of its own"},
-		{"error_330_embed_field_owning_struct_field.pa", ":3:1: error: cannot embed 'Rect' with '$': it owns storage of its own"},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

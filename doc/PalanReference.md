@@ -1933,7 +1933,7 @@ Struct-type fields are written with a prefix that controls ownership and memory 
 
 | Syntax     | Meaning                              | Memory          |
 |------------|--------------------------------------|-----------------|
-| `$T field` | Inline embedding — T's bytes are part of the parent struct's allocation | parent's block  |
+| `$T field` | Inline embedding — T's bytes are part of the parent struct's allocation; what T owns is allocated, copied and freed with the parent | parent's block  |
 | `T field`  | Owned pointer — 8-byte pointer; T is auto-allocated/freed with parent | `__pln_alloc_T` |
 | `@T field` | Non-owning read-only pointer — 8-byte pointer; lifecycle is user-managed; pointer value may be set but field write-through is not allowed | none            |
 | `@!T field`| Non-owning mutable pointer — same as `@T` but field write-through is also allowed | none            |
@@ -1967,6 +1967,7 @@ An array field takes the type an array variable can, with the same meaning. Wher
 | `[n]T field`, `[n]$T field`, `[n][m]T field`, `[n][+]T field`, `[+]T field`, ... | Owned array, as an array variable of that type | cascaded alloc/free with parent |
 | `$[n]T field` (primitive `T`), `$[n]$T field` (struct `T`), `$[n]$[m]T field`, ... | Array laid out in the struct | parent's block |
 | `$[n]T field` (struct `T`), `$[n][m]T field`, `$[n][+]T field`, ... | Array laid out in the struct, holding elements that own storage | parent's block (slots); elements cascade with parent's alloc/free |
+| `$[+]T field` | Variable-length array whose header is laid out in the struct | parent's block (header); elements cascade with parent's alloc/free |
 | `$[n]@T field` / `$[n]@!T field` | Non-owning pointer slots laid out in the struct | parent's block (slots only) |
 
 `n` (and each `m`) must be a compile-time integer: a literal, a [const](#constant-declarations),
@@ -1976,7 +1977,8 @@ is copied with it. When its elements own storage (`$[n]T` with a struct `T`, `$[
 `$[n][+]T`), their slots lie in the struct and the elements are allocated, copied and freed
 with it, as those of an array variable in the stack frame are with the variable; a struct
 with such a field owns storage itself. `$` on an element that owns storage is rejected as for
-a variable.
+a variable. A `$[+]T` field starts empty and is used as a `[+]T` field is, but, like a `$[+]T`
+variable, it cannot be given away or taken over with `->>`.
 `field[i]` accesses an element; for struct-leaf forms, `field[i].sub` continues the field
 chain.
 

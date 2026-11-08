@@ -24,7 +24,7 @@ using json = nlohmann::json;
 
 struct FieldLayout {
 	string name;
-	string typeKind;   // "prim" | "embed" | "owned" | "raw-ptr" | "embed-arr"
+	string typeKind;   // "prim" | "embed" | "owned" | "raw-ptr" | "embed-arr" | "embed-varr"
 	string typeName;   // prim type name, embed struct name, raw-ptr base type name
 	bool   isMutable;  // raw-ptr: @T=false, @!T=true
 	int    offset;     // byte offset from struct start (C ABI aligned)

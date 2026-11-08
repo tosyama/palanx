@@ -617,26 +617,42 @@ void PlnSemanticAnalyzer::recordAllocShape(const string& name)
 		});
 		return;
 	}
-	const StructDef& def = structDefs_[name];
 	// An owned field is a slot holding an element, built, dropped and copied
 	// as an array's is; its helpers take its lengths. An array laid out in the
 	// struct holding owned elements is one such element, a row laid out in place.
+	// A struct laid out in the struct contributes its own owned fields at their
+	// place in it, so the allocators need not know it is nested.
 	json owned = json::array();
-	for (auto& f : def.fields) {
-		bool inPlace = f.typeKind == "embed-arr";
-		if (f.typeKind != "owned" && !(inPlace && ownsElems(f.type))) continue;
-		// LCOV_EXCL_BR_START
-		json lens = json::array();
-		for (const json* level : helperLevels(f.type))
-			lens.push_back((*level)["arr-size"]);
-		owned.push_back({
-			{"name",   f.name},
-			{"offset", f.offset},
-			{"elem",   allocElemDesc(layoutElem(f.type), inPlace)},
-			{"lens",   move(lens)}
-		});
-		// LCOV_EXCL_BR_STOP
-	}
+	function<void(const StructDef&, int, const string&)> collect = [&](const StructDef& def, int base, const string& prefix) {
+		for (auto& f : def.fields) {
+			if (f.typeKind == "embed") {
+				const StructDef& sub = structDefs_.at(f.typeName);
+				if (sub.ownsFields) collect(sub, base + f.offset, prefix + f.name + ".");
+				continue;
+			}
+			bool inPlace = f.typeKind == "embed-arr";
+			bool isEmbedVarr = f.typeKind == "embed-varr";
+			if (f.typeKind != "owned" && !isEmbedVarr && !(inPlace && ownsElems(f.type))) continue;
+			// LCOV_EXCL_BR_START
+			json lens = json::array();
+			for (const json* level : helperLevels(f.type))
+				lens.push_back((*level)["arr-size"]);
+			json elem = allocElemDesc(layoutElem(f.type), inPlace);
+			if (isEmbedVarr) {
+				elem["kind"] = "embed-varr";
+				elem["size"] = f.size;
+			}
+			owned.push_back({
+				{"name",   prefix + f.name},
+				{"offset", base + f.offset},
+				{"elem",   move(elem)},
+				{"lens",   move(lens)}
+			});
+			// LCOV_EXCL_BR_STOP
+		}
+	};
+	const StructDef& def = structDefs_[name];
+	collect(def, 0, "");
 	// LCOV_EXCL_BR_START
 	sa["alloc-shapes"].push_back({
 		{"shape-kind",   "struct"},

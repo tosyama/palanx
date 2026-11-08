@@ -51,11 +51,6 @@ static json pointeeFuncType(const PointeeLeaf& leaf)
 // C pointer slot keeps its place even when its pointee cannot be accessed.
 FieldLayout PlnSemanticAnalyzer::inlineArrField(const json& locNode, const string& structName, const json& arr)
 {
-	if (isVarrAstType(arr)) {
-		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_EmbedOwningType,
-		                                  typeDisplayName(ownedFieldType(locNode, arr))) << endl;
-		exit(1);
-	}
 	const json* leaf = &arr;
 	for (; leaf->value("type-kind", "") == "arr" && !isVarrAstType(*leaf); leaf = &(*leaf)["base-type"]) {
 		if ((*leaf)["size-expr"].is_null()) {
@@ -170,6 +165,12 @@ StructDef PlnSemanticAnalyzer::buildStructDef(const string& name, const json& fi
 				                      .typeName=tname, .isMutable=false,
 				                      .offset=at, .size=sz, .enumName=vtype.value("enum", "")});
 			}
+		} else if (tk == "embed" && isVarrAstType(vtype["base-type"])) {
+			// `$[+]U`: the header laid out in the struct, as `$[+]U` lays it out in a frame.
+			int at = place(24, 8);
+			def.fields.push_back({.name=fieldName, .typeKind="embed-varr", .isMutable=false,
+			                      .offset=at, .size=24, .type=ownedFieldType(locNode, vtype["base-type"])});
+			def.ownsFields = true;
 		} else if (tk == "embed" && vtype["base-type"].value("type-kind", "") == "arr") {
 			// `$[n]U`: the array laid out in the struct, as `$[n]U` lays it out in a frame.
 			FieldLayout fl = inlineArrField(locNode, name, vtype["base-type"]);
@@ -205,10 +206,7 @@ StructDef PlnSemanticAnalyzer::buildStructDef(const string& name, const json& fi
 				                                  sub.incompleteReason, sub.keyword()) << endl;
 				exit(1);
 			}
-			if (sub.ownsFields) {
-				cerr << errPrefix << PlnSaMessage::getMessage(E_EmbedOwningType, structName) << endl;
-				exit(1);
-			}
+			if (sub.ownsFields) def.ownsFields = true;
 			int align = sub.maxAlign;
 			int at = place(sub.totalSize, align);
 			if (sub.hasUnalignedField) def.hasUnalignedField = true;
@@ -1333,7 +1331,7 @@ void PlnSemanticAnalyzer::adoptStruct(PlnSemanticAnalyzer& sub, const string& na
 	}
 	if (!adopted) return;
 	for (auto& f : def.fields) {
-		if (f.typeKind == "owned" || f.typeKind == "embed-arr") {
+		if (f.typeKind == "owned" || f.typeKind == "embed-arr" || f.typeKind == "embed-varr") {
 			adoptTypeDeps(sub, f.type, locNode);
 			// The defining module got the builtins of each `[+]U` level from
 			// varrStorageType; a field access here needs them too.

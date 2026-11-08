@@ -419,14 +419,15 @@ inline string fieldStructName(const FieldLayout& f)
 // An array a struct literal gives the field, embedded or owned.
 inline bool isLitArrField(const FieldLayout& f)
 {
-	return f.typeKind == "embed-arr" || (f.typeKind == "owned" && (isArrLevel(f.type) || isVarrStorage(f.type)));
+	return f.typeKind == "embed-arr" || f.typeKind == "embed-varr"
+	    || (f.typeKind == "owned" && (isArrLevel(f.type) || isVarrStorage(f.type)));
 }
 
 inline json fieldValueType(const FieldLayout& f)
 {
 	if (f.typeKind == "prim")
 		return fieldPrimLeaf(f);
-	if (f.typeKind == "owned" || f.typeKind == "embed-arr")
+	if (f.typeKind == "owned" || f.typeKind == "embed-arr" || f.typeKind == "embed-varr")
 		return f.type;
 	if (f.typeKind == "raw-ptr")
 		return {{"type-kind","pntr"},{"base-type",fieldPointeeType(f)},{"mutable",f.isMutable}};
@@ -500,8 +501,8 @@ inline void classifySysVWalk(const StructDef& d, int base, int nEightbytes,
 		int off = base + f.offset;
 		if (f.typeKind == "prim") {
 			markPrim(off, f.typeName, f.size);
-		} else if (f.typeKind == "raw-ptr" || f.typeKind == "owned") {
-			markInt(off, 8);
+		} else if (f.typeKind == "raw-ptr" || f.typeKind == "owned" || f.typeKind == "embed-varr") {
+			markInt(off, f.size);
 		} else if (f.typeKind == "embed") {
 			classifySysVWalk(defs.at(f.typeName), off, nEightbytes, defs, ebs);
 		} else if (f.typeKind == "embed-arr") {

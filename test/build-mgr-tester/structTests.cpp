@@ -1389,3 +1389,9 @@ TEST(build_mgr, operator_func_mtrace) {
 TEST(build_mgr, chain_ahead_of_receiver_mtrace) {
 	expectMtraceRun("386_chain_ahead_of_receiver_mtrace", "5\n1 4\n1 4\n1 5\n4\n4\n4\n", 10);
 }
+
+// A `[+]T` header laid out in a struct, directly or in a struct laid out in
+// it, is built, copied and freed with the struct wherever the struct lives.
+TEST(build_mgr, field_embed_varr_mtrace) {
+	expectMtraceRun("399_field_embed_varr_mtrace", "Hi 3\nHi Hi!\n9 A 0 2\nA N 5 1\n3 5\n", 35);
+}

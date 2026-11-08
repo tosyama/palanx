@@ -132,11 +132,15 @@ Root
     (`$[n]T field`, `$[n][m]U field`, `$[n]$[m]T field`, ...). Each is one element built,
     dropped and copied as an array element of that type is (a `[+]U` field's header is built
     empty with its struct); an array laid out in the struct is a row laid out in place, the run
-    of its elements' slots:
-    - name\* - Field name string
+    of its elements' slots. A `$[+]U field` is its header laid out in the struct, built empty
+    with it (`__pln_init_varr_U(h, 0, 0)`), released with `__pln_fini_varr_U` and copied with
+    `__pln_copy_varr_U`. A `$T field` of a struct owning fields lists `T`'s owned fields in
+    place of itself, at their offsets in the outer struct and named by their path (`name.bytes`):
+    - name\* - Field name string, or the path to it through structs laid out in the struct
     - offset\* - Byte offset within the struct
     - elem\* - The element, as in the arr and varr entries (`"struct"` for `T`, `"varr"` for
-      `[+]U`, `"row"` for an owned array, `"embed-row"` for an array laid out in the struct)
+      `[+]U`, `"row"` for an owned array, `"embed-row"` for an array laid out in the struct),
+      or `"embed-varr"` for `$[+]U`: the varr element's description with `"size"` 24
     - lens\* - The lengths of the field's levels, outermost first and on through the elements
       of a `[+]U`, which its element's helpers take (`[3]`, `[3, 4]`; empty for `T`)
 
@@ -527,7 +531,12 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   - A field `[+]U` is an owned field (see the struct entry of alloc-shapes): its header is built
     empty with the struct, and `s.a[i]`, the builtins, borrows, copies and `->>` treat `s.a` as a
     `[+]U` variable. A struct literal resizes it to the literal's count before storing the
-    elements, as an inner row. `$[+]U` is E_EmbedOwningType and `[+n]U` is E_VarrElemSized.
+    elements, as an inner row. `[+n]U` is E_VarrElemSized.
+  - A field `$[+]U` lays the 24-byte header out in the struct. `s.a` is a `field-access` with
+    `addr-only: true` and the same `pntr(varr(E))` type as an owned `[+]U` field, so everything
+    above applies to it, except that it is neither the source nor the target of `->>`
+    (E_TransferFromNonOwner, E_TransferToNonOwnedField), as the header of a `$[+]U` variable.
+    `$[n]$[+]U` is E_EmbedOwningType.
 
   **`[]$[m]T` (unsized embedded array parameter):** Normalized by SA to the same
   `pntr(pntr(T, arr-size:m), embedded:true, stride:m*sizeof(T))` type as the sized form. The inner dimension `m`

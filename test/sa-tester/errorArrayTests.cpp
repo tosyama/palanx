@@ -334,7 +334,6 @@ TEST(sa_error, field_arr_level_errors)
 	// An owned field's every level is checked as the field's own.
 	const pair<string, string> cases[] = {
 		{"error_324_field_2d_embed_prim.pa", ":1:1: error: '$' applies only to a struct element or a '$[m]' row, not 'int32'."},
-		{"error_524_field_embed_varr.pa", ":1:1: error: cannot embed '[+]int32' with '$': it owns storage of its own; use '[+]int32' without '$'."},
 		{"error_804_field_row_size_not_const.pa", ":3:2: error: struct field array size must be a compile-time constant integer; 'n' is not a const."},
 		{"error_805_field_unsized_row.pa", ":1:1: error: unsupported struct field type."},
 		{"error_806_field_ptr_slot_rows.pa", ":1:1: error: unsupported struct field type."},
@@ -342,7 +341,6 @@ TEST(sa_error, field_arr_level_errors)
 		{"error_809_field_sized_varr.pa", ":1:1: error: a variable-length array element is written '[+]T', without a size: it starts empty."},
 		{"error_810_field_embed_varr_rows.pa", ":1:1: error: cannot embed '[+]int32' with '$': it owns storage of its own; use '[+]int32' without '$'."},
 		{"error_811_field_inline_embed_owning.pa", ":2:1: error: cannot embed 'O' with '$': it owns storage of its own; use 'O' without '$'."},
-		{"error_812_field_inline_owned_embed.pa", ":3:1: error: cannot embed 'S' with '$': it owns storage of its own; use 'S' without '$'."},
 		{"error_813_field_embed_prim.pa", ":1:1: error: '$' applies only to a struct element or a '$[m]' row, not 'int32'."},
 	};
 	for (auto& [file, expected] : cases) {
@@ -494,6 +492,8 @@ TEST(sa_error, varr)
 		{"error_751_arrow_after_cmp.pa", ":2:5: error: '->' binds tighter than '<'; parenthesize the operation to store its result: '(a < b) -> c'."},
 		{"error_752_arrow_after_logical.pa", ":2:7: error: '->' binds tighter than '&&'; parenthesize the operation to store its result: '(a && b) -> c'."},
 		{"error_753_varr_transfer_from_frame.pa", ":3:1: error: '->>' needs a source that owns its value: an owning variable, an owned field or element, a call result, or a pointer viewed as an owner ('p as T')."},
+		{"error_945_transfer_from_embed_varr.pa", ":4:1: error: '->>' needs a source that owns its value: an owning variable, an owned field or element, a call result, or a pointer viewed as an owner ('p as T')."},
+		{"error_946_transfer_to_embed_varr.pa", ":4:1: error: '->>' needs a field that owns its value (T or [n]T); 'bytes' does not."},
 		{"error_754_varr_param_elem_mismatch.pa", ":3:1: error: cannot convert '[+]int64' to '[+]int32'."},
 		{"error_755_varr_named_ret_init.pa", ":1:26: error: named return 'r' of a struct or array type cannot have an initializer."},
 		{"error_756_varr_return_borrow_mismatch.pa", ":2:2: error: cannot copy '@[+]int64' into '[+]int32': both need the same element type and layout, and the same sizes where both are known at compile time; a size known only at run time must be its owner's."},

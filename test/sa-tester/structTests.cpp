@@ -1331,6 +1331,36 @@ TEST(sa, struct_multilevel_fields)
 	ASSERT_EQ(m["base-type"]["base-type"]["type-name"], "int32");
 }
 
+// A `[+]T` header laid out in a struct is built with it, and a struct laid out
+// in another brings its owned fields along at their place in the outer one.
+TEST(sa, field_embed_varr)
+{
+	cleanTestEnv();
+	json jout = written(run_sa("../test/testdata/sa/334_field_embed_varr.pa"));
+	ASSERT_TRUE(jout.is_object());
+	json s;
+	for (auto& sh : jout["alloc-shapes"])
+		if (sh.value("shape-kind", "") == "struct") s = sh;
+	ASSERT_EQ(s["shape-name"], "Named");
+	ASSERT_EQ(s["total-size"], 48);
+	const auto& owned = s["owned-fields"];
+	ASSERT_EQ(owned.size(), 2u);
+	ASSERT_EQ(owned[0]["name"], "name.bytes");
+	ASSERT_EQ(owned[0]["offset"], 16);
+	ASSERT_EQ(owned[0]["elem"]["kind"], "embed-varr");
+	ASSERT_EQ(owned[0]["elem"]["shape-key"], "varr_int8");
+	ASSERT_EQ(owned[0]["elem"]["size"], 24);
+	ASSERT_EQ(owned[1]["name"], "xs");
+	ASSERT_EQ(owned[1]["offset"], 40);
+	ASSERT_EQ(owned[1]["elem"]["kind"], "varr");
+
+	const auto& h = jout["statements"][1]["body"]["args"][0];
+	ASSERT_EQ(h["expr-type"], "field-access");
+	ASSERT_EQ(h["offset"], 16);
+	ASSERT_TRUE(h["addr-only"].get<bool>());
+	ASSERT_EQ(h["value-type"]["base-type"]["type-kind"], "varr");
+}
+
 // Elements laid out alike share their functions: integers of one width and
 // structs of one size owning nothing; a float has a layout of its own.
 TEST(sa, layout_share)

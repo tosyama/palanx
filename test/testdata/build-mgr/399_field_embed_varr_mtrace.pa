@@ -1,0 +1,45 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+import "lib_field_embed_varr.pa";
+
+func blen(@[+]uint8 b) -> int64 { return len(b); }
+func addz(@![+]uint8 b) { b.push(0); }
+func mk(int64 id) -> Named r {
+	id -> r.id;
+	r.name.bytes.push(78);
+	r.name.bytes.push(0);
+}
+
+func run() {
+	Str s = {bytes: [72, 105], valid: true};
+	addz(@!s.bytes);
+	printf("%s %ld\n", s.bytes, blen(@s.bytes));
+	Str t = s;
+	t.bytes.pop();
+	t.bytes.push(33);
+	t.bytes.push(0);
+	printf("%s %s\n", s.bytes, t.bytes);
+
+	$Named f = mk(4);
+	Named c = {id: 9, name: [false, [65, 0]], xs: [1, 2]};
+	c -> f;
+	f.name.bytes.resize(0);
+	printf("%ld %s %ld %d\n", f.id, c.name.bytes, len(@f.name.bytes), f.xs[1]);
+
+	[2]Named arr;
+	c -> arr[1];
+	[+]Named vs;
+	vs.push(c);
+	vs.push(mk(5));
+	Named p = vs.pop();
+	printf("%s %s %ld %ld\n", arr[1].name.bytes, p.name.bytes, p.id, len(@vs));
+
+	$Deep d;
+	3 -> d.s.a[1].x;
+	5 -> d.tl.y;
+	Deep e = d;
+	printf("%d %ld\n", e.s.a[1].x, e.tl.y);
+}
+mtrace();
+run();
+muntrace();

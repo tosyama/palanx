@@ -151,8 +151,9 @@ void writeAllocatorsSource(ostream& out, const PlnAllocShapes& shapes, const str
 			return e;
 		}
 		e.type = kind == "prim" ? desc["type"] : desc["name"];
-		e.nlens = kind == "varr" ? opsOf(*varrElemDescs.at(e.inner)).nlens : 0;
-		e.owned = kind == "struct" || kind == "varr";
+		bool isVarr = kind == "varr" || kind == "embed-varr";
+		e.nlens = isVarr ? opsOf(*varrElemDescs.at(e.inner)).nlens : 0;
+		e.owned = kind == "struct" || isVarr;
 		e.embedded = kind == "embed-struct";
 		e.buildElem = "@!" + e.type;
 		e.declElem = e.buildElem;
@@ -208,6 +209,7 @@ void writeAllocatorsSource(ostream& out, const PlnAllocShapes& shapes, const str
 	// data starts undefined, as an array variable's does; its owned
 	// elements are built at once, so no slot is left unset.
 	auto elemBuild = [&](const ElemOps& e, const string& slot, const string& indent, const vector<string>& names) {
+		if (e.kind == "embed-varr") return indent + "__pln_init_" + e.inner + "(@!" + slot + ", 0, 0" + lenArgs(names) + ");\n";
 		if (e.kind == "embed-row") return indent + "__pln_build_" + e.key + "(" + slot + " as " + e.data + ", 0, 1" + lenArgs(names) + ");\n";
 		if (e.kind == "varr") return indent + "calloc(1, 24) -> " + slot + ";\n";
 		if (e.kind == "row") {
@@ -220,6 +222,7 @@ void writeAllocatorsSource(ostream& out, const PlnAllocShapes& shapes, const str
 	}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 	// A row moved out by `->>` leaves NULL in its slot.
 	auto elemDrop = [&](const ElemOps& e, const string& slot, const string& indent, const vector<string>& names) {
+		if (e.kind == "embed-varr") return "__pln_fini_" + e.inner + "(@!" + slot + lenArgs(names) + ");";
 		if (e.kind == "embed-row") return "__pln_drop_" + e.key + "(" + slot + " as " + e.data + ", 0, 1" + lenArgs(names) + ");";
 		if (e.kind == "varr") return "__pln_free_" + e.inner + "(" + slot + lenArgs(names) + ");";
 		if (e.kind == "row") {
@@ -232,6 +235,8 @@ void writeAllocatorsSource(ostream& out, const PlnAllocShapes& shapes, const str
 	}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 	// dst is the slot as its build fills it, a writable reference.
 	auto elemSet = [&](const ElemOps& e, const string& dst, const string& src, const vector<string>& names) {
+		if (e.kind == "embed-varr")
+			return "__pln_copy_" + e.inner + "(@!" + dst + ", " + src + ".data, " + src + ".len" + lenArgs(names) + ");";
 		if (e.kind == "embed-row")
 			return "__pln_copyrun_" + e.key + "(" + dst + " as " + e.data + ", " + src + " as " + e.data + ", 1" + lenArgs(names) + ");";
 		if (e.kind == "varr")
@@ -323,14 +328,22 @@ void writeAllocatorsSource(ostream& out, const PlnAllocShapes& shapes, const str
 		// A row laid out in place is a run of its elements' slots, which its
 		// helpers take as a data pointer, as a `[+]T`'s, since an array of
 		// these slots would not pass where owned ones are expected.
+		// A `[+]T` header laid out in the struct is declared as the header
+		// type, which owns nothing here. The slots are named by position, since
+		// a nested struct's owned fields come with the path to them.
 		vector<tuple<int64_t, string, int64_t>> owned_decls;
+		int slot_no = 0;
 		for (auto& of : shape.value("owned-fields", json::array())) {
 			ElemOps e = opsOf(of["elem"]);
+			string slot = "__pln_o" + to_string(slot_no++);
+			if (e.kind == "embed-varr") {
+				owned_decls.push_back({of["offset"].get<int64_t>(), "$" + e.type + " " + slot, e.size});
+				continue;
+			}
 			int64_t count = 1;
 			for (int i = 0; i < e.depth; i++) count *= of["lens"][i].get<int64_t>();
 			string run = e.kind == "embed-row" ? "$[" + to_string(count) + "]" : "";
-			owned_decls.push_back({of["offset"].get<int64_t>(),
-				run + e.buildElem + " " + of["name"].get<string>(), count * 8});
+			owned_decls.push_back({of["offset"].get<int64_t>(), run + e.buildElem + " " + slot, count * 8});
 		}
 		sort(owned_decls.begin(), owned_decls.end());
 
@@ -359,7 +372,7 @@ void writeAllocatorsSource(ostream& out, const PlnAllocShapes& shapes, const str
 		struct OwnedField { string slot; ElemOps e; vector<string> lens; };
 		vector<OwnedField> owned;
 		for (auto& of : shape["owned-fields"]) {
-			OwnedField f{of["name"], opsOf(of["elem"]), {}}; // LCOV_EXCL_BR_LINE
+			OwnedField f{"__pln_o" + to_string(owned.size()), opsOf(of["elem"]), {}}; // LCOV_EXCL_BR_LINE
 			for (auto& len : of["lens"]) f.lens.push_back(to_string(len.get<int64_t>()));
 			if (f.e.kind == "embed-row") emitElemHelpers(f.e);
 			else if (f.e.leaf) emitElemHelpers(*f.e.leaf);
