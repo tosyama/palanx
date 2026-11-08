@@ -802,6 +802,22 @@ TEST(sa_error, embed_owning_struct)
 	}
 }
 
+TEST(sa_error, field_init)
+{
+	const pair<string, string> cases[] = {
+		{"error_947_field_init_not_const.pa", ":2:27: error: the initializer of field 'x' must be a compile-time constant."},
+		{"error_948_field_init_unsupported.pa", ":2:16: error: field 'p' cannot have an initializer in this version: only a primitive field or a one-dimensional array of primitives can."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
 TEST(sa_error, struct_field_size)
 {
 	const pair<string, string> cases[] = {

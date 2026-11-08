@@ -188,3 +188,9 @@ A variable-length array (v0.2.1) adds a shorter-lived case: `push` and `resize` 
 ## 27. A Library's Public Declarations Cannot Use a Local Header's C Types
 
 **Summary:** `palan --lib` reports an error when a public declaration needs a type of `cinclude "x.h" export T;`, since the `.pai` would name a path only the build machine has (v0.2.4). Supporting it means installing the header beside the `.pai`, along with the local headers it includes, and rules for where they go. To be decided when a real library needs it.
+
+---
+
+## 28. Field Initializers Take Only Primitives and One-Dimensional Arrays of Them
+
+**Summary:** A field initializer is a compile-time constant for a primitive field or a one-dimensional array of primitives (v0.2.4); any other field with one is E_FieldInitUnsupported. A struct field given a struct value (`Point p = {x: 1};`), an array of structs and an array of more dimensions would follow the same scheme, palan-sa listing the values in the struct's shape for the generated allocators to store, with more kinds of entry to describe where each value goes. A pointer field initialized to `NULL` is a separate question, since nothing yet treats a pointer field as having a known value. To be extended when a type needs it.

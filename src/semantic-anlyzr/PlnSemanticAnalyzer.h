@@ -45,6 +45,7 @@ struct FieldLayout {
 	// field (`$[n]...`) is the array laid out in the struct, typed as a
 	// variable whose array is laid out in a frame.
 	json    type;
+	json    initAst;   // the field's initializer as written; null when it has none
 };
 
 // Where an aggregate variable's outermost storage block lives: `$T v;` puts it
@@ -72,6 +73,7 @@ struct AggregatePlace {
 	int64_t frameBytes;
 	int frameAlign;
 	optional<AllocShapeRef> shape;
+	json build;   // what builds structs with initializers laid out in the block, once obtained
 };
 
 struct StructDef {
@@ -80,6 +82,11 @@ struct StructDef {
 	int  totalSize = -1;
 	int  maxAlign  = 0;
 	bool ownsFields = false;  // has an owned field
+	// Has a field initializer, its own or one of a struct laid out in it, so it
+	// is built wherever it comes to exist. `inits` lists its own, as in alloc-shapes.
+	bool hasInits = false;
+	json inits = json::array();
+	bool built() const { return ownsFields || hasInits; }
 	// false = tag is known but its layout isn't (C incomplete-type equivalent, e.g. FILE).
 	// Only usable through a pointer (@T/@!T); buildStructDef sets this true on success.
 	bool   isComplete = false;
@@ -536,6 +543,8 @@ class PlnSemanticAnalyzer {
 	bool isWrittenNameTaken(const string& name) const;  // isDeclNameTaken but for topDecls_
 	static void addDeclaredVarNames(const json& stmt, set<string>& names);
 	json sa_struct_def(const json& stmt);         // consume struct-def, register in structDefs_
+	void setFieldInits(StructDef& def, const json& fields);
+	json initRunCall(const string& structName, json run, json count);
 	StructDef buildStructDef(const string& name, const json& fields, const json& locNode,
 	                         bool isUnion = false, bool packed = false, int aligned = 1);
 	int64_t fieldArrSize(const json& locNode, const json& sizeExpr);

@@ -144,6 +144,24 @@ Root
     - lens\* - The lengths of the field's levels, outermost first and on through the elements
       of a `[+]U`, which its element's helpers take (`[3]`, `[3, 4]`; empty for `T`)
 
+  - inits - The struct's field initializers, constants palan-sa has evaluated, its own and
+    those of structs laid out in it at their offsets there (omitted when it has none). A struct
+    with initializers has a struct entry even when it owns nothing. Each is stored after the owned
+    fields are built:
+    - offset\* - Byte offset within the struct
+    - kind\* - `"prim"` (a primitive field), `"run"` (`$[n]T`), `"row"` (`[n]T`, the owned field
+      at the same offset), `"varr"` / `"embed-varr"` (`[+]T` / `$[+]T`, the owned field at the same
+      offset, resized to the count of `values` first), or `"structs"` (a `$[n]$P` field with `P`
+      a struct with initializers, built by `__pln_initrun_P`)
+    - type - The values' type as the generated module stores it: an integer as the signed integer
+      of its width (`uint8` and `bool` as `int8`), a float as itself (not for `"structs"`)
+    - values - The values, as literal text in that type (`200` of a `uint8` is `-56`; not for `"structs"`)
+    - name, count - For `"structs"`: the struct and how many of it the field lays out
+    A struct with initializers that owns nothing also has `__pln_initrun_P(@!P run, int64 from,
+    int64 to)`, which builds `run[from]` to `run[to - 1]`. palan-sa calls it after obtaining an
+    array laid out in one block (`[n]$P`, `[m]$[n]$P`); the generated helpers call it wherever
+    elements laid out in place come into use (`[+]$P`'s resize, a row block of `$P`).
+
   Non-owned fields are deliberately not described: build-mgr re-declares the struct in the
   generated allocator module with only the owned fields at their offsets and opaque padding
   elsewhere, because the full layout cannot always be re-expressed as Palan source (C unions,

@@ -932,6 +932,8 @@ type_members: type_member
 
 type_member: type_expr ID ';'
 	{ $$ = {{"name", move($2)}, {"var-type", move($1)}}; } // LCOV_EXCL_BR_LINE
+	| type_expr ID '=' expression ';'
+	{ $$ = {{"name", move($2)}, {"var-type", move($1)}, {"init", move($4)}}; } // LCOV_EXCL_BR_LINE
 	| KW_FUNC long_func_name '(' paramaters ')' return_def block
 	{ $$ = {{"not-impl", true}}; } // LCOV_EXCL_BR_LINE
 	;

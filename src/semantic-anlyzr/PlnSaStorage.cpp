@@ -558,7 +558,9 @@ static string allocSymbolIn(const string& allocators, const AllocShapeRef& shape
 	const json i64 = {{"type-kind","prim"},{"type-name","int64"}};
 	vector<json> params;
 	if (shape.family == AllocFamily::Struct) {
-		if (op == "copy") params = {permPtrTo(shape.elem, true), permPtrTo(shape.elem, false)};
+		// A run of structs laid out in place comes as a pointer to its first.
+		if (op == "initrun") params = {permPtrTo(shape.elem, true), i64, i64};
+		else if (op == "copy") params = {permPtrTo(shape.elem, true), permPtrTo(shape.elem, false)};
 		else if (op != "alloc") params.push_back(permPtrTo(shape.elem, true));
 	} else {
 		bool isVarr = shape.family != AllocFamily::Arr;
@@ -622,12 +624,30 @@ void PlnSemanticAnalyzer::recordAllocShape(const string& name)
 	// struct holding owned elements is one such element, a row laid out in place.
 	// A struct laid out in the struct contributes its own owned fields at their
 	// place in it, so the allocators need not know it is nested.
+	// Its initializers are listed likewise, and a run of structs with
+	// initializers laid out in it as one entry their __pln_initrun builds.
 	json owned = json::array();
+	json inits = json::array();
 	function<void(const StructDef&, int, const string&)> collect = [&](const StructDef& def, int base, const string& prefix) {
+		for (auto init : def.inits) {
+			init["offset"] = base + init["offset"].get<int>();
+			inits.push_back(move(init));
+		}
 		for (auto& f : def.fields) {
 			if (f.typeKind == "embed") {
 				const StructDef& sub = structDefs_.at(f.typeName);
-				if (sub.ownsFields) collect(sub, base + f.offset, prefix + f.name + ".");
+				if (sub.built()) collect(sub, base + f.offset, prefix + f.name + ".");
+				continue;
+			}
+			if (f.typeKind == "embed-arr" && !ownsElems(f.type)) {
+				int64_t count = 1;
+				const json* leaf = &f.type;
+				for (; isArrLevel(*leaf); leaf = &(*leaf)["base-type"]) count *= (*leaf)["arr-size"].get<int64_t>();
+				if (leaf->value("type-kind", "") == "struct" && structDefs_.at((*leaf)["type-name"].get<string>()).hasInits) {
+					string sub = (*leaf)["type-name"];
+					recordAllocShape(sub);
+					inits.push_back({{"offset", base + f.offset}, {"kind", "structs"}, {"name", sub}, {"count", count}});
+				}
 				continue;
 			}
 			bool inPlace = f.typeKind == "embed-arr";
@@ -654,12 +674,14 @@ void PlnSemanticAnalyzer::recordAllocShape(const string& name)
 	const StructDef& def = structDefs_[name];
 	collect(def, 0, "");
 	// LCOV_EXCL_BR_START
-	sa["alloc-shapes"].push_back({
+	json shape = {
 		{"shape-kind",   "struct"},
 		{"shape-name",   name},
 		{"total-size",   def.totalSize},
 		{"owned-fields", move(owned)}
-	});
+	};
+	if (!inits.empty()) shape["inits"] = move(inits);
+	sa["alloc-shapes"].push_back(move(shape));
 	// LCOV_EXCL_BR_STOP
 } // LCOV_EXCL_BR_LINE
 
@@ -702,8 +724,11 @@ json PlnSemanticAnalyzer::allocElemDesc(const json& elem, bool inPlace)
 	}
 	string name = elem["type-name"];
 	recordAllocShape(name);
-	// A struct laid out in place owns nothing, so it is bytes.
-	return {{"kind","embed-struct"},{"key",symbolType(elem)},{"name",name},{"size",byteTypes_.at(name)}};
+	// A struct laid out in place owns nothing; unless it has initializers to
+	// store, it is bytes.
+	auto bytes = byteTypes_.find(name);
+	int64_t size = bytes != byteTypes_.end() ? bytes->second : structDefs_.at(name).totalSize;
+	return {{"kind","embed-struct"},{"key",symbolType(elem)},{"name",name},{"size",size}};
 	// LCOV_EXCL_BR_STOP
 } // LCOV_EXCL_BR_LINE
 
@@ -729,7 +754,7 @@ json PlnSemanticAnalyzer::layoutElem(const json& elem)
 	}
 	if (kind == "struct") {
 		const StructDef& def = structDefs_.at(out["type-name"].get<string>());
-		if (def.ownsFields) return out;
+		if (def.built()) return out;
 		string bytes = "__pln_B" + to_string(def.totalSize);
 		byteTypes_[bytes] = def.totalSize;
 		out["type-name"] = bytes;
@@ -1057,7 +1082,7 @@ json PlnSemanticAnalyzer::structAllocExpr(const string& name, bool build)
 	json pntrType = {{"type-kind","pntr"},{"base-type",{{"type-kind","struct"},{"type-name",name}}}};
 	const StructDef& def = structDefs_.at(name);
 	json call;
-	if (def.ownsFields && build) {
+	if (def.built() && build) {
 		recordAllocShape(name);
 		call = allocHelperCall(structShape(name), "alloc", json::array());
 	} else {
@@ -1119,7 +1144,7 @@ json PlnSemanticAnalyzer::structInitStmt(const string& name, const json& type)
 {
 	// LCOV_EXCL_BR_START
 	string structName = type["base-type"]["type-name"];
-	if (!structDefs_.at(structName).ownsFields)
+	if (!structDefs_.at(structName).built())
 		return json();
 	recordAllocShape(structName);
 	json self = {{"expr-type","id"},{"name",name},{"var-type",type},{"value-type",type}};
@@ -1179,10 +1204,26 @@ AggregatePlace PlnSemanticAnalyzer::arrPlace(const json& self, const vector<json
 		json size = elemBytes == 1 ? lens[0] : mul(lens[0], move(elemSize));
 		place.heapInit = {{"expr-type","call"},{"name","malloc"},{"func-type","c"},{"args",json::array({move(size)})}};
 		place.frameBytes = n < 0 || elemBytes < 0 ? -1 : n * elemBytes;
+		const json* leaf = &vt;
+		json count;
+		for (size_t k = 0; isArrLevel(*leaf); leaf = &(*leaf)["base-type"], k++)
+			count = count.is_null() ? lens[k] : mul(move(count), lens[k]);
+		if (leaf->value("type-kind","") == "struct" && structDefs_.at((*leaf)["type-name"].get<string>()).hasInits)
+			place.build = initRunCall((*leaf)["type-name"], self, move(count));
 	}
 	place.heapInit["value-type"] = vt;
 	if (place.release.is_null()) place.release = makeOwnedValueFreeStmt(self);
 	return place;
+	// LCOV_EXCL_BR_STOP
+} // LCOV_EXCL_BR_LINE
+
+json PlnSemanticAnalyzer::initRunCall(const string& structName, json run, json count)
+{
+	// LCOV_EXCL_BR_START
+	recordAllocShape(structName);
+	AllocShapeRef shape = structShape(structName);
+	json args = json::array({move(run), lenLit(0), move(count)});
+	return {{"stmt-type","expr"},{"body",allocHelperCall(shape, "initrun", move(args))}};
 	// LCOV_EXCL_BR_STOP
 } // LCOV_EXCL_BR_LINE
 
@@ -1231,6 +1272,7 @@ json PlnSemanticAnalyzer::sa_arr_var_decl(const json& stmt, VarStorage storage, 
 		result.push_back({{"stmt-type","var-decl"},
 			{"vars",json::array({{{"name",name},{"var-type",st.type},{"init",move(init)}}})}});
 		for (auto& s : post) result.push_back(move(s));
+		if (!place.build.is_null() && !taken) result.push_back(move(place.build));
 	}
 	return result;
 	// LCOV_EXCL_BR_STOP

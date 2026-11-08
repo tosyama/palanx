@@ -114,7 +114,7 @@ TEST(gen_ast_error, interface_cannot_state) {
 		{"export func f(int32 a = 1) { }\n", "error: an interface cannot state a parameter's default value."},
 		{"export func f($int32 a) { }\n", "error: an interface cannot state this parameter or return."},
 		{"export func f() -> $int32 { }\n", "error: an interface cannot state this type."},
-		{"const N = [1, 2];\n", "error: an interface cannot state this expression."},
+		{"const N = {x: 1};\n", "error: an interface cannot state this expression."},
 	};
 	for (auto& c : cases) {
 		cleanTestEnv();

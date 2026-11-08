@@ -311,7 +311,9 @@ Design:
 
 An owned aggregate made of more than one heap block — a struct that owns fields, an array of
 structs, a `[m][n]T` array — is allocated, released and copied by generated functions instead of
-inline loops. A struct that owns nothing and a `[n]T` array of primitives use `malloc` and `free` directly.
+inline loops. So is a struct with field initializers, which must be built wherever one comes to
+exist. A struct that owns nothing and has no initializers, and a `[n]T` array of primitives, use
+`malloc` and `free` directly.
 
 palan-sa emits only calls to these functions; it records each shape it needs in sa.json's
 `alloc-shapes` (SASpec.md's Root), as it collects `str-literals`. The build manager collects the
@@ -333,6 +335,7 @@ For a shape key `K`, the functions are:
 | `__pln_init_K(p, sizes...)` | builds the value in an existing block (a `$` variable) |
 | `__pln_fini_K(p, sizes...)` | releases what `p` owns, but not `p` (a `$` variable) |
 | `__pln_copy_K(dst, src, sizes...)` | copies `src` into `dst`, owned parts included |
+| `__pln_initrun_T(p, from, to)` | builds `p[from]` to `p[to - 1]`, structs `T` laid out in place (only a `T` with initializers owning nothing) |
 
 | Shape | `K` | Functions |
 |-------|-----|-----------|
@@ -363,9 +366,20 @@ A struct's owned field is a slot of the same kind, described the same way: `__pl
 build, drop and copy each field through its element's helpers, and the generated module declares
 the field as the slot its build fills (`@!int32` for `[3]int32`), so it copies and frees nothing
 on its own. Palan sets only what it reads to release a value: owned slots and `[+]U` headers
-(an inner `[+]U` starts as an empty header, `calloc(1, 24)`). Everything else starts undefined,
-as with C's `malloc`: a struct's other fields, pointers included, an array's elements, the
-elements `resize` adds and those past a `[+n]T` literal's.
+(an inner `[+]U` starts as an empty header, `calloc(1, 24)`), and what field initializers give.
+Everything else starts undefined, as with C's `malloc`: a struct's other fields, pointers
+included, an array's elements, the elements `resize` adds and those past a `[+n]T` literal's.
+
+A field initializer is a compile-time constant (which fields take one is in
+PalanReference.md), so palan-sa evaluates it and lists the values in the struct's shape
+(`inits`); `__pln_init_T` stores them after building the owned fields, and so does every
+`__pln_alloc_T`. A struct laid out in another brings its initializers along at their place in
+it, as it does its owned fields. A struct with initializers is never reduced to `__pln_B<n>`,
+since structs of one size no longer build alike. Its elements laid out in place (`[n]$T`,
+`[+]$T`, a `$[n]$T` field) are built but own nothing: they are built through `__pln_initrun_T`
+(`__pln_init_T` on each element of a run) when their slots come into use, as an owned element is,
+and copied and freed as bytes. A value taken over (`<<=`, `->>`) or written by a C function is
+not built again.
 A length may be known only at run time (`[m][k]int32`), so keys leave every length out and every
 `arr_E`/`varr_E` function and helper takes, after its own arguments, one length per array level
 below it, outermost first, through rows and `[+]U` elements alike: `[m][3]int32` and `[+][3]int32`

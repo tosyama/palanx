@@ -28,5 +28,7 @@ export type Forms {
 	@func() i;
 	V.T j;
 	$Forms k;
+	int32 l = A * 2;
+	[2]int8 m = [1, -2];
 };
 export func forms([]$[4]int32 a, []int32 b, @[A]int32 c) -> @!Forms;

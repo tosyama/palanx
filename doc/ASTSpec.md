@@ -467,9 +467,10 @@ Statement model
   7. struct-def - struct type definition (`type Name { field_decl... }`; consumed by SA, not emitted to sa.json)
     - name\* - Struct name string
     - export - Boolean, true if declared with `export` (omitted when false)
-    - fields\* - Field list (each entry: `name`, `var-type`)
+    - fields\* - Field list (each entry: `name`, `var-type`, `init`)
       - name\* - Field name string
       - var-type\* - Field type (same Variable type object format)
+      - init - The field's initializer (`int32 y = 7;`), an expression model as written
   8. type-alias - native type alias declaration (`type Name = type_expr;`; consumed by SA, not emitted to sa.json)
     - name\* - Alias name string
     - export - Boolean, true if declared with `export` (omitted when false)

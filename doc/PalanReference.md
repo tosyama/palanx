@@ -1866,7 +1866,8 @@ A call returning an owned struct (`T`) or a C struct by value has nothing that w
 result, so `mk().x` and `div(7, 2).quot` are compile errors: receive the result into a variable
 with `->` first.
 
-- **Memory management**: heap-allocated, with undefined contents (see
+- **Memory management**: heap-allocated, with undefined contents but for fields with
+  [initializers](#field-initializers) (see
   [Initial contents](#4-variables-constants-and-type-aliases)); automatically freed at scope exit.
   With `$` (`$Point p;`) the struct is placed in the stack frame instead; see
   [Stack Structs](#stack-structs-t).
@@ -1915,11 +1916,37 @@ reset(@![1, 2]);
   array element, or `q[0]` for what a borrow `q` points to. Giving a literal to the borrow `q`
   itself is an error, since `->` to a borrow rebinds it.
 - The field rules are those of an array literal's struct element: every field exactly once,
-  struct fields as nested values, array fields as array literals (`[[1, 2, 3], 4]`), no pointer
+  except that `{name: value}` may leave out a field with an [initializer](#field-initializers),
+  which then takes it; struct fields as nested values, array fields as array literals (`[[1, 2, 3], 4]`), no pointer
   fields or arrays of pointers.
 - A struct field's value may also be a struct expression of that type — a struct variable, a
   `T` field, an array element, a `@T`/`@!T`, or a call result: `Q q = [p, mk(3)];` copies it. With `->`
   it is read before any write too, so `[q.b, @q.a] -> q` swaps.
+
+### Field Initializers
+
+A field can be given an initial value in the type, written as a variable's initializer is:
+
+```palan
+const N = 4;
+type Counter { int32 step = N / 2; bool on = true; $[+]uint8 name = [0]; int32 n; };
+
+Counter c;                    // c.step is 2, c.on is true, c.name holds one 0; c.n is undefined
+Counter d = {n: 5};           // the fields left out take their initializers
+printf("%d %d %ld\n", c.step, d.on, len(@c.name));   // 2 1 1
+```
+
+- The value must be a compile-time constant: literals, [consts](#constant-declarations) and
+  operators on them, an enum member, or an array literal of such values.
+- A primitive field (an integer, a float, `bool` or an enum) and a one-dimensional array of
+  primitives (`[n]T`, `$[n]T`, `[+]T`, `$[+]T`) can have one. Others, such as a struct field given
+  a struct value, cannot in this version.
+- The initializers are in place wherever a struct comes to exist: a variable, heap or `$`; a
+  struct field, whose own type's initializers apply; an element of an array, laid out in place
+  (`[n]$T`, `[+]$T`) or not, including those `resize` adds. A struct taken over with `<<=` or
+  `->>`, or written by a C function, keeps what it holds.
+- A `{name: value}` literal may leave out a field with an initializer; a `[...]` literal still gives
+  every field.
 
 ### Field Types
 

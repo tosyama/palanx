@@ -35,6 +35,18 @@ TEST(gen_ast, struct_def) {
 	ASSERT_EQ(s["fields"][1]["var-type"]["type-name"], "int64");
 }
 
+TEST(gen_ast, struct_field_init) {
+	cleanTestEnv();
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/157_field_init.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& fields = jout["ast"]["statements"][0]["fields"];
+	ASSERT_FALSE(fields[0].contains("init"));
+	ASSERT_EQ(fields[1]["init"]["expr-type"], "add");
+	ASSERT_EQ(fields[2]["init"]["expr-type"], "arr-lit");
+	ASSERT_EQ(fields[2]["init"]["items"].size(), 1u);
+}
+
 TEST(gen_ast, type_alias) {
 	cleanTestEnv();
 	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/034_type_alias.pa");

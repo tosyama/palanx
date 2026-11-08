@@ -136,6 +136,7 @@ string Writer::expr(const json& e) const
 	if (kind == "arr-index") return operand(e["array"]) + "[" + expr(e["index"]) + "]";
 	if (kind == "field-access") return operand(e["object"]) + "." + e["field"].get<string>();
 	if (kind == "addr-of") return (e["mutable"].get<bool>() ? "@!" : "@") + expr(e["object"]);
+	if (kind == "arr-lit") return "[" + args(e["items"]) + "]";
 	fail(e, "this expression");
 }
 
@@ -182,7 +183,8 @@ string Writer::statement(const json& s) const
 	if (kind == "struct-def") {
 		string out = exported + "type " + name + " {\n";
 		for (auto& f : s["fields"])
-			out += "\t" + type(f["var-type"]) + " " + f["name"].get<string>() + ";\n";
+			out += "\t" + type(f["var-type"]) + " " + f["name"].get<string>()
+				+ (f.contains("init") ? " = " + expr(f["init"]) : "") + ";\n";
 		return out + "};\n";
 	}
 	string path = s["path-type"] == "src" ? "\"" + s["path"].get<string>() + "\"" : "<" + s["path"].get<string>() + ">";

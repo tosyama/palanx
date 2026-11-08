@@ -846,6 +846,15 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			BOOST_ASSERT(arg2 != "\x01");
 			return "'" + arg1 + "' names " + arg2 + "; it must be given where a function pointer type chooses one.";
 
+		case E_FieldInitNotConst:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "the initializer of field '" + arg1 + "' must be a compile-time constant.";
+
+		case E_FieldInitUnsupported:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "field '" + arg1 + "' cannot have an initializer in this version: only a primitive field "
+			       "or a one-dimensional array of primitives can.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

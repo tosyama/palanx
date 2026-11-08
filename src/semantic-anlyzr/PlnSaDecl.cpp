@@ -249,7 +249,131 @@ StructDef PlnSemanticAnalyzer::buildStructDef(const string& name, const json& fi
 	def.totalSize  = alignUp(offset, maxAlign);
 	def.maxAlign   = maxAlign;
 	def.isComplete = true;
+	setFieldInits(def, fields);
 	return def;
+} // LCOV_EXCL_BR_LINE
+
+// The generated module stores every integer as the signed integer of its
+// width (layoutElem), so a value is written as that integer's.
+static pair<string, string> layoutValue(const string& typeName, const json& lit)
+{
+	static const map<string, pair<string, int>> ints = {
+		{"int8",{"int8",8}}, {"uint8",{"int8",8}}, {"bool",{"int8",8}},
+		{"int16",{"int16",16}}, {"uint16",{"int16",16}},
+		{"int32",{"int32",32}}, {"uint32",{"int32",32}},
+		{"int64",{"int64",64}}, {"uint64",{"int64",64}},
+	};
+	string text = lit["value"];
+	auto it = ints.find(typeName);
+	if (it == ints.end()) return {typeName, text};
+	__int128 v = text[0] == '-' ? (__int128)stoll(text) : (__int128)stoull(text);
+	int bits = it->second.second;
+	__int128 span = (__int128)1 << bits;
+	v %= span;
+	if (v < 0) v += span;
+	if (v >= span / 2) v -= span;
+	return {it->second.first, to_string((int64_t)v)};
+}
+
+// Each initializer is a constant, which palan-sa writes into the struct's
+// shape for the generated allocators to store (SpecAndDesign.md 3.6).
+void PlnSemanticAnalyzer::setFieldInits(StructDef& def, const json& fields)
+{
+	// A value reaches here typed and, from an integer to a float, converted.
+	auto constant = [&](const json& value, const string& fieldName, const json& locNode) -> json {
+		const json* v = &value;
+		if (v->value("expr-type", "") == "convert") v = &(*v)["src"];
+		string et = v->value("expr-type", "");
+		if (et != "lit-int" && et != "lit-uint" && et != "lit-flo") {
+			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_FieldInitNotConst, fieldName) << endl;
+			exit(1);
+		}
+		return *v;
+	};
+	// Variables and functions are not known yet when types are declared, so a
+	// value naming one is rejected before it is analyzed. An enum member is a
+	// field access on its type.
+	function<bool(const json&)> readsRuntime = [&](const json& e) {
+		string et = e.is_object() ? e.value("expr-type", "") : "";
+		if (et == "id" || et == "call" || et == "chain-call" || et == "member-call") return true;
+		if (et == "field-access") return false;
+		if (e.is_structured())
+			for (auto& child : e)
+				if (readsRuntime(child)) return true;
+		return false;
+	};
+	auto folded = [&](const json& e, const string& fieldName) {
+		json v = foldConstExpr(e);
+		if (readsRuntime(v)) {
+			cerr << locPrefix(e) << PlnSaMessage::getMessage(E_FieldInitNotConst, fieldName) << endl;
+			exit(1);
+		}
+		return v;
+	};
+	for (auto& af : fields) {
+		if (!af.contains("init")) continue;
+		string fn = af["name"];
+		auto f = find_if(def.fields.begin(), def.fields.end(), [&](const FieldLayout& l) { return l.name == fn; });
+		const json& init = af["init"];
+		json type = fieldValueType(*f);
+		json entry = {{"offset", f->offset}};
+		json values = json::array();
+		string elemName;
+		if (f->typeKind == "prim" && f->unsupported.empty()) {
+			const PlnType* toType = registry_.fromJson(type);
+			json value = convertForBinding(init, sa_expression(folded(init, fn), toType), toType, type);
+			elemName = f->typeName;
+			values.push_back(constant(value, fn, init));
+			entry["kind"] = "prim";
+		} else if (isLitArrField(*f) && (isVarrStorage(type) ? type["base-type"]["base-type"] : type["base-type"])
+		                                    .value("type-kind", "") == "prim") {
+			if (init.value("expr-type", "") != "arr-lit") {
+				cerr << locPrefix(init) << PlnSaMessage::getMessage(E_ArrLitDimMismatch, fn) << endl;
+				exit(1);
+			}
+			json lit = init;
+			for (auto& item : lit["items"]) item = folded(item, fn);
+			ArrLitShape shape = arrLitShape(init, fn, type, true);
+			checkArrLitCount(init, lit["items"], fn, shape);
+			for (auto& value : sa_arr_lit_values(lit, shape, fn))
+				values.push_back(constant(value, fn, init));
+			elemName = shape.leaf["type-name"];
+			entry["kind"] = f->typeKind == "embed-arr" ? "run" : f->typeKind == "embed-varr" ? "embed-varr"
+			              : isVarrStorage(type) ? "varr" : "row";
+			if (isVarrStorage(type)) entry["shape-key"] = allocShapeKey(varrShape(type));
+		} else {
+			cerr << locPrefix(init) << PlnSaMessage::getMessage(E_FieldInitUnsupported, fn) << endl;
+			exit(1);
+		}
+		// A literal leaving the field out takes these values, already typed, so
+		// that a module importing the struct needs none of the names they came from.
+		json typed = values;
+		if (init.contains("loc"))
+			for (auto& v : typed) v["loc"] = init["loc"];
+		if (entry["kind"] == "prim") {
+			f->initAst = typed[0];
+		} else {
+			f->initAst = {{"expr-type", "arr-lit"}, {"items", move(typed)}};
+			if (init.contains("loc")) f->initAst["loc"] = init["loc"];
+		}
+		json texts = json::array();
+		for (auto& v : values) {
+			auto [layout, text] = layoutValue(elemName, v);
+			entry["type"] = layout;
+			texts.push_back(text);
+		}
+		entry["values"] = move(texts);
+		def.inits.push_back(move(entry));
+	}
+	if (!def.inits.empty()) def.hasInits = true;
+	for (auto& f : def.fields) {
+		const json* leaf = &f.type;
+		if (f.typeKind == "embed-arr")
+			while (isArrLevel(*leaf)) leaf = &(*leaf)["base-type"];
+		string sub = f.typeKind == "embed" ? f.typeName
+		           : f.typeKind == "embed-arr" && leaf->value("type-kind", "") == "struct" ? (*leaf)["type-name"].get<string>() : "";
+		if (!sub.empty() && structDefs_.at(sub).hasInits) def.hasInits = true;
+	}
 } // LCOV_EXCL_BR_LINE
 
 json PlnSemanticAnalyzer::sa_expression_stmt(const json& stmt)
@@ -748,6 +872,7 @@ json PlnSemanticAnalyzer::sa_struct_lit(const json& item, const StructDef& def)
 			slot = &named["value"];
 		}
 		for (size_t k = 0; k < given.size(); k++) {
+			if (!given[k] && !def.fields[k].initAst.is_null()) given[k] = &def.fields[k].initAst;
 			if (!given[k]) {
 				cerr << locPrefix(item) << PlnSaMessage::getMessage(E_StructLitMissingField, def.name, def.fields[k].name) << endl;
 				exit(1);
