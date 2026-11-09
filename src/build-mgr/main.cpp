@@ -88,7 +88,7 @@ static fs::file_time_type newestToolTime(const string& exec_path, const string& 
 			exec_path + "/palan-codegen", exec_path + "/../" + target + "/c2ast/predefined.h"}) {
 		error_code ignored;
 		newest = max(newest, fs::last_write_time(tool, ignored));
-	}
+	} // LCOV_EXCL_BR_LINE -- closing brace of a loop over local strings; the branch coverpoints here are compiler-generated destructor dispatch, not source-level conditionals
 	return newest;
 }
 
@@ -122,7 +122,7 @@ static int generateAst(const string& source, const string& ast_path, const strin
 	ifstream generated(ast_path);
 	ast = json::parse(generated);
 	return 0;
-}
+} // LCOV_EXCL_BR_LINE -- closing brace of a function with local strings/paths; the branch coverpoints here are compiler-generated destructor dispatch, not source-level conditionals
 
 // `base` is the source's path in the working directory; deps are the ASTs the result comes from.
 static int compileModule(const string& base, const string& exec_path, fs::file_time_type tools_time,
@@ -140,7 +140,7 @@ static int compileModule(const string& base, const string& exec_path, fs::file_t
 	if (int ret = runToolTo({exec_path + "/palan-codegen", sa_file}, asm_file)) // LCOV_EXCL_BR_LINE
 		return ret;
 	return runToolTo({"as", asm_file}, obj_file); // LCOV_EXCL_BR_LINE
-}
+} // LCOV_EXCL_BR_LINE -- closing brace of a function with local strings/paths; the branch coverpoints here are compiler-generated destructor dispatch, not source-level conditionals
 
 // Kept as it was when the content is the same, so its time still says what it was compiled from.
 static void renameIfChanged(const string& tmp, const string& path)
@@ -193,7 +193,7 @@ static int buildAllocators(const PlnAllocShapes& shapes, const string& dir, cons
 		return ret;
 	obj_file = alloc_pa + ".o";
 	return 0;
-}
+} // LCOV_EXCL_BR_LINE -- closing brace of a function with local strings/paths/json; the branch coverpoints here are compiler-generated destructor dispatch, not source-level conditionals
 
 // The `.pai` of an `import <module>`, or empty after reporting why there is none.
 static string findLibrary(const string& module, const set<string>& libpaths, const string& std_root, const string& importer)
@@ -325,9 +325,9 @@ static int buildLibrary(const vector<json>& asts, const string& base, const vect
 		}
 		fs::rename(archive_tmp, archive);
 		installFile(pai, out_base.string() + ".pai");
-	}
+	} // LCOV_EXCL_BR_LINE -- closing brace of a block with local strings/paths; the branch coverpoints here are compiler-generated destructor dispatch, not source-level conditionals
 	return 0;
-}
+} // LCOV_EXCL_BR_LINE -- closing brace of a function with many local strings/paths/json; the branch coverpoints here are compiler-generated destructor dispatch, not source-level conditionals
 
 int main(int argc, char* argv[])
 {
@@ -547,7 +547,7 @@ int main(int argc, char* argv[])
 			return ret;
 		obj_files.push_back(alloc_o);
 		lib_members.push_back({allocatorsModuleOf(id), alloc_o});
-	}
+	} // LCOV_EXCL_BR_LINE -- closing brace of a loop body with local strings/json; the branch coverpoints here are compiler-generated destructor dispatch, not source-level conditionals
 
 	if (do_lib)
 		return buildLibrary(asts, palan_work_path + target_files[0], obj_files, lib_members, link_objs, binary_name, exec_path, target, library_args);
