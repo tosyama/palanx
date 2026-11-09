@@ -5,6 +5,7 @@
 
 #include "PlnX86CodeGen.h"
 #include "PlnX86Internal.h"
+#include "../common/PlnStrLit.h"
 #include <cstdint>
 
 using namespace std;
@@ -234,13 +235,17 @@ void PlnX86CodeGen::emitStringLiteral(const string& label, const string& value)
 {
     out << label << ":\n";
     out << "\t.string \"";
-    for (char c : value) {
+    // as reads every hex digit after \x, so other bytes go out as three-digit octal escapes.
+    for (char ch : strLitBytes(value)) {
+        unsigned char c = ch;
         switch (c) {
             case '\n': out << "\\n"; break;
             case '\t': out << "\\t"; break;
             case '"':  out << "\\\""; break;
             case '\\': out << "\\\\"; break;
-            default:   out << c; break;
+            default:
+                if (c >= 0x20 && c < 0x7F) out << ch;
+                else out << '\\' << char('0' + (c >> 6)) << char('0' + ((c >> 3) & 7)) << char('0' + (c & 7));
         }
     }
     out << "\"\n";

@@ -174,7 +174,7 @@ Root
 String literal table entry
 --------------------------
 - label\* - Assembly label string (e.g. ".str0")
-- value\* - String value
+- value\* - The bytes as escaped text, as the lit-str value of ASTSpec.md
 
 Function model (sa.json)
 ------------------------

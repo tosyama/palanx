@@ -109,20 +109,8 @@ string Writer::expr(const json& e) const
 		return e["value"];
 	}
 	if (kind == "lit-uint") return e["value"].get<string>() + "u";
-	if (kind == "lit-str") {
-		string s = "\"";
-		for (char c : e["value"].get<string>()) {
-			switch (c) {
-				case '"': s += "\\\""; break;
-				case '\\': s += "\\\\"; break;
-				case '\n': s += "\\n"; break;
-				case '\t': s += "\\t"; break;
-				case '\r': s += "\\r"; break;
-				default: s += c;
-			}
-		}
-		return s + "\"";
-	}
+	// The value is already the literal's Palan spelling.
+	if (kind == "lit-str") return "\"" + e["value"].get<string>() + "\"";
 	if (kind == "lit-flo" || kind == "id") return e[kind == "id" ? "name" : "value"];
 	if (kind == "neg") return "-" + operand(e["operand"]);
 	if (kind == "bitnot") return "~" + operand(e["operand"]);

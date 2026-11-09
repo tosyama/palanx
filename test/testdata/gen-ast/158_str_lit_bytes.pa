@@ -1,0 +1,3 @@
+const A = "x\xFFy\x00z";
+const B = "\\\"\n\t\r\x01";
+const C = "â‚¬\xe2\x82\xacÿ\xC3\xA9";

@@ -552,7 +552,9 @@ Expression model
 - expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "mul" "div" "mod" "neg" "cmp" "call" "cast" "arr-index" "field-access" "member-call" "logical-and" "logical-or" "logical-not" "addr-of" "not-impl" "bitand" "bitor" "bitxor" "shl" "shr" "bitnot" "arr-lit" "dict-lit" "sizeof" "chain-call" "transfer" "call-ptr"
 - loc\* - Location Array
   1. lit-str - String literal
-    - value\* - String value
+    - value\* - The bytes as escaped text: printable ASCII and valid UTF-8 characters as they
+      are, `\"`, `\\`, `\n`, `\t`, `\r`, and every other byte as `\xHH` (upper-case hex), so
+      `"x\xffy"` and the same bytes written raw are both `x\xFFy`
   2. lit-int - Signed integer literal (corresponds to INT token). A character literal (`'a'`)
     is also emitted as a `lit-int` holding its ASCII code, with no `value-type`; `true`/`false`
     are emitted as a `bool`-typed `lit-int`

@@ -123,6 +123,7 @@ struct BodyList {
 	#include "PlnGenAstInternal.h"
 	#include "PlnGenAstC2Ast.h"
 	#include "../common/PlnDefs.h"
+	#include "../common/PlnStrLit.h"
 
 	static std::set<std::string> typeNames = {
 		"int8",  "int16",  "int32",  "int64",
@@ -1082,7 +1083,7 @@ term: INT
 	| FLO
 	{ $$ = {{"expr-type", "lit-flo"}, {"value", move($1)}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| STRING
-	{ $$ = {{"expr-type", "lit-str"}, {"value", move($1)}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
+	{ $$ = {{"expr-type", "lit-str"}, {"value", strLitText($1)}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| KW_TRUE
 	{ $$ = boolLiteral("1"); LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| KW_FALSE

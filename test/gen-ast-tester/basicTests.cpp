@@ -1450,3 +1450,15 @@ TEST(gen_ast, global_decl) {
 	ASSERT_TRUE(stmts[4]["funcs"].empty());
 	ASSERT_EQ(stmts[5]["stmt-type"], "not-impl");
 }
+
+TEST(gen_ast, str_lit_bytes) {
+	cleanTestEnv();
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/158_str_lit_bytes.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& stmts = jout["ast"]["statements"];
+	ASSERT_EQ(stmts[0]["value"]["value"], "x\\xFFy\\x00z");
+	ASSERT_EQ(stmts[1]["value"]["value"], "\\\\\\\"\\n\\t\\r\\x01");
+	// A valid UTF-8 character stays as it is however it was written; a byte written raw is escaped.
+	ASSERT_EQ(stmts[2]["value"]["value"], "€€\\xFFé");
+}

@@ -97,7 +97,12 @@ multi-character, or non-ASCII literal is a compile error.
 | `\t`   | tab |
 | `\r`   | carriage return |
 | `\0`   | null byte |
+| `\\`   | backslash |
+| `\"`   | double quote |
 | `\xHH` | hex byte |
+
+A string literal holds bytes, not checked as UTF-8: `\xHH` may give any byte, and a byte written
+in the source is taken as it is.
 
 **Comments:** `// line comment`
 

@@ -298,6 +298,12 @@ Design:
  String literals are collected by palan-sa into the `str-literals` table in sa.json,
  placed in the `.rodata` section with generated labels (`.str0`, `.str1`, ...),
  and referenced via `leaq label(%rip), %rdi` (RIP-relative addressing).
+ A string literal may hold any bytes, but JSON holds only valid UTF-8 text, so the literal's
+ value travels through ast.json, sa.json and a module's interface as one escaped text
+ (`src/common/PlnStrLit.h`): printable ASCII and valid UTF-8 characters as they are, `\"`, `\\`,
+ `\n`, `\t`, `\r`, and every other byte as `\xHH`. That text is itself the literal's Palan
+ spelling. palan-gen-ast writes it however the source spelled the bytes (an escape or the byte
+ itself), and only palan-codegen turns it back into bytes.
 
  Palan links no crt startup objects (no crt1.o/crti.o/crtbegin.o -- the build manager
  links `ld <objs> -lc` directly), so the code generator supplies the ELF/libc glue those

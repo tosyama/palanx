@@ -33,7 +33,7 @@ TEST(sa, helloworld_sa) {
 	ASSERT_TRUE(jout.contains("str-literals"));
 	auto& lits = jout["str-literals"];
 	ASSERT_EQ(lits.size(), 1u);
-	ASSERT_EQ(lits[0]["value"], "Hello World!\n");
+	ASSERT_EQ(lits[0]["value"], "Hello World!\\n");
 	ASSERT_EQ(lits[0]["label"], ".str0");
 
 	// cinclude nodes are not emitted to SA output

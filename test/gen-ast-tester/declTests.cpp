@@ -1203,7 +1203,7 @@ TEST(gen_ast, interface_const_values_read_back) {
 		if (s["stmt-type"] == "const-decl") source[s["name"]] = withoutLoc(s["value"]);
 	for (auto& s : paiAst["ast"]["statements"])
 		if (s["stmt-type"] == "const-decl") pai[s["name"]] = withoutLoc(s["value"]);
-	ASSERT_EQ(pai.size(), 17u);
+	ASSERT_EQ(pai.size(), 18u);
 	for (auto& [name, value] : pai) ASSERT_EQ(value, source.at(name)) << name;
 }
 
