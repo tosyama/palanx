@@ -29,7 +29,7 @@ make coverage-sa        # semantic analyzer only (faster)
 make coverage-reset     # full clean rebuild of build-cov/
 ```
 
-Coverage targets intentionally run only the end-to-end testers, not `sa-unit-tester`/`codegen-unit-tester` — the goal is measuring what's reachable through the real binaries and finding dead code; unit tests would exercise paths a real binary never reaches. `make` (no coverage) runs all seven testers. `build/` is optimized because the end-to-end testers spend most of their time running the tools themselves (an unoptimized build makes the test run about 3x slower); an existing `build/` configured as Debug needs `make clean` first.
+Coverage targets intentionally run only the end-to-end testers, not `sa-unit-tester`/`codegen-unit-tester` — the goal is measuring what's reachable through the real binaries and finding dead code; unit tests would exercise paths a real binary never reaches. `make` (no coverage) runs all eight testers. `build/` is optimized because the end-to-end testers spend most of their time running the tools themselves (an unoptimized build makes the test run about 3x slower); an existing `build/` configured as Debug needs `make clean` first.
 
 **Dependencies:** g++ (C++20), CMake 3.16+, Flex, Bison 3.8+, libboost-dev, libfl-dev, lcov
 
@@ -43,6 +43,7 @@ cd build && bin/sa-unit-tester        # Semantic analyzer unit tests
 cd build && bin/codegen-tester        # Code generator tests
 cd build && bin/codegen-unit-tester   # Code generator unit tests
 cd build && bin/build-mgr-tester      # Build manager integration tests
+cd build && bin/std-tester            # Standard library tests (std is built into build/ by CMake)
 ```
 
 ### Running a Single Test
@@ -54,10 +55,12 @@ cd build && bin/sa-tester --gtest_filter=sa.helloworld_sa
 ### Running Individual Tools
 
 ```bash
-cd build && bin/palan-c2ast -s stdio.h                         # Parse system header to AST
-cd build && bin/palan-gen-ast ../test/testdata/gen-ast/001_basicPattern.pa
+cd build && lib/palan/dev/tools/palan-c2ast -s stdio.h         # Parse system header to AST
+cd build && lib/palan/dev/tools/palan-gen-ast ../test/testdata/gen-ast/001_basicPattern.pa
 cd build && bin/palan ../test/testdata/build-mgr/001_helloworld.pa
 ```
+
+`build/` has the installation layout (SpecAndDesign §6) with `dev` as the version: `bin/palan` is a symbolic link into `lib/palan/dev/tools/`. Testers are in `bin/` and name the internal tools bare; `test/test-base/testBase.cpp` puts them on `PATH`.
 
 ## Architecture
 
@@ -100,12 +103,13 @@ source.pa
 ```
 src/
 ├── build-mgr/       palan — build manager (orchestrates pipeline)
+│   └── uninstall.sh     Installed as lib/palan/<version>/uninstall
 ├── c2ast/           palan-c2ast — C header parser
 │   ├── CLexer.*         Hand-written C lexer
 │   ├── CParser.*        Recursive descent C parser
 │   ├── CPreprocessor.*  Macro expansion and #include handling
 │   ├── CToken.*         Token definitions
-│   └── predefined.h     Built-in macro definitions (copied to build/bin/c2ast/)
+│   └── predefined.h     Built-in macro definitions (copied to <target>/c2ast/ in the layout)
 ├── gen-ast/         palan-gen-ast — Palan parser
 │   ├── PlnLexer.ll      Flex lexer rules
 │   ├── PlnParser.yy     Bison grammar rules
@@ -131,11 +135,12 @@ src/
 │   ├── PlnX86Mem.cpp    Memory/address instruction emission
 │   ├── PlnDeserialize.* sa.json → Module
 │   └── PlnCodeGen.h     Abstract base class
-└── common/          Shared utilities (PlnProcess — argv-based child process spawning)
+├── common/          Shared utilities (PlnProcess — argv-based child process spawning; PlnInterface — writes a module's interface; PlnStrLit — the text a string literal's value travels as)
+└── std/             The standard library, in Palan (CMakeLists.txt lists its public mains)
 test/
 ├── testdata/        Test input files (numbered sequentially per tool)
 ├── test-base/       Shared test helpers (execTestCommand, cleanTestEnv)
-└── *-tester/        Seven gtest binaries, one per suite listed above
+└── *-tester/        Eight gtest binaries, one per suite listed above
 doc/
 ├── SpecAndDesign.md  Language spec and toolchain design
 ├── ASTSpec.md        JSON AST format specification (palan-gen-ast output)

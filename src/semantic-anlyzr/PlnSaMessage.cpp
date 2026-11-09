@@ -20,16 +20,18 @@ static const char localTypePrefix[] = "__pln_L";
 string PlnSaMessage::localTypeName(const string& moduleId, int seq, const string& name)
 {
 	// FNV-1a: the module's part must be the same in every build of it.
+	// A top-level type (seq 0) has only its name: a library's interface leaves
+	// other private types out, and the name must stay the one in the object.
 	uint64_t h = 14695981039346656037ull;
 	for (unsigned char c : moduleId) h = (h ^ c) * 1099511628211ull;
 	char hex[17];
 	snprintf(hex, sizeof hex, "%016llx", (unsigned long long)h);
-	return localTypePrefix + string(hex) + "_" + to_string(seq) + "_" + name;
+	return localTypePrefix + string(hex) + "_" + (seq ? to_string(seq) + "_" : "") + name;
 }
 
 string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string arg2, string arg3)
 {
-	static const regex localTypePart(string(localTypePrefix) + "[0-9a-f]{16}_[0-9]+_");
+	static const regex localTypePart(string(localTypePrefix) + "[0-9a-f]{16}_([0-9]+_)?");
 	return regex_replace(format(msg_code, arg1, arg2, arg3), localTypePart, "");
 }
 
@@ -44,6 +46,8 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 				"Options\n"
 				" -o, --output=<output-path>   Output SA result to file.\n"
 				" -i, --indent                 Output SA json with indent.\n"
+				" --interface                  Check a .pai's AST; output its functions' symbols.\n"
+				" --library=<pkg/mod>=<ast>    Where the AST of an import <pkg/mod> is.\n"
 				" -v, --version                Display version.\n"
 				" -h, --help                   Display help.\n";
 
@@ -502,6 +506,10 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			return "cannot import a module whose functions use its global variable '" + arg1
 			       + "': an imported module's top level does not run, so '" + arg1 + "' is never initialized.";
 
+		case E_InterfaceAsProgram:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'" + arg1 + "' is an interface, which has no code to compile.";
+
 		case E_AssignToForIndex:
 			BOOST_ASSERT(arg1 != "\x01");
 			return "cannot assign to '" + arg1 + "': the index of a 'for' loop is read-only.";
@@ -837,6 +845,15 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");
 			return "'" + arg1 + "' names " + arg2 + "; it must be given where a function pointer type chooses one.";
+
+		case E_FieldInitNotConst:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "the initializer of field '" + arg1 + "' must be a compile-time constant.";
+
+		case E_FieldInitUnsupported:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "field '" + arg1 + "' cannot have an initializer in this version: only a primitive field "
+			       "or a one-dimensional array of primitives can.";
 
 		default:
 			BOOST_ASSERT(false);

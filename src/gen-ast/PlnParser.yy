@@ -10,7 +10,7 @@
 
 %defines
 %define api.parser.class	{PlnParser}
-%parse-param	{PlnLexer& lexer}	{json& ast}	{MacroTable& macros}	{string& cState}
+%parse-param	{PlnLexer& lexer}	{json& ast}	{MacroTable& macros}	{string& cState}	{const string& buildTarget}
 %lex-param	{PlnLexer& lexer}
 
 %code requires
@@ -122,6 +122,8 @@ struct BodyList {
 	#include "PlnGenAstMessage.h"
 	#include "PlnGenAstInternal.h"
 	#include "PlnGenAstC2Ast.h"
+	#include "../common/PlnDefs.h"
+	#include "../common/PlnStrLit.h"
 
 	static std::set<std::string> typeNames = {
 		"int8",  "int16",  "int32",  "int64",
@@ -184,6 +186,56 @@ struct BodyList {
 		return j;
 	} // LCOV_EXCL_BR_LINE
 
+	// Only a top-level cinclude is part of what a module publishes.
+	static void rejectCIncludeExport(const json& node, const string& file)
+	{
+		if (node.is_object() && node.value("stmt-type", "") == "cinclude") {
+			if (node.contains("export-types"))
+				throw runtime_error(PlnGenAstMessage::locatedError(file, node["loc"][0], node["loc"][1],
+					PlnGenAstMessage::getMessage(E_NestedCIncludeExport)));
+			return;
+		}
+		if (node.is_structured())
+			for (auto& child : node) rejectCIncludeExport(child, file);
+	}
+
+	static json libraryImport(json pathInf, const string& file, const palan::PlnParser::location_type& loc)
+	{
+		if (pathInf["path-type"] == "inc" && !isLibraryImportPath(pathInf["path"]))
+			throw runtime_error(PlnGenAstMessage::locatedError(file, loc.begin.line, loc.begin.column,
+				PlnGenAstMessage::getMessage(E_BadLibraryImport, pathInf["path"])));
+		return resolveImportPath(move(pathInf), file);
+	}
+
+	// `libpath`, `link`, `built` and `target` stay identifiers elsewhere, like 'in'. None is a
+	// statement of the program, so no node comes out (an empty statement list).
+	static json interfaceStmt(json& ast, const string& word, const string& value, const string& file,
+	                          const string& buildTarget, const palan::PlnParser::location_type& loc)
+	{
+		auto fail = [&](PlnMessageCode code, const string& arg) {
+			throw runtime_error(PlnGenAstMessage::locatedError(file, loc.begin.line, loc.begin.column,
+				PlnGenAstMessage::getMessage(code, arg)));
+		};
+		if (word == "libpath") {
+			if (isInterfaceFile(file)) fail(E_LibpathInInterface, "");
+			auto dir = std::filesystem::path(file).parent_path() / value;
+			ast["libpaths"].push_back(std::filesystem::weakly_canonical(dir).string());
+			return json::array();
+		}
+		if (word != "link" && word != "built" && word != "target") fail(E_UnexpectedString, word);
+		if (!isInterfaceFile(file)) fail(E_InterfaceOnly, "'" + word + "'");
+		if (word == "link") {
+			ast["libs"].push_back(value);
+		} else if (word == "target") {
+			if (value != buildTarget) fail(E_InterfaceOtherTarget, value);
+			ast["target"] = value;
+		} else {
+			if (value != PALAN_VERSION) fail(E_InterfaceOtherVersion, value);
+			ast["built"] = value;
+		}
+		return json::array();
+	} // LCOV_EXCL_BR_LINE
+
 	static void requireInKeyword(const string& file, const string& word,
 	                             const palan::PlnParser::location_type& loc)
 	{
@@ -235,6 +287,7 @@ struct BodyList {
 %token <string>	ID	"identifier"
 %token <string>	PATH	"path"
 %token <string>	INCLUDE_FILE	"include file"
+%token KW_LIBRARY	"library"
 %token KW_EXPORT	"export"
 %token KW_IMPORT	"import"
 %token KW_CINCLUDE	"cinclude"
@@ -280,9 +333,9 @@ struct BodyList {
 %type <PList<NodeRef>>	stmt_list_e stmt_list_b
 %type <BodyList>	body_list_e body_list_b
 %type <json>	import cinclude import_path
-%type <PList<string>>	import_ids link_libs
+%type <PList<string>>	import_ids link_libs c_type_names cinclude_export
 %type <vector<string>>	link_clause
-%type <string>	import_as func_name op_func_name
+%type <string>	import_as func_name op_func_name library_decl library_name
 %type <json>	expression term store_loc
 %type <PList<json>>	arguments
 %type <json>	array_desc array_row dict_desc
@@ -325,12 +378,34 @@ struct BodyList {
 %start module
 
 %%
-module: statements
+module: library_decl statements
 	{
+		ast["module"] = moduleIdentity($1, lexer.inputFile);
 		if (!ast["ast"].contains("functions"))
 			ast["ast"]["functions"] = json::array();
-		ast["ast"]["statements"] = LazyNode::toJsonArray($1);
+		ast["ast"]["statements"] = LazyNode::toJsonArray($2);
+		for (auto& stmt : ast["ast"]["statements"])
+			if (stmt.value("stmt-type", "") != "cinclude") rejectCIncludeExport(stmt, lexer.inputFile);
+		rejectCIncludeExport(ast["ast"]["functions"], lexer.inputFile);
+		if (isInterfaceFile(lexer.inputFile) && !ast.contains("built"))
+			throw runtime_error(PlnGenAstMessage::locatedError(lexer.inputFile, 1, 1,
+				PlnGenAstMessage::getMessage(E_InterfaceNoVersion)));
+		if (isInterfaceFile(lexer.inputFile) && !ast.contains("target"))
+			throw runtime_error(PlnGenAstMessage::locatedError(lexer.inputFile, 1, 1,
+				PlnGenAstMessage::getMessage(E_InterfaceNoTarget)));
 	}
+	;
+
+library_decl: /* empty */
+	{ }
+	| KW_LIBRARY library_name ';'
+	{ $$ = $2; }
+	;
+
+library_name: ID
+	{ $$ = $1; }
+	| library_name '.' ID
+	{ $$ = $1 + "." + $3; }
 	;
 
 statements: /* empty */
@@ -367,9 +442,11 @@ expr_stmt: import
 		$$["stmt-type"] = "cinclude";
 
 		json c_ast = execute_c2ast($$["path-type"], $$["path"],
-		                          fs::path(lexer.inputFile).parent_path().string(), cState);
-		if (c_ast.is_object() && c_ast.contains("c-state"))
+		                          fs::path(lexer.inputFile).parent_path().string(), cState, buildTarget);
+		if (c_ast.is_object() && c_ast.contains("c-state")) {
 			cState = c_ast["c-state"].dump();
+			for (auto& header : c_ast["headers"]) ast["c-headers"].push_back(header);
+		}
 		if (c_ast.is_object() && c_ast.contains("ast")) {
 			if (c_ast["ast"].contains("functions")) {
 				$$["functions"] = move(c_ast["ast"]["functions"]);
@@ -430,6 +507,8 @@ expr_stmt: import
 	{ $$ = globalPermit($2, PList<json>(), @$); }
 	| KW_GLOBAL ID KW_FOR global_funcs
 	{ $$ = globalPermit($2, $4, @$); }
+	| ID STRING
+	{ $$ = interfaceStmt(ast, $1, $2, lexer.inputFile, buildTarget, @$); }
 	| const_decl
 	{ $$ = {{"stmt-type", "const-decl"}, {"name", $1["name"]}, {"value", move($1["value"])}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| type_decl
@@ -514,16 +593,16 @@ stmt_list_b: block_stmt
 
 import: KW_IMPORT import_path import_as
 	{
-		ast["import"].emplace_back($2);
-		$$ = move($2);
+		$$ = libraryImport($2, lexer.inputFile, @2);
+		ast["import"].emplace_back($$);
 		if ($3.size()) {
 			$$["alias"] = $3;
 		}
 	}
 	| KW_IMPORT import_ids KW_FROM import_path import_as
 	{
-		ast["import"].emplace_back($4);
-		$$ = move($4);
+		$$ = libraryImport($4, lexer.inputFile, @4);
+		ast["import"].emplace_back($$);
 		$$["targets"] = $2.toVector();
 		if ($5.size()) { $$["alias"] = $5; }
 	}
@@ -559,14 +638,15 @@ import_as: /* empty */
 	{ $$ = move($2); }
 	;
 
-cinclude: KW_CINCLUDE import_path import_as link_clause
+cinclude: KW_CINCLUDE import_path import_as cinclude_export link_clause
 	{
 		$$ = move($2);
 		if ($3.size()) {
 			$$["alias"] = $3;
 		}
+		if ($4.size) $$["export-types"] = $4.toVector();
 		json libs = json::array(), objs = json::array();
-		for (auto& name : $4) {
+		for (auto& name : $5) {
 			if (isLinkObjName(name))
 				objs.push_back(resolveLinkObjPath(name, lexer.inputFile));
 			else
@@ -575,6 +655,18 @@ cinclude: KW_CINCLUDE import_path import_as link_clause
 		if (libs.size()) $$["libs"] = move(libs);
 		if (objs.size()) $$["objs"] = move(objs);
 	}
+	;
+
+cinclude_export: /* empty */
+	{ }
+	| KW_EXPORT c_type_names
+	{ $$ = $2; }
+	;
+
+c_type_names: ID
+	{ $$ = PList<string>().push($1); }
+	| c_type_names ',' ID
+	{ $$ = $1.push($3); }
 	;
 
 link_clause: /* empty */
@@ -841,6 +933,8 @@ type_members: type_member
 
 type_member: type_expr ID ';'
 	{ $$ = {{"name", move($2)}, {"var-type", move($1)}}; } // LCOV_EXCL_BR_LINE
+	| type_expr ID '=' expression ';'
+	{ $$ = {{"name", move($2)}, {"var-type", move($1)}, {"init", move($4)}}; } // LCOV_EXCL_BR_LINE
 	| KW_FUNC long_func_name '(' paramaters ')' return_def block
 	{ $$ = {{"not-impl", true}}; } // LCOV_EXCL_BR_LINE
 	;
@@ -989,7 +1083,7 @@ term: INT
 	| FLO
 	{ $$ = {{"expr-type", "lit-flo"}, {"value", move($1)}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| STRING
-	{ $$ = {{"expr-type", "lit-str"}, {"value", move($1)}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
+	{ $$ = {{"expr-type", "lit-str"}, {"value", strLitText($1)}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| KW_TRUE
 	{ $$ = boolLiteral("1"); LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| KW_FALSE
@@ -1199,6 +1293,13 @@ func_def: KW_FUNC func_name '(' paramaters ')' return_def block_obj
 	{
 		json fn = funcDecl(ast, true, {{"name", $3}, {"func-type", "palan"}}, $5, $7, @$); // LCOV_EXCL_BR_LINE
 		$$ = std::make_shared<const LazyNode>(LazyNode{ move(fn), {{"block", $8}}, {} }); // LCOV_EXCL_BR_LINE
+	}
+	| KW_EXPORT KW_FUNC func_name '(' paramaters ')' return_def ';'
+	{
+		if (!isInterfaceFile(lexer.inputFile))
+			throw runtime_error(PlnGenAstMessage::locatedError(lexer.inputFile, @$.begin.line, @$.begin.column,
+				PlnGenAstMessage::getMessage(E_InterfaceOnly, "a function without a body")));
+		$$ = leafNode(funcDecl(ast, true, {{"name", $3}, {"func-type", "palan"}}, $5, $7, @$)); // LCOV_EXCL_BR_LINE
 	}
 	;
 

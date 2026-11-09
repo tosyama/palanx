@@ -66,7 +66,8 @@ printf("%.1f\n", len(@v));  // 5.0
 Other features include variable-length arrays (`[+]T` with `len`/`push`/`resize`/`pop`),
 `for copy a, i in arr` loops, command-line arguments as `args`, function overloading, multiple named
 return values, method-form calls (`c.add(1)` for `add(@!c, 1)`), function pointers, enums,
-modules (`import`/`export`), and raw Linux syscalls.
+field initializers, modules (`import`/`export`), libraries (`palan --lib`, `import <...>`), a
+standard library starting with `std/utf8`, and raw Linux syscalls.
 See the [Palan Language Reference](doc/PalanReference.md) for the whole language.
 
 ## Quick Start
@@ -120,7 +121,31 @@ make clean      # remove build/ and build-debug/
 make coverage   # coverage report (build-cov/lcov.info)
 ```
 
-The tools are placed in `build/bin/`.
+`build/bin/palan` runs the toolchain; the tools it uses are in `build/lib/palan/dev/tools/`.
+
+To install, with `--strip` leaving out the debug information:
+
+```bash
+cmake --install build --prefix ~/.local --strip
+```
+
+`bin/palan` then points at the version installed last, and versions can stay side by side. To remove
+one, run `lib/palan/<version>/uninstall` under the prefix; `bin/palan` moves to the newest one left.
+
+## Installing a Release
+
+A tag `v<version>` makes CI build `palan-<version>-x86_64-linux-gnu.tar.gz`, kept as an artifact
+of the `release` workflow's run (and attached to the GitHub Release when one is published). Its top
+level is the installed layout, so it unpacks into a prefix as `cmake --install` would:
+
+```bash
+tar -xzf palan-0.2.4-x86_64-linux-gnu.tar.gz -C ~/.local
+~/.local/bin/palan hello.pa
+```
+
+It needs `as` and `ld` (binutils), the C headers (libc6-dev), glibc 2.38 or newer and the
+libstdc++ of GCC 13.2 or newer, as on Ubuntu 24.04. `lib/palan/<version>/uninstall` removes it,
+as for a version built and installed from the sources.
 
 ## Toolchain
 

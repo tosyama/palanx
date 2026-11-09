@@ -1,0 +1,4 @@
+cinclude <stdio.h>;
+import "lib_module_id/a/util.pa" as A;
+import "lib_module_id/b/util.pa" as B;
+printf("%d %d\n", A.total(), B.total());

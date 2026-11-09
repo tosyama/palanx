@@ -1,7 +1,7 @@
 Palan Abstract Syntax Tree Json Specification
 ============================================
 
-ver. 0.2.3
+ver. 0.2.4
 
 \* - Required
 
@@ -10,12 +10,22 @@ Root
 - import - import file list
 - export - export declaration list
 - original - original file path
+- c-headers - Path string list of every file the module's `cinclude`s read, the headers they include
+  too (may repeat). Omitted when none. The build manager compares their times with the AST's
+  (SpecAndDesign.md 5.1)
+- module\* - Module identity string (SpecAndDesign.md 3.7), from the file's `library` declaration
+  and name (`std.utf8`, `util`)
+- target\* - Target name string (`<arch>-<os>-<abi>`), which the C declarations depend on; a `.pai`'s
+  `target` statement must name the same
 - ast\* - AST model
+- libpaths - Absolute directory string list from `libpath` statements; never from a `.pai`
+- libs - Link library name string list from `link` statements; only from a `.pai`
+- built - Version string from the `built` statement; only from a `.pai`
 
 Import file list
 ----------------
 - path-type\* - Path type string: "src" "inc"
-- path\* - Path string
+- path\* - Path string. For "src", absolute with symbolic links resolved (SpecAndDesign.md 3.7); for "inc", the library module as written (`std/utf8`)
 
 Export declaration list
 -------------------------
@@ -47,7 +57,8 @@ Function definition model
      - parameters\* - Parameter list (Palan parameter, see below; empty array when no parameters)
      - ret-type - Return variable type (unnamed single return only; omitted for void and named returns)
      - rets - Named return list (Palan parameter, see below; omitted for an unnamed return and void)
-     - block\* - Block object (function body; see Block object below)
+     - block\* - Block object (function body; see Block object below). Absent for a function a
+       `.pai` declares (SpecAndDesign.md 3.7)
 
   2. **c** - C function prototype (from `cinclude`)
      - parameters\* - Parameter list (C parameter, see below; empty array when no parameters)
@@ -405,7 +416,7 @@ Statement model
 - loc\* - Location Array
   1. import - import module statement
     - path-type\* - Path type string: "src" "inc"
-    - path\* - Path string
+    - path\* - Path string, as in the import file list
     - targets - Import target name string list (a function name, a type name or an operator), null - all
     - alias - Alias name string
   2. cinclude - C header include statement (expands in place, scope-aware)
@@ -420,6 +431,8 @@ Statement model
       when the header defines no capturable extern objects
     - typedefs - Typedef definition model list (see Typedef definition model above);
       omitted when the header defines no capturable typedef
+    - export-types - C type name string list from the `export` clause (SpecAndDesign.md 3.7);
+      omitted when the statement has no such clause
     - libs - Link library name string list, in source order (from the `link` clause);
       omitted when the statement has no `link` clause. See SASpec.md's Root `libs` for
       how these are aggregated (sorted, deduplicated, and unioned across scopes and
@@ -454,9 +467,10 @@ Statement model
   7. struct-def - struct type definition (`type Name { field_decl... }`; consumed by SA, not emitted to sa.json)
     - name\* - Struct name string
     - export - Boolean, true if declared with `export` (omitted when false)
-    - fields\* - Field list (each entry: `name`, `var-type`)
+    - fields\* - Field list (each entry: `name`, `var-type`, `init`)
       - name\* - Field name string
       - var-type\* - Field type (same Variable type object format)
+      - init - The field's initializer (`int32 y = 7;`), an expression model as written
   8. type-alias - native type alias declaration (`type Name = type_expr;`; consumed by SA, not emitted to sa.json)
     - name\* - Alias name string
     - export - Boolean, true if declared with `export` (omitted when false)
@@ -538,7 +552,9 @@ Expression model
 - expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "mul" "div" "mod" "neg" "cmp" "call" "cast" "arr-index" "field-access" "member-call" "logical-and" "logical-or" "logical-not" "addr-of" "not-impl" "bitand" "bitor" "bitxor" "shl" "shr" "bitnot" "arr-lit" "dict-lit" "sizeof" "chain-call" "transfer" "call-ptr"
 - loc\* - Location Array
   1. lit-str - String literal
-    - value\* - String value
+    - value\* - The bytes as escaped text: printable ASCII and valid UTF-8 characters as they
+      are, `\"`, `\\`, `\n`, `\t`, `\r`, and every other byte as `\xHH` (upper-case hex), so
+      `"x\xffy"` and the same bytes written raw are both `x\xFFy`
   2. lit-int - Signed integer literal (corresponds to INT token). A character literal (`'a'`)
     is also emitted as a `lit-int` holding its ASCII code, with no `value-type`; `true`/`false`
     are emitted as a `bool`-typed `lit-int`

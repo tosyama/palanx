@@ -1,0 +1,4 @@
+cinclude <stdio.h>;
+import "lib_module_id/my-lib.pa";
+import "lib_module_id/my_2dlib.pa";
+printf("%d %d\n", dashed(), escaped());

@@ -1,7 +1,22 @@
 cmake_minimum_required(VERSION 3.16)
 project(palanx)
 
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS src/common/PlnDefs.h)
+file(STRINGS src/common/PlnDefs.h PALAN_VERSION_LINE REGEX "#define PALAN_VERSION ")
+string(REGEX REPLACE ".*\"(.*)\".*" "\\1" PALAN_VERSION "${PALAN_VERSION_LINE}")
+
+file(STRINGS src/common/PlnDefs.h PALAN_TARGET_LINE REGEX "#define PALAN_TARGET ")
+string(REGEX REPLACE ".*\"(.*)\".*" "\\1" PALAN_TARGET "${PALAN_TARGET_LINE}")
+set(PALAN_BUILD_LIB_DIR ${CMAKE_BINARY_DIR}/lib/palan/dev)
+set(PALAN_INSTALL_LIB_DIR lib/palan/${PALAN_VERSION})
+
+function(palan_tool tool)
+	set_target_properties(${tool} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${PALAN_BUILD_LIB_DIR}/tools)
+	install(TARGETS ${tool} RUNTIME DESTINATION ${PALAN_INSTALL_LIB_DIR}/tools COMPONENT tools)
+endfunction()
+
 include(FetchContent)
+set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(
 	googletest
 	DOWNLOAD_EXTRACT_TIMESTAMP ON
@@ -32,4 +47,11 @@ add_subdirectory(test/codegen-unit-tester)
 
 add_subdirectory(src/build-mgr)
 add_subdirectory(test/build-mgr-tester)
+
+add_subdirectory(src/std)
+add_subdirectory(test/std-tester)
+
+set(PALAN_INSTALL_DOC_DIR share/doc/palan/${PALAN_VERSION})
+install(FILES README.md LICENSE DESTINATION ${PALAN_INSTALL_DOC_DIR} COMPONENT doc)
+install(DIRECTORY doc DESTINATION ${PALAN_INSTALL_DOC_DIR} COMPONENT doc PATTERN Issues.md EXCLUDE)
 

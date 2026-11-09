@@ -1,0 +1,17 @@
+library demo;
+cinclude <stdio.h> export FILE;
+cinclude <string.h>;
+const N = 3;
+const UNUSED = 9;
+export type OnlyInPrivate { int32 i; };
+type Priv { int32 x; @OnlyInPrivate i; };
+type Dropped { int32 y; };
+type Dup { int8 a; };
+export type Color enum { Red, Blue };
+export type T { [N]int32 a; @Priv p; @FILE f; @Dup d; };
+export type NotUsedByMain { int32 z; };
+export func make() -> [+]T {
+	[+]T v;
+	v.resize(1);
+	return v;
+}

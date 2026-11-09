@@ -1,0 +1,3 @@
+library demo;
+cinclude "local_type.h" export local_t;
+export func f(@local_t p) { }

@@ -11,6 +11,8 @@
 #include <thread>
 #include <future>
 #include <csignal>
+#include <cstdlib>
+#include <filesystem>
 #include <sys/stat.h>
 
 #ifdef __GNUC__
@@ -18,6 +20,13 @@
 		typedef __gnu_cxx::stdio_sync_filebuf<char> popen_filebuf;
 #endif
 using namespace std;
+
+// Tests name the internal tools bare, so this is the one place that knows where
+// they are. Testers start in the build directory.
+static const int tool_path_set = [] {
+	string path = filesystem::current_path().string() + "/lib/palan/dev/tools:" + getenv("PATH");
+	return setenv("PATH", path.c_str(), 1);
+}();
 
 int cleanTestEnv()
 {

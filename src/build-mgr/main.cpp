@@ -12,14 +12,18 @@
 #include <algorithm>
 #include <cstring>
 #include <functional>
+#include <iterator>
 #include <memory>
 #include <getopt.h>
+#include <unistd.h>
 #include <filesystem>
 #include <cstdint>
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 #include "PlnBuildMgrMessage.h"
 #include "../common/PlnDefs.h"
+#include "../common/PlnInterface.h"
 #include "../common/PlnProcess.h"
+#include "PlnAllocatorGen.h"
 
 using namespace std;
 namespace fs = std::filesystem;
@@ -55,6 +59,276 @@ static int runTool(const vector<string>& argv)
 	}
 }
 
+static string tempNameOf(const string& path)
+{
+	return path + ".tmp." + to_string(getpid());
+}
+
+// Builds racing over one work file must only ever see it complete, so it takes
+// its name once finished. Every tool the pipeline runs takes `-o`.
+static int runToolTo(vector<string> argv, const string& path)
+{
+	string tmp = tempNameOf(path);
+	argv.push_back("-o");
+	argv.push_back(tmp);
+	if (int ret = runTool(argv)) {
+		error_code ignored;
+		fs::remove(tmp, ignored);
+		return ret;
+	}
+	fs::rename(tmp, path);
+	return 0;
+}
+
+static fs::file_time_type newestToolTime(const string& exec_path, const string& target)
+{
+	fs::file_time_type newest = fs::file_time_type::min();
+	for (const string& tool : {
+			exec_path + "/palan-gen-ast", exec_path + "/palan-c2ast", exec_path + "/palan-sa",
+			exec_path + "/palan-codegen", exec_path + "/../" + target + "/c2ast/predefined.h"}) {
+		error_code ignored;
+		newest = max(newest, fs::last_write_time(tool, ignored));
+	} // LCOV_EXCL_BR_LINE -- closing brace of a loop over local strings; the branch coverpoints here are compiler-generated destructor dispatch, not source-level conditionals
+	return newest;
+}
+
+// An equal time counts as older, so an edit right after a build is not missed.
+// An unreadable dependency counts as newer, for the tool to report it.
+static bool isUpToDate(const string& result, fs::file_time_type tools_time, const vector<string>& deps)
+{
+	error_code ec;
+	fs::file_time_type result_time = fs::last_write_time(result, ec);
+	if (ec || result_time <= tools_time) return false;
+	for (const string& dep : deps) {
+		fs::file_time_type dep_time = fs::last_write_time(dep, ec);
+		if (ec || result_time <= dep_time) return false;
+	}
+	return true;
+}
+
+// Leaves `ast` holding the AST: the headers it read are known only from the AST itself.
+static int generateAst(const string& source, const string& ast_path, const string& exec_path,
+                       const string& target, fs::file_time_type tools_time, json& ast)
+{
+	ifstream existing(ast_path);
+	ast = json::parse(existing, nullptr, false);
+	if (ast.is_object()) {
+		vector<string> deps{source};
+		for (auto& header : ast.value("c-headers", json::array())) deps.push_back(header);
+		if (isUpToDate(ast_path, tools_time, deps)) return 0;
+	}
+	if (int ret = runToolTo({exec_path + "/palan-gen-ast", source, "--target", target}, ast_path)) // LCOV_EXCL_BR_LINE
+		return ret;
+	ifstream generated(ast_path);
+	ast = json::parse(generated);
+	return 0;
+} // LCOV_EXCL_BR_LINE -- closing brace of a function with local strings/paths; the branch coverpoints here are compiler-generated destructor dispatch, not source-level conditionals
+
+// `base` is the source's path in the working directory; deps are the ASTs the result comes from.
+static int compileModule(const string& base, const string& exec_path, fs::file_time_type tools_time,
+                         const vector<string>& deps, const vector<string>& library_args = {})
+{
+	string sa_file = base + ".sa.json";
+	string asm_file = base + ".s";
+	string obj_file = base + ".o";
+	if (fs::exists(sa_file) && isUpToDate(obj_file, tools_time, deps))
+		return 0;
+	vector<string> sa_argv{exec_path + "/palan-sa", base + ".ast.json"};
+	sa_argv.insert(sa_argv.end(), library_args.begin(), library_args.end());
+	if (int ret = runToolTo(sa_argv, sa_file)) // LCOV_EXCL_BR_LINE
+		return ret;
+	if (int ret = runToolTo({exec_path + "/palan-codegen", sa_file}, asm_file)) // LCOV_EXCL_BR_LINE
+		return ret;
+	return runToolTo({"as", asm_file}, obj_file); // LCOV_EXCL_BR_LINE
+} // LCOV_EXCL_BR_LINE -- closing brace of a function with local strings/paths; the branch coverpoints here are compiler-generated destructor dispatch, not source-level conditionals
+
+// Kept as it was when the content is the same, so its time still says what it was compiled from.
+static void renameIfChanged(const string& tmp, const string& path)
+{
+	auto contentOf = [](const string& p) {
+		ifstream f(p);
+		return string(istreambuf_iterator<char>(f), {});
+	};
+	if (fs::exists(path) && contentOf(tmp) == contentOf(path))
+		fs::remove(tmp);
+	else
+		fs::rename(tmp, path);
+}
+
+// Reported here since `ld` would blame the symbols, and palan-sa takes a
+// module's identity as unique.
+static bool claimModuleId(map<string, string>& module_ids, const string& id, const string& source)
+{
+	auto [it, is_new] = module_ids.emplace(id, source);
+	if (!is_new)
+		cerr << PlnBuildMgrMessage::getMessage(E_DuplicateModuleId, source, id, it->second) << endl;
+	return is_new;
+}
+
+// `library`: the identity of the module they belong to, or empty for a program's.
+// With no `link` clause, their sa.json has nothing to add to the program's libraries.
+static int buildAllocators(const PlnAllocShapes& shapes, const string& dir, const string& library,
+                           const string& exec_path, const string& target, fs::file_time_type tools_time,
+                           map<string, string>& module_ids, string& obj_file)
+{
+	fs::create_directories(dir);
+	string alloc_pa = dir + "/" PALAN_ALLOCATORS_MODULE ".pa";
+	if (!claimModuleId(module_ids, allocatorsModuleOf(library), alloc_pa))
+		return 1;
+	string alloc_h = dir + "/" PALAN_ALLOCATORS_MODULE ".h";
+	string alloc_ast = alloc_pa + ".ast.json";
+	{
+		ofstream hdr(tempNameOf(alloc_h));
+		writeAllocatorsHeader(hdr);
+		ofstream out(tempNameOf(alloc_pa));
+		writeAllocatorsSource(out, shapes, library);
+	}
+	renameIfChanged(tempNameOf(alloc_h), alloc_h);
+	renameIfChanged(tempNameOf(alloc_pa), alloc_pa);
+
+	json alloc_ast_json;
+	if (int ret = generateAst(alloc_pa, alloc_ast, exec_path, target, tools_time, alloc_ast_json)) // LCOV_EXCL_BR_LINE
+		return ret;
+	if (int ret = compileModule(alloc_pa, exec_path, tools_time, {alloc_ast})) // LCOV_EXCL_BR_LINE
+		return ret;
+	obj_file = alloc_pa + ".o";
+	return 0;
+} // LCOV_EXCL_BR_LINE -- closing brace of a function with local strings/paths/json; the branch coverpoints here are compiler-generated destructor dispatch, not source-level conditionals
+
+// The `.pai` of an `import <module>`, or empty after reporting why there is none.
+static string findLibrary(const string& module, const set<string>& libpaths, const string& std_root, const string& importer)
+{
+	string package = module.substr(0, module.find('/'));
+	vector<string> roots;
+	if (package == "std") {
+		roots.push_back(std_root);
+	} else {
+		for (auto& dir : libpaths)
+			if (fs::is_directory(dir + "/" + package)) roots.push_back(dir);
+		if (roots.size() > 1) {
+			cerr << PlnBuildMgrMessage::getMessage(E_LibraryInTwoPlaces, package, roots[0], roots[1]) << endl;
+			return "";
+		}
+	}
+	string pai = roots.empty() ? "" : fs::weakly_canonical(roots[0] + "/" + module + ".pai").string();
+	if (pai.empty() || !fs::exists(pai)) {
+		cerr << PlnBuildMgrMessage::getMessage(E_LibraryNotFound, importer, module) << endl;
+		return "";
+	}
+	if (!fs::exists(fs::path(pai).replace_extension(".a"))) {
+		cerr << PlnBuildMgrMessage::getMessage(E_LibraryNoArchive, pai) << endl;
+		return "";
+	}
+	return pai;
+}
+
+static bool checkLibraryModules(const vector<json>& asts)
+{
+	auto packageOf = [](const string& id) { return id.substr(0, id.find('.')); };
+	string main_id = asts[0]["module"];
+	for (auto& ast : asts) {
+		string id = ast["module"], source = ast["original"];
+		if (!isLibraryModule(id)) {
+			cerr << PlnBuildMgrMessage::getMessage(E_LibModuleNotDeclared, source) << endl;
+			return false;
+		}
+		if (packageOf(id) != packageOf(main_id)) {
+			cerr << PlnBuildMgrMessage::getMessage(E_LibPackageMismatch, source, packageOf(id), packageOf(main_id)) << endl;
+			return false;
+		}
+		set<string> globals;
+		for (auto& s : ast["ast"].value("statements", json::array())) {
+			string t = s.value("stmt-type", "");
+			if (t == "var-decl" && s.value("global", false))
+				globals.insert(s["vars"][0]["name"].get<string>());
+			else if (t == "global-permit" && globals.count(s["name"].get<string>()) && !s["funcs"].empty()) {
+				cerr << PlnBuildMgrMessage::getMessage(E_LibModuleWithGlobals, source, s["name"].get<string>()) << endl;
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+// Writes under a temporary name in the output's directory, so an output only ever appears complete.
+static void installFile(const string& from, const string& to)
+{
+	fs::copy_file(from, tempNameOf(to), fs::copy_options::overwrite_existing);
+	fs::rename(tempNameOf(to), to);
+}
+
+// base: the main source's path in the working directory.
+static int buildLibrary(const vector<json>& asts, const string& base, const vector<string>& obj_files,
+                        vector<pair<string, string>> members, const set<string>& link_objs,
+                        const string& out_dir, const string& exec_path, const string& target,
+                        const vector<string>& library_args)
+{
+	string main_id = asts[0]["module"];
+	fs::path source = asts[0]["original"].get<string>();
+	string lib_dir = base + ".lib";
+	fs::create_directories(lib_dir);
+
+	vector<json> internals(asts.begin() + 1, asts.end());
+	string pai = lib_dir + "/" + source.stem().string() + ".pai";
+	try {
+		string text = writeLibraryInterface(asts[0], internals);
+		ofstream(pai) << text;
+	} catch (const runtime_error& e) {
+		cerr << e.what() << endl;
+		return 1;
+	}
+
+	// The interface's reader takes the identity from its file name, as palan-gen-ast does for the source.
+	string pai_ast = pai + ".ast.json";
+	string symbols_file = pai + ".symbols.json";
+	if (int ret = runToolTo({exec_path + "/palan-gen-ast", pai, "--target", target}, pai_ast)) // LCOV_EXCL_BR_LINE
+		return ret;
+	vector<string> sa_argv{exec_path + "/palan-sa", pai_ast, "--interface"};
+	sa_argv.insert(sa_argv.end(), library_args.begin(), library_args.end());
+	if (int ret = runToolTo(sa_argv, symbols_file))
+		return ret;
+	ifstream symbols_in(symbols_file), sa_in(base + ".sa.json");
+	json symbols = json::parse(symbols_in), sa = json::parse(sa_in);
+	set<string> defined;
+	for (auto& f : sa["functions"]) defined.insert(f["name"].get<string>());
+	for (auto& symbol : symbols)
+		if (!defined.count(symbol)) {
+			cerr << PlnBuildMgrMessage::getMessage(E_LibSymbolMismatch, source.string(), symbol) << endl;
+			return 1;
+		}
+
+	// `ar` keeps only base names, which modules may share.
+	vector<string> ar_argv{"ar", "rcsD"};
+	string archive_tmp;
+	{
+		string package_dir = main_id.substr(0, main_id.rfind('.'));
+		replace(package_dir.begin(), package_dir.end(), '.', '/');
+		fs::path out_base = fs::path(out_dir) / package_dir / source.stem();
+		fs::create_directories(out_base.parent_path());
+		string archive = out_base.string() + ".a";
+		archive_tmp = tempNameOf(archive);
+		ar_argv.push_back(archive_tmp);
+		for (int i = 0; i < asts.size(); i++)
+			members.push_back({asts[i]["module"], obj_files[i]});
+		int obj_no = 0;
+		for (auto& obj : link_objs)
+			members.push_back({"__obj" + to_string(obj_no++) + "_" + fs::path(obj).stem().string(), obj});
+		for (auto& [name, obj] : members) {
+			string member = lib_dir + "/" + name + ".o";
+			fs::copy_file(obj, member, fs::copy_options::overwrite_existing);
+			ar_argv.push_back(member);
+		}
+		if (int ret = runTool(ar_argv)) { // LCOV_EXCL_BR_LINE
+			error_code ignored;
+			fs::remove(archive_tmp, ignored);
+			return ret;
+		}
+		fs::rename(archive_tmp, archive);
+		installFile(pai, out_base.string() + ".pai");
+	} // LCOV_EXCL_BR_LINE -- closing brace of a block with local strings/paths; the branch coverpoints here are compiler-generated destructor dispatch, not source-level conditionals
+	return 0;
+} // LCOV_EXCL_BR_LINE -- closing brace of a function with many local strings/paths/json; the branch coverpoints here are compiler-generated destructor dispatch, not source-level conditionals
+
 int main(int argc, char* argv[])
 {
 	struct option long_options[] = {
@@ -62,13 +336,17 @@ int main(int argc, char* argv[])
 		{ "version", no_argument,       NULL, 'v' },
 		{ "clean",   no_argument,       NULL, 'c' },
 		{ "output",  required_argument, NULL, 'o' },
+		{ "target",  required_argument, NULL, 't' },
+		{ "lib",     no_argument,       NULL, 'l' },
 		{ 0 }
 	};
 
 	int opt, option_index = 0;
 	bool do_clean = false;
+	bool do_lib = false;
 	string binary_name;
 	bool output_specified = false;
+	string target = PALAN_TARGET;
 
 	while (0 < (opt = getopt_long(argc, argv, "+hvco:", long_options, NULL))) {
 		switch (opt) {
@@ -85,21 +363,37 @@ int main(int argc, char* argv[])
 				binary_name = optarg;
 				output_specified = true;
 				break;
+			case 't':
+				target = optarg;
+				break;
+			case 'l':
+				do_lib = true;
+				break;
 			default:
 				break;
 		}
 	}
 
+	if (!isSupportedTarget(target)) {
+		cerr << PlnBuildMgrMessage::getMessage(E_UnsupportedTarget, target) << endl;
+		return 1;
+	}
+
 	string palan_dir_path = getPalanDirPath();
-	string palan_work_path = palan_dir_path + "/work";
 
 	if (do_clean) {
-		fs::remove_all(palan_work_path);
+		fs::remove_all(palan_dir_path + "/work");
 		return 0;
 	}
 
+	string palan_work_path = palan_dir_path + "/work/" + target;
+
 	if ((argc-optind) < 1 || (output_specified && (argc-optind) != 1)) {
 		cerr << PlnBuildMgrMessage::getMessage(E_WrongNumberOfArgs) << endl;
+		return 1;
+	}
+	if (do_lib && !output_specified) {
+		cerr << PlnBuildMgrMessage::getMessage(E_LibNeedsOutput) << endl;
 		return 1;
 	}
 
@@ -108,10 +402,19 @@ int main(int argc, char* argv[])
 
 	vector<string> target_files;
 	vector<string> ast_files;
+	vector<json> asts;
+	// The archive members besides each module's own object: name, object file.
+	vector<pair<string, string>> lib_members;
+	map<string, string> module_ids;
+	map<string, vector<string>> module_imports;
+	set<string> libpaths;
+	vector<pair<string, string>> library_imports; // importing file, module
+	fs::file_time_type tools_time = newestToolTime(exec_path, target);
 	target_files.push_back(fs::weakly_canonical(argv[optind]).string());
+	string entry_dir = palan_work_path + target_files[0] + ".d";
 	vector<string> run_argv;
 	if (!output_specified) {
-		binary_name = palan_work_path + target_files[0] + ".out";
+		binary_name = entry_dir + "/out";
 		run_argv.push_back(binary_name);
 		run_argv.insert(run_argv.end(), argv + optind + 1, argv + argc);
 	}
@@ -128,646 +431,149 @@ int main(int argc, char* argv[])
 		fs::create_directories(input_file_work_path);
 		string output_ast_path = palan_work_path + input_file.string() + ".ast.json";
 
-		if (int ret = runTool({exec_path + "/palan-gen-ast", input_file.string(), "-o", output_ast_path})) // LCOV_EXCL_BR_LINE
+		json ast;
+		if (int ret = generateAst(input_file.string(), output_ast_path, exec_path, target, tools_time, ast))
 			return ret;
 		ast_files.emplace_back(output_ast_path);
+		asts.push_back(ast);
+		for (auto& dir : ast.value("libpaths", json::array())) libpaths.insert(dir.get<string>());
 
 		// check import files and add targets
-		ifstream astfile(output_ast_path);
-		json ast = json::parse(astfile);
+		if (!claimModuleId(module_ids, ast["module"], input_file.string()))
+			return 1;
 		if (!ast["import"].is_null()) {
 			for (auto imp: ast["import"]) {
 				if (imp["path-type"] == "src") {
 					string import_path = imp["path"];
 
 					if (import_path.ends_with(".pa")) {
-						if (import_path[0] != '/') {
-							import_path = input_file.parent_path().string() + "/" + import_path;
-						}
-						import_path = fs::weakly_canonical(import_path);
+						module_imports[input_file.string()].push_back(import_path);
 						auto it = find(target_files.begin(), target_files.end(), import_path);
 						if (it == target_files.end()) {
 							target_files.emplace_back(import_path);
 						}
 					}
+				} else {
+					library_imports.push_back({input_file.string(), imp["path"]});
 				}
 			}
 		}
 	}
 
-	vector<string> obj_files;
+	if (do_lib && !checkLibraryModules(asts))
+		return 1;
+
 	// Union of libraries requested by cinclude `link` clauses across every
-	// module. Declared here (not scoped to the aggregation block below) so it
-	// is still alive when the ld command line is built.
+	// module, and by the `link` statements of the libraries used. Declared here
+	// (not scoped to the aggregation block below) so it is still alive when the
+	// ld command line is built.
 	set<string> link_libs;
 	set<string> link_objs;
 
+	// Only here are all libpaths known: a library's sources are not read, and its
+	// `.pai` holds none. This loop grows the list by what each `.pai` imports.
+	map<string, string> library_files; // module, .pai
+	vector<string> library_args;
+	vector<string> archives;
+	string std_root = fs::weakly_canonical(exec_path + "/../" + target).string();
+	for (int i=0; i<library_imports.size(); i++) {
+		auto [importer, module] = library_imports[i];
+		auto known = library_files.find(module);
+		if (known == library_files.end()) {
+			string pai = findLibrary(module, libpaths, std_root, importer);
+			if (pai.empty())
+				return 1;
+			string pai_ast = palan_work_path + pai + ".ast.json";
+			fs::create_directories(fs::path(pai_ast).parent_path());
+			json ast;
+			if (int ret = generateAst(pai, pai_ast, exec_path, target, tools_time, ast))
+				return ret;
+			if (!claimModuleId(module_ids, ast["module"], pai))
+				return 1;
+			for (auto& lib : ast.value("libs", json::array())) link_libs.insert(lib.get<string>());
+			for (auto& imp : ast.value("import", json::array()))
+				if (imp["path-type"] == "inc") library_imports.push_back({pai, imp["path"]});
+			library_args.push_back("--library=" + module + "=" + pai_ast);
+			archives.push_back(fs::path(pai).replace_extension(".a").string());
+			known = library_files.emplace(module, pai).first;
+		}
+		module_imports[importer].push_back(known->second);
+	}
+
+	vector<string> obj_files;
+
 	for (int i=0; i<ast_files.size(); i++) {
 		string ast_file = ast_files[i];
-
-		// palan-sa
-		if (int ret = runTool({exec_path + "/palan-sa", ast_file})) // LCOV_EXCL_BR_LINE
-			return ret;
-
-		// Derive output paths (strip ".ast.json" suffix from ast_file)
 		string base = ast_file.substr(0, ast_file.size() - 9);  // remove ".ast.json"
-		string sa_file  = base + ".sa.json";
-		string asm_file = base + ".s";
-		string obj_file = base + ".o";
 
-		// palan-codegen
-		if (int ret = runTool({exec_path + "/palan-codegen", sa_file}))
+		// palan-sa reads through an imported module's own imports, so all of them count.
+		vector<string> deps{ast_file};
+		set<string> reached;
+		function<void(const string&)> reach = [&](const string& source) {
+			for (auto& import_path : module_imports[source])
+				if (reached.insert(import_path).second) {
+					deps.push_back(palan_work_path + import_path + ".ast.json");
+					reach(import_path);
+				}
+		};
+		reach(target_files[i]);
+
+		if (int ret = compileModule(base, exec_path, tools_time, deps, library_args))
 			return ret;
 
-		// as
-		if (int ret = runTool({"as", asm_file, "-o", obj_file})) // LCOV_EXCL_BR_LINE
-			return ret;
-
-		obj_files.push_back(obj_file);
+		obj_files.push_back(base + ".o");
 	}
+
+	// Whole-program information, and the allocators: a library module's come from
+	// its own shapes, the others' from the shapes of all of them.
+	PlnAllocShapes program_shapes;
+	for (int i=0; i<ast_files.size(); i++) {
+		ifstream f(ast_files[i].substr(0, ast_files[i].size() - 9) + ".sa.json");
+		json sa = json::parse(f);
+		// SA always emits "libs" (possibly empty), so no contains() guard is needed.
+		for (auto& l : sa["libs"]) link_libs.insert(l.get<string>());
+		for (auto& o : sa["objs"]) link_objs.insert(o.get<string>());
+		string id = asts[i]["module"];
+		if (!isLibraryModule(id)) {
+			program_shapes.add(sa);
+			continue;
+		}
+		PlnAllocShapes shapes;
+		shapes.add(sa);
+		if (shapes.empty()) continue;
+		string alloc_o;
+		if (int ret = buildAllocators(shapes, palan_work_path + target_files[i] + ".alloc", id, // LCOV_EXCL_BR_LINE
+				exec_path, target, tools_time, module_ids, alloc_o))
+			return ret;
+		obj_files.push_back(alloc_o);
+		lib_members.push_back({allocatorsModuleOf(id), alloc_o});
+	} // LCOV_EXCL_BR_LINE -- closing brace of a loop body with local strings/json; the branch coverpoints here are compiler-generated destructor dispatch, not source-level conditionals
+
+	if (do_lib)
+		return buildLibrary(asts, palan_work_path + target_files[0], obj_files, lib_members, link_objs, binary_name, exec_path, target, library_args);
 
 	// The entry is chosen here, at link time: every module compiles the same
 	// whichever role it plays, and only this stub names the first one's
 	// top-level function.
+	fs::create_directories(entry_dir);
 	{
 		string base = ast_files[0].substr(0, ast_files[0].size() - 9);
 		ifstream f(base + ".sa.json");
 		string main_symbol = json::parse(f)["main"]["name"];
-		string entry_s = base + ".entry.s";
-		string entry_o = base + ".entry.o";
-		if (int ret = runTool({exec_path + "/palan-codegen", "--entry", main_symbol, "-o", entry_s})) // LCOV_EXCL_BR_LINE
+		string entry_s = entry_dir + "/entry.s";
+		string entry_o = entry_dir + "/entry.o";
+		if (int ret = runToolTo({exec_path + "/palan-codegen", "--entry", main_symbol, "--target", target}, entry_s)) // LCOV_EXCL_BR_LINE
 			return ret;
-		if (int ret = runTool({"as", entry_s, "-o", entry_o})) // LCOV_EXCL_BR_LINE
+		if (int ret = runToolTo({"as", entry_s}, entry_o)) // LCOV_EXCL_BR_LINE
 			return ret;
 		obj_files.push_back(entry_o);
 	}
 
-	// Single pass over every module's sa.json to aggregate whole-program
-	// information: the union of `link`-clause libraries (into link_libs,
-	// declared above so it survives to the ld step) and alloc-shapes
-	// deduplicated by key (used below to synthesize shared allocators).
-	{
-		set<string> seen_shapes;
-		vector<json> struct_shapes;
-		// Arrays of any element ("arr", "varr"), in the order SA met them:
-		// an element's own array helpers come before the arrays holding it.
-		vector<json> elem_arr_shapes;
-		for (auto& ast_file : ast_files) {
-			string base = ast_file.substr(0, ast_file.size() - 9);
-			ifstream f(base + ".sa.json");
-			json sa = json::parse(f);
-			// SA always emits "libs" (possibly empty), so no contains() guard
-			// is needed. Read before the alloc-shapes continue below: a
-			// module can carry libs without carrying alloc-shapes.
-			for (auto& l : sa["libs"]) link_libs.insert(l.get<string>());
-			for (auto& o : sa["objs"]) link_objs.insert(o.get<string>());
-			if (!sa.contains("alloc-shapes")) continue;
-			for (auto& shape : sa["alloc-shapes"]) {
-				string kind = shape.value("shape-kind", "");
-				// A bytes shape is a struct the module only declares.
-				bool isStruct = kind == "struct" || kind == "bytes";
-				string key;
-				if (isStruct)
-					key = "struct:" + shape["shape-name"].get<string>();
-				else
-					key = shape["shape-key"].get<string>();
-				if (!seen_shapes.insert(key).second) continue;
-				if (isStruct)
-					struct_shapes.push_back(shape);
-				else
-					elem_arr_shapes.push_back(shape);
-			}
-		}
-
-		if (!struct_shapes.empty() || !elem_arr_shapes.empty()) {
-			string workdir = fs::path(ast_files[0]).parent_path().string();
-			string alloc_pa  = workdir + "/" PALAN_ALLOCATORS_MODULE ".pa";
-			string alloc_ast = alloc_pa + ".ast.json";
-			string alloc_sa  = alloc_pa + ".sa.json";
-			string alloc_s   = alloc_pa + ".s";
-			string alloc_o   = alloc_pa + ".o";
-
-			{
-				// The struct types below are named after the program's own,
-				// and a system header could bring a C type of any of those
-				// names into this module, so it declares only what it calls.
-				// With no `link` clause, its sa.json never contributes to
-				// link_libs and need not join the aggregation loop above.
-				ofstream hdr(workdir + "/__allocators.h");
-				hdr << "#define NULL ((void *)0)\n"
-				    << "void *malloc(unsigned long size);\n"
-				    << "void *calloc(unsigned long nmemb, unsigned long size);\n"
-				    << "void free(void *ptr);\n"
-				    << "void *memcpy(void *dest, const void *src, unsigned long n);\n"
-				    << "void *memmove(void *dest, const void *src, unsigned long n);\n"
-				    << "void *realloc(void *ptr, unsigned long size);\n"
-				    << "void abort(void);\n";
-				ofstream out(alloc_pa);
-				out << "cinclude \"__allocators.h\";\n";
-
-				map<string, const json*> struct_by_name;
-				for (auto& shape : struct_shapes)
-					struct_by_name[shape["shape-name"].get<string>()] = &shape;
-				// A struct owning nothing comes only as its layout, a bytes shape.
-				auto hasOwned = [&](const string& name) {
-					return struct_by_name.at(name)->at("shape-kind") == "struct";
-				};
-				// Copies one struct's storage into another's: a flat struct is a
-				// byte copy, one owning sub-objects goes through its copy function.
-				auto structCopy = [&](const string& name, const string& dst, const string& src) {
-					if (hasOwned(name))
-						return "__pln_copy_" + name + "(" + dst + ", " + src + ");";
-					return "memcpy(" + dst + ", " + src + ", "
-						+ to_string(struct_by_name.at(name)->at("total-size").get<int64_t>()) + ");";
-				};
-
-				// Slots are filled with raw C allocations: a borrow slot never takes
-				// ownership, and the array's free function releases the elements.
-				auto structElemBuild = [&](const string& name, const string& slot, const string& indent) {
-					string s = indent + "malloc("
-						+ to_string(struct_by_name.at(name)->at("total-size").get<int64_t>())
-						+ ") -> " + slot + ";\n";
-					if (hasOwned(name))
-						s += indent + "__pln_init_" + name + "(" + slot + ");\n";
-					return s;
-				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
-
-				// How the generated code handles one element of an array. An owned
-				// element is built when its slot comes into use and dropped when it
-				// leaves, through helpers named after the element's type that take
-				// the slots as `[]@!T` to build and as `[]T` to free and copy, the
-				// views of a struct array's own. Any other element is plain bytes,
-				// copied in bulk.
-				struct ElemOps {
-					string kind;       // the shape entry's element kind
-					string inner;      // an inner `[+]T` element's shape key
-					string key;        // the element's type symbol
-					string type;       // one element's type name in the source
-					int64_t size;      // the bytes a slot takes, but a row laid out in place
-					int nlens;         // the lengths its helpers take: its levels', then its elements'
-					int depth;         // the levels of a row laid out in place
-					bool owned;
-					bool embedded;     // laid out in the slot itself (`[+]$T`, `[+]$[n]T`)
-					string buildElem;  // a slot as the build helper fills it
-					string declElem;   // a slot as a local array declares it
-					string ownElem;    // a slot as the drop and copy helpers read it
-					string slotRun;    // a row block's slots, as `[]` of this; a row laid out in place stands for its elements'
-					string fill;       // a row block's slot as its build helper fills it
-					string value;      // what push takes
-					string popped;     // what pop returns
-					string run;        // a copy's source run of elements
-					string data;       // the header's data pointer
-					shared_ptr<const ElemOps> leaf;   // a row's element
-				};
-				map<string, const json*> varrElemDescs;
-				for (auto& shape : elem_arr_shapes)
-					if (shape["shape-kind"] == "varr") varrElemDescs[shape["shape-key"]] = &shape["elem"];
-				function<ElemOps(const json&)> opsOf = [&](const json& desc) {
-					string kind = desc["kind"];
-					ElemOps e;
-					e.kind = kind;
-					e.inner = desc.value("shape-key", "");
-					e.key = desc["key"];
-					e.size = desc.value("size", (int64_t)8);
-					e.depth = desc.value("depth", 0);
-					if (kind == "row" || kind == "embed-row") {
-						e.leaf = make_shared<const ElemOps>(opsOf(desc["elem"]));
-						const ElemOps& l = *e.leaf;
-						e.embedded = kind == "embed-row";
-						e.value = "[]" + l.slotRun;
-						if (!e.embedded) {
-							// A row is a block of its own, which the slot points at.
-							e.nlens = 1 + l.nlens;
-							e.owned = true;
-							e.buildElem = "@!" + l.fill;
-							// A local array of `@!@!T` slots must be spelled `[n]@![]@!T`.
-							e.declElem = "@![]" + (l.owned ? l.buildElem : l.slotRun);
-							e.ownElem = "[]" + l.slotRun;
-							e.slotRun = e.ownElem;
-							e.fill = e.buildElem;
-							e.popped = e.buildElem;
-							e.run = "[]" + e.ownElem;
-							e.data = "@!" + e.buildElem;
-						} else {
-							// A row laid out in place is its elements' slots, depth levels of them.
-							// pop moves them into a block of their own for the caller.
-							e.nlens = e.depth + l.nlens;
-							e.owned = l.owned;
-							e.type = l.type;
-							e.buildElem = l.buildElem;
-							e.ownElem = l.ownElem;
-							e.slotRun = l.slotRun;
-							e.fill = l.fill;
-							e.popped = "@!" + l.fill;
-							e.run = l.run;
-							e.data = l.data;
-						}
-						return e;
-					}
-					e.type = kind == "prim" ? desc["type"] : desc["name"];
-					e.nlens = kind == "varr" ? opsOf(*varrElemDescs.at(e.inner)).nlens : 0;
-					e.owned = kind == "struct" || kind == "varr";
-					e.embedded = kind == "embed-struct";
-					e.buildElem = "@!" + e.type;
-					e.declElem = e.buildElem;
-					e.ownElem = e.type;
-					e.slotRun = (e.embedded ? "$" : "") + e.type;
-					e.fill = e.owned ? e.buildElem : e.type;
-					e.value = e.type;
-					// A struct is returned by value, as any struct is; another owned element as its block.
-					e.popped = e.owned && kind != "struct" ? "@!" + e.type : e.type;
-					e.run = e.owned ? "[]" + e.ownElem : "@" + e.type;
-					e.data = e.owned ? "@!@!" + e.type : "@!" + e.type;
-					return e;
-				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
-				// The helpers of an element take the lengths it needs as m0, m1, ...
-				// and pass the rest on to its element's helpers.
-				auto lenNames = [](int n, int from = 0) {
-					vector<string> names;
-					for (int i = from; i < from + n; i++) names.push_back("m" + to_string(i));
-					return names;
-				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
-				auto lenParams = [&](int n) {
-					string s;
-					for (auto& name : lenNames(n)) s += ", int64 " + name;
-					return s;
-				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
-				auto lenArgs = [](const vector<string>& names, size_t from = 0) {
-					string s;
-					for (size_t i = from; i < names.size(); i++) s += ", " + names[i];
-					return s;
-				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
-				auto rest = [](const vector<string>& names, size_t from) {
-					return vector<string>(names.begin() + from, names.end());
-				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
-				// The slots a row laid out in place holds, and the bytes any slot takes.
-				auto countOf = [](const ElemOps& e, const vector<string>& names) {
-					string s = names[0];
-					for (int i = 1; i < e.depth; i++) s += " * " + names[i];
-					return s;
-				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
-				auto sizeOf = [&](const ElemOps& e, const vector<string>& names) {
-					if (e.kind != "embed-row") return to_string(e.size);
-					return countOf(e, names) + " * " + to_string(e.leaf->size);
-				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
-				// The address of slot idx of a data pointer, for the byte copies of
-				// unowned elements. An embedded struct's `arr[i]` is its address already.
-				auto slotAddr = [&](const ElemOps& e, const string& arr, const string& idx, const vector<string>& names) {
-					bool isRow = e.kind == "embed-row";
-					string at = arr + "[" + idx + (isRow ? " * " + countOf(e, names) : "") + "]";
-					bool isAddr = isRow ? e.leaf->embedded : e.embedded;
-					return (isAddr ? "" : "@!") + at;
-				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
-				// An inner `[+]T` element is its header, starting empty. A row's
-				// data starts undefined, as an array variable's does; its owned
-				// elements are built at once, so no slot is left unset.
-				auto elemBuild = [&](const ElemOps& e, const string& slot, const string& indent, const vector<string>& names) {
-					if (e.kind == "embed-row") return indent + "__pln_build_" + e.key + "(" + slot + " as " + e.data + ", 0, 1" + lenArgs(names) + ");\n";
-					if (e.kind == "varr") return indent + "calloc(1, 24) -> " + slot + ";\n";
-					if (e.kind == "row") {
-						const ElemOps& l = *e.leaf;
-						string s = indent + "malloc(" + names[0] + " * " + sizeOf(l, rest(names, 1)) + ") -> " + slot + ";\n";
-						if (l.owned) s += indent + "__pln_build_" + l.key + "(" + slot + ", 0, " + names[0] + lenArgs(names, 1) + ");\n";
-						return s;
-					}
-					return structElemBuild(e.type, slot, indent);
-				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
-				// A row moved out by `->>` leaves NULL in its slot.
-				auto elemDrop = [&](const ElemOps& e, const string& slot, const string& indent, const vector<string>& names) {
-					if (e.kind == "embed-row") return "__pln_drop_" + e.key + "(" + slot + " as " + e.data + ", 0, 1" + lenArgs(names) + ");";
-					if (e.kind == "varr") return "__pln_free_" + e.inner + "(" + slot + lenArgs(names) + ");";
-					if (e.kind == "row") {
-						const ElemOps& l = *e.leaf;
-						if (!l.owned) return "free(" + slot + ");";
-						return "if " + slot + " != NULL { __pln_drop_" + l.key + "(" + slot
-							+ ", 0, " + names[0] + lenArgs(names, 1) + "); }\n" + indent + "free(" + slot + ");";
-					}
-					return hasOwned(e.type) ? "__pln_free_" + e.type + "(" + slot + ");" : "free(" + slot + ");";
-				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
-				// dst is the slot as its build fills it, a writable reference.
-				auto elemSet = [&](const ElemOps& e, const string& dst, const string& src, const vector<string>& names) {
-					if (e.kind == "embed-row")
-						return "__pln_copyrun_" + e.key + "(" + dst + " as " + e.data + ", " + src + " as " + e.data + ", 1" + lenArgs(names) + ");";
-					if (e.kind == "varr")
-						return "__pln_copy_" + e.inner + "(" + dst + ", " + src + ".data, " + src + ".len" + lenArgs(names) + ");";
-					if (e.kind == "row") {
-						const ElemOps& l = *e.leaf;
-						if (l.owned) return "__pln_copyrun_" + l.key + "(" + dst + ", " + src + ", " + names[0] + lenArgs(names, 1) + ");";
-						return "memcpy(" + dst + ", " + src + ", " + names[0] + " * " + sizeOf(l, rest(names, 1)) + ");";
-					}
-					return structCopy(e.type, dst, src);
-				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
-				// An owned struct slot (an inner `[+]T`'s header is one) is passed to
-				// the helpers as a borrow, since a struct parameter would own and free it.
-				auto borrowed = [](const ElemOps& e, const string& v, bool isMutable = false) {
-					return e.kind == "struct" || e.kind == "varr" ? (isMutable ? "@!" : "@") + v : v;
-				}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
-				set<string> elemHelpersDone;
-				function<void(const ElemOps&)> emitElemHelpers = [&](const ElemOps& e) {
-					if (!e.owned || !elemHelpersDone.insert(e.key).second) return;
-					if (e.leaf) emitElemHelpers(*e.leaf);
-					vector<string> names = lenNames(e.nlens);
-					string mp = lenParams(e.nlens), ma = lenArgs(names);
-					string head = "\nfunc __pln_build_" + e.key + "([]" + e.buildElem + " slots, int64 from, int64 to" + mp + ") {\n";
-					string dropHead = "func __pln_drop_" + e.key + "([]" + e.ownElem + " slots, int64 from, int64 to" + mp + ") {\n";
-					string setHead = "func __pln_set_" + e.key + "([]" + e.ownElem + " slots, int64 i, " + borrowed(e, e.value) + " x" + mp + ") {\n";
-					string runHead = "func __pln_copyrun_" + e.key + "([]" + e.ownElem + " dst, []" + e.ownElem + " src, int64 n" + mp + ") {\n";
-					if (e.kind == "embed-row") {
-						// Rows laid out in place are runs of their elements' slots.
-						string l = e.leaf->key, n = countOf(e, names), la = lenArgs(names, e.depth);
-						out << head
-						    << "    __pln_build_" << l << "(slots, from * " << n << ", to * " << n << la << ");\n"
-						    << "}\n"
-						    << dropHead
-						    << "    __pln_drop_" << l << "(slots, from * " << n << ", to * " << n << la << ");\n"
-						    << "}\n"
-						    << setHead
-						    << "    int64 j = 0;\n"
-						    << "    while j < " << n << " {\n"
-						    << "        __pln_set_" << l << "(slots, i * " << n << " + j, " << borrowed(*e.leaf, "x[j]") << la << ");\n"
-						    << "        j + 1 -> j;\n"
-						    << "    }\n"
-						    << "}\n"
-						    << runHead
-						    << "    __pln_copyrun_" << l << "(dst, src, n * " << n << la << ");\n"
-						    << "}\n";
-						return;
-					}
-					out << head
-					    << "    int64 i = from;\n"
-					    << "    while i < to {\n"
-					    << elemBuild(e, "slots[i]", "        ", names)
-					    << "        i + 1 -> i;\n"
-					    << "    }\n"
-					    << "}\n"
-					    << dropHead
-					    << "    int64 i = from;\n"
-					    << "    while i < to {\n"
-					    << "        " << elemDrop(e, borrowed(e, "slots[i]", true), "        ", names) << "\n"
-					    << "        i + 1 -> i;\n"
-					    << "    }\n"
-					    << "}\n"
-					    << setHead
-					    << "    " << elemSet(e, "@!slots[i]", "x", names) << "\n"
-					    << "}\n"
-					    << runHead
-					    << "    int64 i = 0;\n"
-					    << "    while i < n {\n"
-					    << "        __pln_set_" << e.key << "(dst, i, " << borrowed(e, "src[i]") << ma << ");\n"
-					    << "        i + 1 -> i;\n"
-					    << "    }\n"
-					    << "}\n";
-				};
-
-				// Struct type declarations (leaf-first order from SA).
-				// Only the owned pointer fields are declared, at their original
-				// offsets; every other byte range becomes opaque padding. The
-				// allocators touch nothing else, and the full field list cannot
-				// be re-expressed as Palan source in general (C unions, synthesized
-				// anonymous tags, embedded types not declared in this module).
-				// Exported, because SA keeps only an exported type's name, and
-				// these must keep the program-wide names the shapes carry.
-				// Byte ranges of each struct outside its owned pointer fields,
-				// declared as __pln_padN fields and copied as they are.
-				map<string, vector<pair<string, int64_t>>> struct_pads;
-				for (auto& shape : struct_shapes) {
-					string name = shape["shape-name"];
-					// An owned field is declared as the slot its build fills, so
-					// this module neither copies nor frees what it is given.
-					// A row laid out in place is a run of its elements' slots, which its
-					// helpers take as a data pointer, as a `[+]T`'s, since an array of
-					// these slots would not pass where owned ones are expected.
-					vector<tuple<int64_t, string, int64_t>> owned_decls;
-					for (auto& of : shape.value("owned-fields", json::array())) {
-						ElemOps e = opsOf(of["elem"]);
-						int64_t count = 1;
-						for (int i = 0; i < e.depth; i++) count *= of["lens"][i].get<int64_t>();
-						string run = e.kind == "embed-row" ? "$[" + to_string(count) + "]" : "";
-						owned_decls.push_back({of["offset"].get<int64_t>(),
-							run + e.buildElem + " " + of["name"].get<string>(), count * 8});
-					}
-					sort(owned_decls.begin(), owned_decls.end());
-
-					out << "\nexport type " << name << " {";
-					int64_t pos = 0;
-					int pad_no = 0;
-					auto pad_to = [&](int64_t end) {
-						if (end <= pos) return;
-						string pad = "__pln_pad" + to_string(pad_no++);
-						out << " $[" << (end - pos) << "]uint8 " << pad << ";";
-						struct_pads[name].push_back({pad, end - pos});
-					};
-					for (auto& [offset, decl, size] : owned_decls) {
-						pad_to(offset);
-						out << " " << decl << ";";
-						pos = offset + size;
-					}
-					pad_to(shape["total-size"].get<int64_t>());
-					out << " };\n";
-				}
-
-				// Struct allocator/free functions, for structs owning fields
-				for (auto& shape : struct_shapes) {
-					if (shape["shape-kind"] == "bytes") continue;
-					string name = shape["shape-name"];
-					struct OwnedField { string slot; ElemOps e; vector<string> lens; };
-					vector<OwnedField> owned;
-					for (auto& of : shape["owned-fields"]) {
-						OwnedField f{of["name"], opsOf(of["elem"]), {}}; // LCOV_EXCL_BR_LINE
-						for (auto& len : of["lens"]) f.lens.push_back(to_string(len.get<int64_t>()));
-						if (f.e.kind == "embed-row") emitElemHelpers(f.e);
-						else if (f.e.leaf) emitElemHelpers(*f.e.leaf);
-						owned.push_back(move(f));
-					}
-
-					// The block is returned as `@!T`: a `T` return would be allocated
-					// by this very function.
-					out << "\nexport func __pln_alloc_" << name
-					    << "() -> @!" << name << " p {\n"
-					    << "    malloc(" << shape["total-size"].get<int64_t>() << ") -> p;\n"
-					    << "    __pln_init_" << name << "(p);\n"
-					    << "}\n";
-
-					// A struct in a stack frame releases only what it owns (fini);
-					// a heap one also frees its own block.
-					out << "export func __pln_init_" << name << "(@!" << name << " p) {\n";
-					for (auto& f : owned) out << elemBuild(f.e, "p." + f.slot, "    ", f.lens);
-					out << "}\n"
-					    << "export func __pln_fini_" << name << "(@!" << name << " p) {\n";
-					for (auto& f : owned) out << "    " << elemDrop(f.e, "p." + f.slot, "    ", f.lens) << "\n";
-					out << "}\n"
-					    << "export func __pln_free_" << name
-					    << "(@!" << name << " p) {\n"
-					    << "    if (p == NULL) { return; }\n"
-					    << "    __pln_fini_" << name << "(p);\n"
-					    << "    free(p);\n"
-					    << "    return;\n"
-					    << "}\n";
-
-					out << "export func __pln_copy_" << name
-					    << "(@!" << name << " dst, @" << name << " src) {\n";
-					for (auto& [pad, size] : struct_pads[name])
-						out << "    memcpy(dst." << pad << ", src." << pad << ", " << size << ");\n";
-					for (auto& f : owned)
-						out << "    " << elemSet(f.e, "dst." + f.slot, "src." + f.slot, f.lens) << "\n";
-					out << "}\n";
-				}
-
-				for (auto& shape : elem_arr_shapes) {
-					ElemOps e = opsOf(shape["elem"]);
-					string key = shape["shape-key"];
-					emitElemHelpers(e);
-					vector<string> names = lenNames(e.nlens);
-					string mp = lenParams(e.nlens), ma = lenArgs(names);
-					if (shape["shape-kind"] == "arr") {
-						// A fixed array of owned elements, all of them live.
-						string buildRun = "[]" + e.buildElem, ownRun = "[]" + e.ownElem;
-						out << "\nexport func __pln_init_" << key << "(" << buildRun << " outer, int64 n" << mp << ") {\n"
-						    << "    __pln_build_" << e.key << "(outer, 0, n" << ma << ");\n"
-						    << "}\n"
-						    << "export func __pln_alloc_" << key << "(int64 n" << mp << ") -> []" << e.declElem << " {\n"
-						    << "    [n]" << e.declElem << " outer;\n"
-						    << "    __pln_init_" << key << "(outer, n" << ma << ");\n"
-						    << "    return outer;\n"
-						    << "}\n"
-						    << "export func __pln_fini_" << key << "(" << ownRun << " pts, int64 n" << mp << ") {\n"
-						    << "    __pln_drop_" << e.key << "(pts, 0, n" << ma << ");\n"
-						    << "}\n"
-						    << "export func __pln_free_" << key << "(" << ownRun << " pts, int64 n" << mp << ") {\n"
-						    << "    if (pts == NULL) { return; }\n"
-						    << "    __pln_fini_" << key << "(pts, n" << ma << ");\n"
-						    << "    free(pts);\n"
-						    << "    return;\n"
-						    << "}\n"
-						    << "export func __pln_copy_" << key << "(" << ownRun << " dst, " << ownRun << " src, int64 n" << mp << ") {\n"
-						    << "    __pln_copyrun_" << e.key << "(dst, src, n" << ma << ");\n"
-						    << "}\n";
-						continue;
-					}
-					// A variable-length array's header {len, cap, data}. Only the
-					// elements below len are live: an owned element is built when the
-					// length grows over its slot and dropped when it shrinks below it.
-					string hdr = "__pln_" + key;
-					string size = sizeOf(e, names);
-					out << "\nexport type " << hdr << " { int64 len; int64 cap; " << e.data << " data; };\n";
-					out << "export func __pln_init_" << key
-					    << "(@!" << hdr << " h, int64 len, int64 cap" << mp << ") {\n"
-					    << "    len -> h.len;\n"
-					    << "    cap -> h.cap;\n"
-					    << "    if cap > 0 { malloc(cap * " << size << ") -> h.data; }\n"
-					    << "    else { NULL -> h.data; }\n";
-					if (e.owned) out << "    __pln_build_" << e.key << "(h.data, 0, len" << ma << ");\n";
-					out << "}\n"
-					// The header is returned as its block, as a struct allocator's is.
-					    << "export func __pln_alloc_" << key
-					    << "(int64 len, int64 cap" << mp << ") -> @!" << hdr << " h {\n"
-					    << "    malloc(24) -> h;\n"
-					    << "    __pln_init_" << key << "(h, len, cap" << ma << ");\n"
-					    << "}\n"
-					    << "export func __pln_fini_" << key << "(@!" << hdr << " h" << mp << ") {\n";
-					if (e.owned) out << "    __pln_drop_" << e.key << "(h.data, 0, h.len" << ma << ");\n";
-					out << "    free(h.data);\n"
-					    << "}\n"
-					    << "export func __pln_free_" << key << "(@!" << hdr << " h" << mp << ") {\n"
-					    << "    if (h == NULL) { return; }\n"
-					    << "    __pln_fini_" << key << "(h" << ma << ");\n"
-					    << "    free(h);\n"
-					    << "    return;\n"
-					    << "}\n"
-					// Growing doubles the capacity so that adding one element at a
-					// time, by push or by resize, reallocates only now and then.
-					    << "func __pln_reserve_" << key << "(@!" << hdr << " h, int64 n" << mp << ") {\n"
-					    << "    int64 c = h.cap * 2;\n"
-					    << "    if c < n { n -> c; }\n"
-					    << "    if c < 4 { 4 -> c; }\n"
-					    << "    realloc(h.data, c * " << size << ") -> h.data;\n"
-					    << "    c -> h.cap;\n"
-					    << "}\n";
-					// A struct (an inner `[+]T`'s header too) comes as the caller's to
-					// own, as a struct parameter's argument does: an owned one becomes the
-					// slot, and one laid out in place is copied into it and freed.
-					bool takesStruct = e.kind == "varr" || e.kind == "struct" || e.kind == "embed-struct";
-					out << "export func __pln_push_" << key << "(@!" << hdr << " h, " << (takesStruct ? "@!" : "")
-					    << e.value << " x" << mp << ") {\n"
-					    << "    if h.len == h.cap { __pln_reserve_" << key << "(h, h.len + 1" << ma << "); }\n";
-					if (e.kind == "varr" || e.kind == "struct")
-						out << "    x -> h.data[h.len];\n";
-					else if (e.owned)
-						out << "    __pln_build_" << e.key << "(h.data, h.len, h.len + 1" << ma << ");\n"
-						    << "    __pln_set_" << e.key << "(h.data, h.len, x" << ma << ");\n";
-					else if (e.embedded)
-						out << "    memcpy(" << slotAddr(e, "h.data", "h.len", names) << ", x, " << size << ");\n"
-						    << (e.kind == "embed-struct" ? "    free(x);\n" : "");
-					else
-						out << "    x -> h.data[h.len];\n";
-					out << "    h.len + 1 -> h.len;\n"
-					    << "}\n"
-					    << "export func __pln_resize_" << key << "(@!" << hdr << " h, int64 n" << mp << ") {\n"
-					    << "    if n < 0 { abort(); }\n"
-					    << "    if n > h.cap { __pln_reserve_" << key << "(h, n" << ma << "); }\n";
-					if (e.owned)
-						out << "    if n > h.len { __pln_build_" << e.key << "(h.data, h.len, n" << ma << "); }\n"
-						    << "    else { __pln_drop_" << e.key << "(h.data, n, h.len" << ma << "); }\n";
-					out << "    n -> h.len;\n"
-					    << "}\n"
-					// The source is any run of elements, which may be h's own
-					// (`v -> v`, or a borrow of v copied into v); then n is h's
-					// length, so no element is built, freed or moved.
-					    << "export func __pln_copy_" << key << "(@!" << hdr << " h, " << e.run << " src, int64 n" << mp << ") {\n"
-					    << "    if n > h.cap { __pln_reserve_" << key << "(h, n" << ma << "); }\n";
-					if (e.owned)
-						out << "    if n > h.len { __pln_build_" << e.key << "(h.data, h.len, n" << ma << "); }\n"
-						    << "    else { __pln_drop_" << e.key << "(h.data, n, h.len" << ma << "); }\n"
-						    << "    __pln_copyrun_" << e.key << "(h.data, src, n" << ma << ");\n";
-					else
-						out << "    memmove(h.data, src, n * " << size << ");\n";
-					out << "    n -> h.len;\n"
-					    << "}\n";
-					// An owned struct moves out of its block, which return then frees.
-					if (e.kind == "struct") {
-						out << "export func __pln_pop_" << key << "(@!" << hdr << " h" << mp << ") -> " << e.type << " {\n"
-						    << "    if h.len == 0 { abort(); }\n"
-						    << "    h.len - 1 -> h.len;\n"
-						    << "    " << e.type << " x <<= h.data[h.len] as " << e.type << ";\n"
-						    << "    return x;\n"
-						    << "}\n";
-						continue;
-					}
-					// An owned element leaves its slot for the caller.
-					out << "export func __pln_pop_" << key << "(@!" << hdr << " h" << mp << ") -> " << e.popped << " x {\n"
-					    << "    if h.len == 0 { abort(); }\n"
-					    << "    h.len - 1 -> h.len;\n";
-					if (e.kind == "embed-row")
-						out << "    malloc(" << size << ") -> x;\n";
-					// Owned elements' slots are pointers, which '@!' cannot address.
-					if (e.kind == "embed-row" && e.owned) {
-						string n = countOf(e, names);
-						out << "    int64 j = 0;\n"
-						    << "    while j < " << n << " {\n"
-						    << "        h.data[h.len * " << n << " + j] -> x[j];\n"
-						    << "        j + 1 -> j;\n"
-						    << "    }\n";
-					} else if (e.embedded) {
-						out << "    memcpy(x, " << slotAddr(e, "h.data", "h.len", names) << ", " << size << ");\n";
-					} else {
-						out << "    h.data[h.len] -> x;\n";
-					}
-					out << "}\n";
-				}
-
-			}
-
-			if (int ret = runTool({exec_path + "/palan-gen-ast", alloc_pa, "-o", alloc_ast})) // LCOV_EXCL_BR_LINE
-				return ret;
-			if (int ret = runTool({exec_path + "/palan-sa", alloc_ast}))
-				return ret;
-			if (int ret = runTool({exec_path + "/palan-codegen", alloc_sa}))
-				return ret;
-			if (int ret = runTool({"as", alloc_s, "-o", alloc_o})) // LCOV_EXCL_BR_LINE
-				return ret;
-
-			obj_files.push_back(alloc_o);
-		}
+	if (!program_shapes.empty()) {
+		string alloc_o;
+		if (int ret = buildAllocators(program_shapes, entry_dir, "", exec_path, target, tools_time, module_ids, alloc_o))
+			return ret;
+		obj_files.push_back(alloc_o);
 	}
 
 	// ld — link all object files into the final binary. -lc is unconditional:
@@ -775,20 +581,28 @@ int main(int argc, char* argv[])
 	// dependency independent of any header. link_libs then adds one -l per
 	// cinclude `link` clause; names are validated at SA ingest, not here.
 	// link_libs is a set, so declaration order from source is already lost --
-	// harmless for shared libraries (order doesn't gate symbol resolution),
-	// but this would need to change if static archives with inter-library
-	// dependencies were ever supported.
+	// harmless for shared libraries (order doesn't gate symbol resolution).
+	// Palan archives have no order either and do depend on each other, hence the group.
 	vector<string> ldArgv{"ld"}; // LCOV_EXCL_BR_LINE
 	for (auto& obj : obj_files) ldArgv.push_back(obj);
 	for (auto& obj : link_objs) ldArgv.push_back(obj);
+	if (!archives.empty()) {
+		ldArgv.push_back("--start-group");
+		ldArgv.insert(ldArgv.end(), archives.begin(), archives.end());
+		ldArgv.push_back("--end-group");
+	}
 	ldArgv.push_back("-lc");
 	for (auto& lib : link_libs) ldArgv.push_back("-l" + lib);
 	ldArgv.push_back("-dynamic-linker");
 	ldArgv.push_back("/lib64/ld-linux-x86-64.so.2");
-	ldArgv.push_back("-o");
-	ldArgv.push_back(binary_name);
-	if (int ret = runTool(ldArgv))
+	if (output_specified) {
+		ldArgv.push_back("-o");
+		ldArgv.push_back(binary_name);
+		if (int ret = runTool(ldArgv))
+			return ret;
+	} else if (int ret = runToolTo(ldArgv, binary_name)) {
 		return ret;
+	}
 
 	if (!output_specified) {
 		PlnProcResult r = runProcess(run_argv);

@@ -1,6 +1,6 @@
 # Palan Language Reference
 
-**Version:** v0.2.3
+**Version:** v0.2.4
 
 Palan is a compiled systems programming language designed as a simpler, safer, and more enjoyable alternative to C. It targets developers who want low-level control and direct access to C libraries, without the sharp edges of C syntax. Palan code compiles to native x86-64 binaries via AT&T assembly, with no runtime overhead.
 
@@ -50,6 +50,7 @@ printf("%ld %ld\n", ab, bc);   // 3 5
 11. [Modules and Program Structure](#11-modules-and-program-structure)
 12. [C Library Integration](#12-c-library-integration)
 13. [Raw Syscalls](#13-raw-syscalls)
+14. [Standard Library](#14-standard-library)
 
 ---
 
@@ -59,6 +60,7 @@ printf("%ld %ld\n", ab, bc);   // 3 5
 palan source.pa                  # compile, link and run
 palan source.pa a -b             # run with the arguments "a" and "-b"
 palan -o myapp source.pa         # compile & link -> ./myapp
+palan --lib -o dir main.pa        # build the library main.pa is the main source of
 palan --clean                    # clean intermediate files
 ```
 
@@ -72,6 +74,10 @@ the intermediate files under `~/.palan/work/`, not in the current directory.
 ## 2. Lexical Rules
 
 **Identifiers:** `[A-Za-z_][A-Za-z0-9_]*`
+
+Names starting with `__` belong to the toolchain, which uses them in generated code and in a
+library's interface. Do not declare one, nor name a source file so; this is not checked. A name
+from a cincluded C header may start with `__` and is used as it is.
 
 **Integer literals:**
 - Signed: `[0-9]+` (e.g., `42`, `1000`)
@@ -96,7 +102,12 @@ multi-character, or non-ASCII literal is a compile error.
 | `\t`   | tab |
 | `\r`   | carriage return |
 | `\0`   | null byte |
+| `\\`   | backslash |
+| `\"`   | double quote |
 | `\xHH` | hex byte |
+
+A string literal holds bytes, not checked as UTF-8: `\xHH` may give any byte, and a byte written
+in the source is taken as it is.
 
 **Comments:** `// line comment`
 
@@ -1265,7 +1276,18 @@ func fill(@![H][W]int32 g, int32 x) {
   field (`@!s.v`). Only a `[]T` parameter and a C function take an array by name, as in C, and a
   `[]T` parameter, which owns nothing, is passed on by name.
 - `@!arr` also works where a C function takes a pointer to the elements (`memset(@!v, 0, 32)`).
-- A borrowed array cannot be a return type.
+- A function may return a borrowed array (`-> @[]T`, `@[n]T`, `@[+]T`, or `@!`), such as one
+  reached through a borrowed parameter. The call is itself a borrow, passed and bound by name
+  (`@[]uint8 p = name(@s);`). As with a returned `@T`, nothing checks that it does not outlive
+  what it borrows (see [Address-Of Operator](#10-address-of-operator)).
+
+  ```palan
+  type Text { $[+]uint8 bytes = [0]; };
+  func cstr(@Text t) -> @[]uint8 { return @t.bytes; }
+
+  Text t;
+  printf("[%s]\n", t -> cstr());     // []
+  ```
 
 ### Array of Pointer Slots (`[n]@![]T`)
 
@@ -1568,7 +1590,8 @@ printf("\n");                // 1 2 3
 
 **Borrowing and passing.** `@[+]T` and `@![+]T` borrow the array, as for other arrays (see
 [Borrowing Arrays](#borrowing-arrays)); only `@!` can change its length. Passed to a `[]T`
-parameter, such as a C function's pointer, the array gives its elements. A `[+]T` parameter, a
+parameter, such as a C function's pointer, the array gives its elements, and so does `@v`/`@!v`
+(or a `@[+]T` borrow) given to a `@[]T`/`@![]T`. A `[+]T` parameter, a
 `[+]T` return and copying follow the rules of other arrays and structs:
 
 ```palan
@@ -1865,7 +1888,8 @@ A call returning an owned struct (`T`) or a C struct by value has nothing that w
 result, so `mk().x` and `div(7, 2).quot` are compile errors: receive the result into a variable
 with `->` first.
 
-- **Memory management**: heap-allocated, with undefined contents (see
+- **Memory management**: heap-allocated, with undefined contents but for fields with
+  [initializers](#field-initializers) (see
   [Initial contents](#4-variables-constants-and-type-aliases)); automatically freed at scope exit.
   With `$` (`$Point p;`) the struct is placed in the stack frame instead; see
   [Stack Structs](#stack-structs-t).
@@ -1914,11 +1938,37 @@ reset(@![1, 2]);
   array element, or `q[0]` for what a borrow `q` points to. Giving a literal to the borrow `q`
   itself is an error, since `->` to a borrow rebinds it.
 - The field rules are those of an array literal's struct element: every field exactly once,
-  struct fields as nested values, array fields as array literals (`[[1, 2, 3], 4]`), no pointer
+  except that `{name: value}` may leave out a field with an [initializer](#field-initializers),
+  which then takes it; struct fields as nested values, array fields as array literals (`[[1, 2, 3], 4]`), no pointer
   fields or arrays of pointers.
 - A struct field's value may also be a struct expression of that type — a struct variable, a
   `T` field, an array element, a `@T`/`@!T`, or a call result: `Q q = [p, mk(3)];` copies it. With `->`
   it is read before any write too, so `[q.b, @q.a] -> q` swaps.
+
+### Field Initializers
+
+A field can be given an initial value in the type, written as a variable's initializer is:
+
+```palan
+const N = 4;
+type Counter { int32 step = N / 2; bool on = true; $[+]uint8 name = [0]; int32 n; };
+
+Counter c;                    // c.step is 2, c.on is true, c.name holds one 0; c.n is undefined
+Counter d = {n: 5};           // the fields left out take their initializers
+printf("%d %d %ld\n", c.step, d.on, len(@c.name));   // 2 1 1
+```
+
+- The value must be a compile-time constant: literals, [consts](#constant-declarations) and
+  operators on them, an enum member, or an array literal of such values.
+- A primitive field (an integer, a float, `bool` or an enum) and a one-dimensional array of
+  primitives (`[n]T`, `$[n]T`, `[+]T`, `$[+]T`) can have one. Others, such as a struct field given
+  a struct value, cannot in this version.
+- The initializers are in place wherever a struct comes to exist: a variable, heap or `$`; a
+  struct field, whose own type's initializers apply; an element of an array, laid out in place
+  (`[n]$T`, `[+]$T`) or not, including those `resize` adds. A struct taken over with `<<=` or
+  `->>`, or written by a C function, keeps what it holds.
+- A `{name: value}` literal may leave out a field with an initializer; a `[...]` literal still gives
+  every field.
 
 ### Field Types
 
@@ -1932,7 +1982,7 @@ Struct-type fields are written with a prefix that controls ownership and memory 
 
 | Syntax     | Meaning                              | Memory          |
 |------------|--------------------------------------|-----------------|
-| `$T field` | Inline embedding — T's bytes are part of the parent struct's allocation | parent's block  |
+| `$T field` | Inline embedding — T's bytes are part of the parent struct's allocation; what T owns is allocated, copied and freed with the parent | parent's block  |
 | `T field`  | Owned pointer — 8-byte pointer; T is auto-allocated/freed with parent | `__pln_alloc_T` |
 | `@T field` | Non-owning read-only pointer — 8-byte pointer; lifecycle is user-managed; pointer value may be set but field write-through is not allowed | none            |
 | `@!T field`| Non-owning mutable pointer — same as `@T` but field write-through is also allowed | none            |
@@ -1966,6 +2016,7 @@ An array field takes the type an array variable can, with the same meaning. Wher
 | `[n]T field`, `[n]$T field`, `[n][m]T field`, `[n][+]T field`, `[+]T field`, ... | Owned array, as an array variable of that type | cascaded alloc/free with parent |
 | `$[n]T field` (primitive `T`), `$[n]$T field` (struct `T`), `$[n]$[m]T field`, ... | Array laid out in the struct | parent's block |
 | `$[n]T field` (struct `T`), `$[n][m]T field`, `$[n][+]T field`, ... | Array laid out in the struct, holding elements that own storage | parent's block (slots); elements cascade with parent's alloc/free |
+| `$[+]T field` | Variable-length array whose header is laid out in the struct | parent's block (header); elements cascade with parent's alloc/free |
 | `$[n]@T field` / `$[n]@!T field` | Non-owning pointer slots laid out in the struct | parent's block (slots only) |
 
 `n` (and each `m`) must be a compile-time integer: a literal, a [const](#constant-declarations),
@@ -1975,7 +2026,8 @@ is copied with it. When its elements own storage (`$[n]T` with a struct `T`, `$[
 `$[n][+]T`), their slots lie in the struct and the elements are allocated, copied and freed
 with it, as those of an array variable in the stack frame are with the variable; a struct
 with such a field owns storage itself. `$` on an element that owns storage is rejected as for
-a variable.
+a variable. A `$[+]T` field starts empty and is used as a `[+]T` field is, but, like a `$[+]T`
+variable, it cannot be given away or taken over with `->>`.
 `field[i]` accesses an element; for struct-leaf forms, `field[i].sub` continues the field
 chain.
 
@@ -2406,6 +2458,63 @@ flo32 l = len2(@p);
 - Two files may import each other and use each other's types anywhere, including in type
   declarations, as long as no type contains itself (see [Declaration order](#declaration-order)).
 
+### Module Names (`library`)
+
+A module's name comes from its file alone, not from where it is or what imports it. It is the file
+name without `.pa`, unless the file starts with a `library` declaration, which puts it in a
+library:
+
+```palan
+// utf8.pa
+library std;       // the module std.utf8
+```
+
+- `library std.io;` in `file.pa` names the module `std.io.file`.
+- The declaration comes first in the file, at most once; `library` is a reserved word.
+- Two modules of one name in a program are a compile error. Two `util.pa` in different
+  directories meet unless they declare different libraries (`library proj.a;` and
+  `library proj.b;`). A few different file names also give one name, such as `1x.pa` and `_1x.pa`.
+
+### Building a Library
+
+`palan --lib -o <dir> main.pa` builds a library from `main.pa` and the files it imports, each of
+which must declare `library` with the same first name:
+
+```palan
+// utf8.pa
+library std;
+export func length([]uint8 s) -> int64 { ... }
+```
+
+This writes `<dir>/std/utf8.pai`, the interface a person reads to learn the library, and
+`<dir>/std/utf8.a`, the code, for the target being built for.
+
+- The interface holds the main file's `export`s, the exported types of other files they use, and
+  whatever private types and constants those need. Any other `export` of an imported file is
+  visible only inside the library, including a type only a private type uses.
+- A file permitting a function to use its `global` is a compile error, since a library's top level never runs.
+- The interface may rename a private type to a name starting with `__` (see [Lexical Rules](#2-lexical-rules)).
+- Publishing a function with a type alias of another file's private type is a compile error.
+
+### Using a Library
+
+`import <package/module>` imports a library's module, with the same forms as importing a file.
+`libpath` says where to look, relative to the file writing it:
+
+```palan
+libpath "../libs";
+import <geo/vec>;          // reads ../libs/geo/vec.pai, links ../libs/geo/vec.a
+
+Vec a = vec(3.0, 4.0);
+```
+
+- The library's sources are not needed, only its `.pai` and `.a`.
+- A `libpath` may be written in any file and adds a place to look for the whole program.
+- `std` is found with the compiler, and a `libpath` cannot replace it.
+- A package found under two `libpath`s is an error, as is a library built by another version of
+  Palan or for another target.
+- A library that imports another needs that one found too, through the program's `libpath`s.
+
 ### Program Structure
 
 ```palan
@@ -2532,6 +2641,21 @@ cinclude <math.h> link "m";  // link against libm (-lm) when building
 - `link` is not a reserved word — it is only recognized as introducing this clause immediately after
   a `cinclude` path (and optional `as` alias). `unistd.h`'s `link()` function, for example, remains
   callable as an ordinary C function.
+
+### Exporting C Types
+
+`cinclude <stdio.h> export FILE, fpos_t;` names the C types a module's public declarations use, for
+building it as a library (see [Building a Library](#building-a-library)).
+
+- The module still uses the whole header, so `printf` works as it does without the clause.
+- A program using the library needs the header too. A `cinclude` without the clause, used only in
+  function bodies, asks nothing of it.
+- The program can write `FILE` only after a `cinclude` of its own.
+- The clause comes before `link`: `cinclude <uv.h> export uv_loop_t link "uv";`.
+- It is accepted only on a top-level `cinclude`; in a block or a function it is a compile error.
+- An ordinary `import` of a source file does not read the clause.
+- A local header (`cinclude "x.h" export T;`) is not supported yet when the library's public
+  declarations use the type: its reader would not find the header, so `--lib` reports an error.
 
 ### Typedefs
 
@@ -3001,3 +3125,60 @@ syscall sys_write(int32 fd, @void buf, uint64 count) -> int64 = SYS_write;
   variable is never touched.
 - `syscall` is a reserved word, so a cinclude'd `<unistd.h>`'s `syscall()` wrapper function
   cannot be called from a file that uses this feature.
+
+---
+
+## 14. Standard Library
+
+The standard library is the library `std`, found with the compiler (see
+[Using a Library](#using-a-library)). Its modules are ordinary Palan; nothing in it is known to
+the compiler.
+
+### std/utf8
+
+```palan
+cinclude <stdio.h>;
+import <std/utf8>;
+
+utf8 s = toUtf8("h\xC3\xA9llo", utf8mode.KEEP_INVALID);
+s.append(", ");
+s.appendChar(8364);                         // U+20AC
+printf("%s %ld %ld\n", s -> cstr(), s -> byteLen(), s -> charCount());   // héllo, € 11 8
+
+int64 pos = 0;
+while pos < s -> byteLen() {
+    int32 c = s -> nextChar(@!pos);         // -1 for an invalid part
+    printf("U+%04X ", c);
+}
+```
+
+`utf8` is UTF-8 text held with a NUL at the end, so `cstr` gives it to C as it is. A declared
+`utf8` is empty. Its `mode` says what it does with bytes that are not valid UTF-8 when it is made
+or added to, and `hadInvalid` tells that such a part was met:
+
+| `utf8mode` | Invalid part |
+|------------|--------------|
+| `KEEP_INVALID` (a declared `utf8`'s) | kept as it is |
+| `EMPTY_ON_INVALID` | the text becomes empty, and stays empty whatever is added |
+| `REPLACE_INVALID` | replaced with U+FFFD |
+
+An invalid part is the longest start of a valid sequence, or else one byte, as Unicode
+recommends: `"A\xE2\x82B"` has one, which `REPLACE_INVALID` makes `"A\xEF\xBF\xBDB"`. Only a
+`KEEP_INVALID` text holds invalid bytes; `hadInvalid` is cleared only when adding to one
+completes a sequence cut at its end.
+
+| Function | Meaning |
+|----------|---------|
+| `toUtf8(@[]uint8 cs, utf8mode m) -> utf8` | the NUL-terminated bytes `cs`, made by the rules of `m` |
+| `cstr(@utf8 s) -> @[]uint8` | the NUL-terminated bytes, until `s` is added to |
+| `byteLen(@utf8 s) -> int64` | the number of bytes, without the NUL |
+| `nextChar(@utf8 s, @!int64 pos) -> int32` | the code point at byte `pos`, moving `pos` past it; `-1` for an invalid part |
+| `charCount(@utf8 s) -> int64` | the number of code points, an invalid part counting as one |
+| `append(@!utf8 s, @utf8 t)` | adds `t`, by the rules of `s`'s mode |
+| `append(@!utf8 s, @[]uint8 cs)` | adds the NUL-terminated bytes `cs`, by the rules of `s`'s mode |
+| `appendChar(@!utf8 s, int32 c)` | adds the code point `c`; a surrogate, a value beyond U+10FFFF or a negative one is an invalid part, which `KEEP_INVALID` keeps as nothing |
+| `replaced(@utf8 s) -> utf8` | a copy in `REPLACE_INVALID` mode with each invalid part replaced, keeping `hadInvalid` |
+
+A function that only reads is called as `s -> f()`, and one that changes `s` as `s.f()`.
+`bytes`, `hadInvalid` and `mode` are fields that can be read; writing them directly can break
+the NUL at the end or the meaning of `hadInvalid` (see doc/Issues.md).

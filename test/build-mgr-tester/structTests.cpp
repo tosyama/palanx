@@ -1389,3 +1389,20 @@ TEST(build_mgr, operator_func_mtrace) {
 TEST(build_mgr, chain_ahead_of_receiver_mtrace) {
 	expectMtraceRun("386_chain_ahead_of_receiver_mtrace", "5\n1 4\n1 4\n1 5\n4\n4\n4\n", 10);
 }
+
+// A `[+]T` header laid out in a struct, directly or in a struct laid out in
+// it, is built, copied and freed with the struct wherever the struct lives.
+TEST(build_mgr, field_embed_varr_mtrace) {
+	expectMtraceRun("399_field_embed_varr_mtrace", "Hi 3\nHi Hi!\n9 A 0 2\nA N 5 1\n3 5\n", 35);
+}
+
+// Field initializers are in place wherever a struct comes to exist: a variable,
+// a field, an element (laid out in place too) or one `resize` adds; a named
+// literal takes them for the fields it leaves out.
+TEST(build_mgr, field_init_mtrace) {
+	string p = "7 200 1 2.0 2\n";
+	expectMtraceRun("400_field_init_mtrace",
+		p + p + "hi 3 1\n1 -2 3 5 6 2 8\n" + p + p + p + p + "hi 0\n" + p + p
+		+ p + p + p + p + "8 200 1 2.0 2\n" + p + "7 1 1 2.0 2\n3 4 0 0.5 1\n"
+		+ "9 200 1 2.0 2\n3 200 1 2.0 0\n", 38);
+}

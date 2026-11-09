@@ -1,0 +1,8 @@
+export type Str { bool valid; $[+]uint8 bytes; };
+export type Named { int64 id; $Str name; [+]int32 xs; };
+
+// Owned storage reached through a struct laid out in another.
+type Point { int64 x; int64 y; };
+type P { int32 x; };
+type S { $[2]P a; };
+export type Deep { int8 k; $S s; Point tl; };

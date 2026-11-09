@@ -14,6 +14,7 @@
 #include "PlnX86CodeGen.h"
 #include "PlnRegAlloc.h"
 #include "PlnCodegenMessage.h"
+#include "../common/PlnDefs.h"
 
 using namespace std;
 namespace fs = std::filesystem;
@@ -26,12 +27,14 @@ int main(int argc, char* argv[])
 		{ "version",  no_argument,       NULL, 'v' },
 		{ "output",   required_argument, NULL, 'o' },
 		{ "entry",    required_argument, NULL, 'e' },
+		{ "target",   required_argument, NULL, 't' },
 		{ 0 }
 	};
 
 	int opt, option_index = 0;
 	char *output_file = NULL;
 	char *entry_symbol = NULL;
+	string entry_target = PALAN_TARGET;
 
 	while (0 < (opt = getopt_long(argc, argv, "hvo:e:", long_options, NULL))) {
 		switch (opt) {
@@ -47,6 +50,9 @@ int main(int argc, char* argv[])
 			case 'e':
 				entry_symbol = optarg;
 				break;
+			case 't':
+				entry_target = optarg;
+				break;
 			default:
 				break;
 		}
@@ -55,6 +61,10 @@ int main(int argc, char* argv[])
 	if (entry_symbol) {
 		if (argc != optind || !output_file) {
 			cerr << "Usage: palan-codegen -e <symbol> -o <file>" << endl;
+			return 1;
+		}
+		if (!isSupportedTarget(entry_target)) {
+			cerr << PlnCodegenMessage::getMessage(E_UnsupportedTarget, entry_target) << endl;
 			return 1;
 		}
 		ofstream asmfile(output_file);
@@ -79,6 +89,12 @@ int main(int argc, char* argv[])
 		return 1;
 	}
 	json sa = json::parse(safile);
+
+	string sa_target = sa.value("target", "");
+	if (!isSupportedTarget(sa_target)) {
+		cerr << PlnCodegenMessage::getMessage(E_UnsupportedTarget, sa_target) << endl;
+		return 1;
+	}
 
 	// Determine output path
 	string sa_filename = sa_path.filename().string();

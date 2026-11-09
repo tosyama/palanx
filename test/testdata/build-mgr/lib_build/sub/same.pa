@@ -1,0 +1,7 @@
+library demo.sub;
+import "../same.pa" as Top;
+export func same() -> int32 {
+	[+]int32 v;
+	v.push(Top.top());
+	return v[0];
+}

@@ -678,3 +678,9 @@ TEST(build_mgr, multi_ret_into_frame_array_mtrace) {
 TEST(build_mgr, give_row_const_index_mtrace) {
 	expectMtraceRun("388_give_row_const_index_mtrace", "6\n", 3);
 }
+
+TEST(build_mgr, arr_borrow_return) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/402_arr_borrow_return.pa");
+	ASSERT_EQ(output, "hi hi\nhi 105\n7 4\n4\nok\nhi\n");
+}

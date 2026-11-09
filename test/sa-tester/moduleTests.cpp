@@ -4,6 +4,8 @@
 /// @copyright 2026 YAMAGUCHI Toshinobu
 
 #include <gtest/gtest.h>
+#include <fstream>
+#include "../../src/common/PlnDefs.h"
 #include <regex>
 #include <set>
 #include "../test-base/testBase.h"
@@ -89,7 +91,7 @@ TEST(sa, import_non_pa_ignored)
 
 static void genLibNoExport()
 {
-	execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_no_export.pa -o out/lib_no_export.pa.ast.json");
+	genModuleAst("../test/testdata/sa/lib_no_export.pa");
 }
 
 TEST(sa, import_no_export_ignored)
@@ -105,7 +107,7 @@ TEST(sa, import_no_export_ignored)
 
 static void genLibSaNamedRet()
 {
-	execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_named_ret.pa -o out/lib_sa_named_ret.pa.ast.json");
+	genModuleAst("../test/testdata/sa/lib_sa_named_ret.pa");
 }
 
 TEST(sa, import_single_named_ret)
@@ -129,7 +131,6 @@ TEST(sa, import_single_named_ret)
 TEST(sa, import_absolute_path)
 {
 	// import "/nonexistent_lib.so" — absolute path, non-.pa extension
-	// Covers: is_absolute() returning true (PlnSemanticAnalyzer.cpp line 308 branch)
 	cleanTestEnv();
 	json jout = run_sa("../test/testdata/sa/097_import_absolute_path.pa");
 	ASSERT_TRUE(jout.is_object());
@@ -144,7 +145,7 @@ TEST(sa, import_absolute_path)
 
 static void genLibSaSyscallImport()
 {
-	execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_syscall.pa -o out/lib_sa_syscall.pa.ast.json");
+	genModuleAst("../test/testdata/sa/lib_sa_syscall.pa");
 }
 
 TEST(sa, import_syscall) {
@@ -387,7 +388,7 @@ TEST(sa, import_mutual_type)
 {
 	cleanTestEnv();
 	for (string f : {"lib_sa_mutual", "235_import_mutual_type"})
-		execTestCommand("bin/palan-gen-ast ../test/testdata/sa/" + f + ".pa -o out/" + f + ".pa.ast.json");
+		genModuleAst("../test/testdata/sa/" + f + ".pa");
 	json jout = run_sa("../test/testdata/sa/235_import_mutual_type.pa");
 	ASSERT_TRUE(jout.is_object());
 	// Pair: n $Node (id 4 (+4) + leaf 16 + pair 8) + ls [2]$Leaf 32
@@ -400,7 +401,7 @@ TEST(sa, import_mutual_alias)
 	// struct that embeds Node, so both resolve only after Node is settled.
 	cleanTestEnv();
 	for (string f : {"lib_sa_mutual_alias", "252_import_mutual_alias"})
-		execTestCommand("bin/palan-gen-ast ../test/testdata/sa/" + f + ".pa -o out/" + f + ".pa.ast.json");
+		genModuleAst("../test/testdata/sa/" + f + ".pa");
 	json jout = run_sa("../test/testdata/sa/252_import_mutual_alias.pa");
 	ASSERT_TRUE(jout.is_object());
 	// Node: id 4 (+4) + leaf (v 8 + up 8 + o 8)
@@ -410,7 +411,7 @@ TEST(sa, import_mutual_alias)
 TEST(sa, import_c_enum_field)
 {
 	cleanTestEnv();
-	execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_c_enum.pa -o out/lib_sa_c_enum.pa.ast.json");
+	genModuleAst("../test/testdata/sa/lib_sa_c_enum.pa");
 	json jout = run_sa("../test/testdata/sa/251_import_c_enum_field.pa");
 	ASSERT_TRUE(jout.is_object());
 	const auto& init = jout["statements"].back()["vars"][0]["init"];
@@ -593,7 +594,7 @@ TEST(sa, unexported_type_name)
 	// Another module may declare its own A; an importer writes B as is.
 	const json& st = jout["statements"];
 	string a = st[0]["vars"][0]["var-type"]["base-type"]["type-name"];
-	ASSERT_TRUE(regex_match(a, regex("__pln_L[0-9a-f]{16}_[0-9]+_A"))) << a;
+	ASSERT_TRUE(regex_match(a, regex("__pln_L[0-9a-f]{16}_A"))) << a;
 	ASSERT_EQ(st[1]["vars"][0]["var-type"]["base-type"]["type-name"], "B");
 	ASSERT_EQ(jout["alloc-shapes"][1]["owned-fields"][0]["elem"]["name"], a);
 }
@@ -775,4 +776,40 @@ TEST(sa, nested_func_symbols)
 	const string m = "_291_nested_2dfunc_2dsymbols..";
 	ASSERT_EQ(names, (set<string>{m + "a.v", m + "a.v..f.v", m + "a.v..f.v..g.v",
 		m + "a.v..b1..k.v", m + "a.v..b2..k.v", m + "b1..k.v"}));
+}
+
+// The .pai is what a library's users compile against, so a program must come out
+// the same from it as from the source it was written from.
+TEST(sa, import_through_interface) {
+	cleanTestEnv();
+	const string lib = "../test/testdata/sa/lib_interface.pa";
+	const string entry = "../test/testdata/sa/333_import_interface.pa";
+	string libAst = moduleAstPath(lib);
+	ASSERT_EQ(execTestCommand("palan-gen-ast " + lib + " -o " + libAst + " --interface out/lib_interface.pai"), "");
+	json fromSource = run_sa(entry);
+	ASSERT_TRUE(fromSource.is_object());
+	ASSERT_FALSE(fromSource["statements"].empty());
+
+	ASSERT_EQ(execTestCommand("palan-gen-ast out/lib_interface.pai -o " + libAst), "");
+	string entryAst = moduleAstPath(entry);
+	ASSERT_EQ(execTestCommand("palan-gen-ast " + entry + " -o " + entryAst), "");
+	ASSERT_EQ(execTestCommand("palan-sa " + entryAst + " -o out/from_pai.sa.json"), "");
+	ifstream f("out/from_pai.sa.json");
+	ASSERT_EQ(json::parse(f), fromSource);
+}
+
+TEST(sa_error, library_import_without_its_location) {
+	cleanTestEnv();
+	ofstream("out/m.pa") << "import <p/z>;\n";
+	ASSERT_EQ(execTestCommand("palan-gen-ast out/m.pa -o out/m.json"), "");
+	string out = execTestCommand("palan-sa out/m.json -o out/m.sa.json");
+	ASSERT_NE(out.find("Could not open import file 'p/z'."), string::npos) << out;
+}
+
+TEST(sa_error, interface_as_program) {
+	cleanTestEnv();
+	ofstream("out/m.pai") << "built \"" PALAN_VERSION "\";\ntarget \"" PALAN_TARGET "\";\nexport func f();\n";
+	ASSERT_EQ(execTestCommand("palan-gen-ast out/m.pai -o out/m.json"), "");
+	string out = execTestCommand("palan-sa out/m.json -o out/m.sa.json");
+	ASSERT_NE(out.find("is an interface, which has no code to compile."), string::npos) << out;
 }

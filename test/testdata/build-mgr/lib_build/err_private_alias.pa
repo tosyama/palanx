@@ -1,0 +1,3 @@
+library demo;
+import "private_alias.pa";
+export func f(@Name p) { }

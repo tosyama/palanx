@@ -15,6 +15,18 @@ TEST(build_mgr, helloworld) {
 	ASSERT_EQ(output, "Hello World!\n");
 }
 
+TEST(build_mgr, str_lit_bytes) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/401_str_lit_bytes.pa");
+	ASSERT_EQ(output, "78 ff 79 00 7a 3\n5c 22 09 0d 01 e2 82 ac ff c3 a9 11\n");
+}
+
+TEST(build_mgr, explicit_target) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan --target x86_64-linux-gnu ../test/testdata/build-mgr/001_helloworld.pa");
+	ASSERT_EQ(output, "Hello World!\n");
+}
+
 TEST(build_mgr, basic_expr) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/101_basic_expr.pa");

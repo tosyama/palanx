@@ -1331,6 +1331,66 @@ TEST(sa, struct_multilevel_fields)
 	ASSERT_EQ(m["base-type"]["base-type"]["type-name"], "int32");
 }
 
+// A `[+]T` header laid out in a struct is built with it, and a struct laid out
+// in another brings its owned fields along at their place in the outer one.
+TEST(sa, field_embed_varr)
+{
+	cleanTestEnv();
+	json jout = written(run_sa("../test/testdata/sa/334_field_embed_varr.pa"));
+	ASSERT_TRUE(jout.is_object());
+	json s;
+	for (auto& sh : jout["alloc-shapes"])
+		if (sh.value("shape-kind", "") == "struct") s = sh;
+	ASSERT_EQ(s["shape-name"], "Named");
+	ASSERT_EQ(s["total-size"], 48);
+	const auto& owned = s["owned-fields"];
+	ASSERT_EQ(owned.size(), 2u);
+	ASSERT_EQ(owned[0]["name"], "name.bytes");
+	ASSERT_EQ(owned[0]["offset"], 16);
+	ASSERT_EQ(owned[0]["elem"]["kind"], "embed-varr");
+	ASSERT_EQ(owned[0]["elem"]["shape-key"], "varr_int8");
+	ASSERT_EQ(owned[0]["elem"]["size"], 24);
+	ASSERT_EQ(owned[1]["name"], "xs");
+	ASSERT_EQ(owned[1]["offset"], 40);
+	ASSERT_EQ(owned[1]["elem"]["kind"], "varr");
+
+	const auto& h = jout["statements"][1]["body"]["args"][0];
+	ASSERT_EQ(h["expr-type"], "field-access");
+	ASSERT_EQ(h["offset"], 16);
+	ASSERT_TRUE(h["addr-only"].get<bool>());
+	ASSERT_EQ(h["value-type"]["base-type"]["type-kind"], "varr");
+}
+
+// Initializers are evaluated into the struct's shape, as the generated module
+// stores integers, and a struct laid out in another brings its own along.
+TEST(sa, field_init)
+{
+	cleanTestEnv();
+	json jout = written(run_sa("../test/testdata/sa/335_field_init.pa"));
+	ASSERT_TRUE(jout.is_object());
+	map<string, json> shapes;
+	for (auto& sh : jout["alloc-shapes"])
+		if (sh.value("shape-kind", "") == "struct") shapes[sh["shape-name"]] = sh;
+	const auto& p = shapes.at("P")["inits"];
+	ASSERT_EQ(p.size(), 2u);
+	ASSERT_EQ(p[0], json({{"kind","prim"},{"offset",4},{"type","int8"},{"values",{"-56"}}}));
+	ASSERT_EQ(p[1]["values"], json::array({"4"}));
+	const auto& si = shapes.at("S")["inits"];
+	ASSERT_EQ(si.size(), 5u);
+	ASSERT_EQ(si[0]["kind"], "embed-varr");
+	ASSERT_EQ(si[0]["values"], json::array({"104", "0"}));
+	ASSERT_EQ(si[1]["kind"], "row");
+	ASSERT_EQ(si[1]["values"], json::array({"-1", "2"}));
+	ASSERT_EQ(si[2]["offset"], 36);
+	ASSERT_EQ(si[4], json({{"count",2},{"kind","structs"},{"name","P"},{"offset",48}}));
+
+	// A named literal leaving a field out gives it the initializer.
+	const auto& stmts = jout["statements"];
+	ASSERT_EQ(stmts[3]["offset"], 4);
+	ASSERT_EQ(stmts[3]["value"]["value"], "200");
+	ASSERT_EQ(stmts[4]["value"]["value"], "4");
+}
+
 // Elements laid out alike share their functions: integers of one width and
 // structs of one size owning nothing; a float has a layout of its own.
 TEST(sa, layout_share)
@@ -1688,7 +1748,7 @@ TEST(sa, embed_field_value)
 TEST(sa, member_call_borrow)
 {
 	cleanTestEnv();
-	execTestCommand("bin/palan-gen-ast ../test/testdata/sa/lib_sa_mk.pa -o out/lib_sa_mk.pa.ast.json");
+	genModuleAst("../test/testdata/sa/lib_sa_mk.pa");
 	json jout = run_sa("../test/testdata/sa/247_member_call_borrow.pa");
 	ASSERT_TRUE(jout.is_object());
 

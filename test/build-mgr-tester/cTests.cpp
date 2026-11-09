@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 #include <cstdint>
+#include <fstream>
 #include "../test-base/testBase.h"
 #include "buildMgrTestUtil.h"
 
@@ -470,6 +471,17 @@ TEST(build_mgr, link_math) {
 TEST(build_mgr, link_obj) {
 	cleanTestEnv();
 	ASSERT_EQ(runWithCObj("295_link_obj"), "6\n");
+}
+
+TEST(build_mgr, link_failure) {
+	for (string opt : {"", "-o out/u "}) {
+		cleanTestEnv();
+		ofstream("out/u.h") << "int nowhere(void);\n";
+		ofstream("out/u.pa") << "cinclude \"u.h\";\nnowhere();\n";
+		string output = execTestCommand("bin/palan " + opt + "out/u.pa");
+		EXPECT_TRUE(output.starts_with("return1:")) << opt << output;
+		EXPECT_NE(output.find("undefined reference to `nowhere'"), string::npos) << opt << output;
+	}
 }
 
 TEST(build_mgr, c_struct_byval) {

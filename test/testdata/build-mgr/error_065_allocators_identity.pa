@@ -1,0 +1,3 @@
+import "lib_module_id/__allocators.pa";
+[+]int32 v;
+v.push(unrelated());

@@ -1,0 +1,3 @@
+library demo.a;
+import "sub/same.pa";
+export func a() -> int32 { return same(); }

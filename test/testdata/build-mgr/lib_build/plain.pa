@@ -1,0 +1,4 @@
+export func g() {
+	[+]int32 v;
+	v.push(1);
+}

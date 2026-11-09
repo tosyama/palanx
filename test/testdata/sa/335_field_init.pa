@@ -1,0 +1,5 @@
+const N = 4;
+type P { int32 x; uint8 y = 200; flo64 f = N; };
+type S { $[+]uint8 b = [104, 0]; [2]int16 r = [-1, 2]; $P p; $[2]$P ps; };
+S s;
+P q = {x: 1};

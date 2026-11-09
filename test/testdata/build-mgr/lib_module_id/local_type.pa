@@ -1,0 +1,8 @@
+cinclude <stdio.h>;
+func f() -> int32 {
+	type Local { [2]int32 xs; };
+	Local v;
+	7 -> v.xs[1];
+	return v.xs[1];
+}
+printf("%d\n", f());

@@ -22,6 +22,7 @@ namespace fs = std::filesystem;
 #include "CPreprocessor.h"
 #include "CParser.h"
 #include "PlnC2AstMessage.h"
+#include "../common/PlnDefs.h"
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 using json = nlohmann::json;
 
@@ -53,6 +54,7 @@ int main(int argc, char* argv[])
 		{ "sysheader",          no_argument,       NULL, 's' },
 		{ "dump-preprocessed",  no_argument,       NULL, 'd' },
 		{ "state",              required_argument, NULL, 'S' },
+		{ "target",             required_argument, NULL, 't' },
 		{ 0 }
 	};
 
@@ -64,7 +66,7 @@ int main(int argc, char* argv[])
 	bool do_dump_preprocessed = false;
 	vector<string> search_paths;
 	string current_directory = "";
-	string target = "x86_64-linux-gnu";
+	string target = PALAN_TARGET;
 
 	while (0 < (opt = getopt_long(argc, argv, "hvo:ip:c:sdS:", long_options, NULL))) {
 		switch (opt) {
@@ -95,10 +97,18 @@ int main(int argc, char* argv[])
 			case 'S':
 				state_file = optarg;
 				break;
+			case 't':
+				target = optarg;
+				break;
 
 			default:
 				break;
 		}
+	}
+
+	if (!isSupportedTarget(target)) {
+		cerr << PlnC2AstMessage::getMessage(E_UnsupportedTarget, target) << endl;
+		return 1;
 	}
 
 	if ((argc-optind) != 1) {
@@ -181,7 +191,7 @@ int main(int argc, char* argv[])
 				// The state's macros already hold predefined.h's (or their #undefs).
 				cpp.loadMacros(CFileInfo(state_file, istringstream(state["macros"].get<string>())));
 			} else {
-				cpp.loadMacros(CFileInfo(exec_path + "/c2ast/predefined.h"));
+				cpp.loadMacros(CFileInfo(exec_path + "/../" + target + "/c2ast/predefined.h"));
 			}
 			set<string> inherited_names;
 			for (CMacro* m : macros) inherited_names.insert(m->name);
@@ -194,6 +204,7 @@ int main(int argc, char* argv[])
 				}
 				input_file = found;
 			}
+			size_t first_header = cpp.lexers.size();
 			cpp.preprocess(input_file);
 
 			if (do_dump_preprocessed) {
@@ -222,6 +233,10 @@ int main(int argc, char* argv[])
 				cpp.dumpMacroState(macro_state);
 				ast["c-state"] = cparser.dumpState();
 				ast["c-state"]["macros"] = macro_state.str();
+
+				ast["headers"] = json::array();
+				for (size_t i = first_header; i < cpp.lexers.size(); i++)
+					ast["headers"].push_back(cpp.lexers[i]->infile.fname);
 
 				ostream* out = &cout;
 				ofstream outfile;

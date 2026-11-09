@@ -4,12 +4,40 @@
 /// @copyright 2026 YAMAGUCHI Toshinobu
 
 #pragma once
+#include <cctype>
 #include <filesystem>
 #include <vector>
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 
 using json = nlohmann::json;
 using std::string;
+
+inline bool isInterfaceFile(const string& path)
+{
+	return path.ends_with(".pai");
+}
+
+// A module's identity comes from the source alone, so a symbol is the same
+// wherever the source is checked out and whichever module is the entry. An
+// escape is `_` and two lowercase hex digits, so a `_` that looks like one is
+// escaped too; a leading digit would make `as` read the symbol as a number.
+inline string moduleIdentity(const string& library, const string& sourcePath)
+{
+	string stem = std::filesystem::path(sourcePath).stem().string();
+	auto isHex = [](unsigned char c) { return isdigit(c) || (c >= 'a' && c <= 'f'); };
+	static const char hex[] = "0123456789abcdef";
+	string out = library.empty() ? "" : library + ".";
+	if (isdigit((unsigned char)stem[0])) out += '_';
+	for (size_t i = 0; i < stem.size(); i++) {
+		unsigned char c = stem[i];
+		bool looksEscaped = c == '_' && i + 2 < stem.size() && isHex(stem[i + 1]) && isHex(stem[i + 2]);
+		if (isalnum(c) || (c == '_' && !looksEscaped)) { out += c; continue; }
+		out += '_';
+		out += hex[c >> 4];
+		out += hex[c & 15];
+	}
+	return out;
+} // LCOV_EXCL_BR_LINE
 
 // Convert a `kind`-tagged store_loc intermediate node into an `expr-type`-tagged
 // expression node, recursively (needed since a store_loc base can itself be a
@@ -216,4 +244,21 @@ inline string resolveLinkObjPath(const string& name, const string& inputFile)
 	if (!p.is_absolute())
 		p = std::filesystem::absolute(std::filesystem::path(inputFile).parent_path() / p);
 	return p.lexically_normal().string();
+}
+
+// Links are resolved, unlike a `link` object's path: a module is identified by
+// its file, so two spellings of one file must come out the same.
+inline json resolveImportPath(json pathInf, const string& inputFile)
+{
+	if (pathInf["path-type"] == "src") {
+		std::filesystem::path p = std::filesystem::path(inputFile).parent_path() / pathInf["path"].get<string>();
+		pathInf["path"] = std::filesystem::weakly_canonical(p).string();
+	}
+	return pathInf;
+}
+
+inline bool isLibraryImportPath(const string& path)
+{
+	if (path.find('.') != string::npos || path.find('/') == string::npos) return false;
+	return path.front() != '/' && path.back() != '/' && path.find("//") == string::npos;
 }

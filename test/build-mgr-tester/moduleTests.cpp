@@ -4,12 +4,84 @@
 /// @copyright 2026 YAMAGUCHI Toshinobu
 
 #include <gtest/gtest.h>
+#include <chrono>
 #include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <vector>
 #include "../test-base/testBase.h"
+#include "../../src/common/PlnDefs.h"
 #include "buildMgrTestUtil.h"
 
 using namespace std;
 namespace fs = std::filesystem;
+
+static string targetWorkDir() {
+	return string(getenv("HOME")) + "/.palan/work/" PALAN_TARGET;
+}
+
+// execTestCommand gives up after 5 seconds and has one err file, so the builds
+// are started directly and each writes its own output.
+static void expectConcurrentRuns(const vector<pair<string, string>>& programs) {
+	const int rounds = 3;
+	cleanTestEnv();
+	string script;
+	for (int r = 0; r < rounds; r++)
+		for (size_t p = 0; p < programs.size(); p++)
+			script += "bin/palan ../test/testdata/build-mgr/" + programs[p].first + " > out/run"
+				+ to_string(p) + "_" + to_string(r) + " 2>&1 &\n";
+	script += "wait\n";
+	ASSERT_EQ(system(script.c_str()), 0);
+	for (int r = 0; r < rounds; r++)
+		for (size_t p = 0; p < programs.size(); p++) {
+			ifstream f("out/run" + to_string(p) + "_" + to_string(r));
+			stringstream ss;
+			ss << f.rdbuf();
+			EXPECT_EQ(ss.str(), programs[p].second) << programs[p].first << " round " << r;
+		}
+	EXPECT_EQ(execTestCommand("find " + targetWorkDir() + " -name '*.tmp.*'"), "");
+}
+
+TEST(build_mgr, concurrent_programs_in_one_dir) {
+	expectConcurrentRuns({{"391_concurrent_a.pa", "a 7\n"}, {"392_concurrent_b.pa", "b 1.5\n"}});
+}
+
+TEST(build_mgr, concurrent_programs_sharing_source) {
+	expectConcurrentRuns({{"393_shared_a.pa", "a 5\n"}, {"394_shared_b.pa", "b 4 5\n"}});
+}
+
+// One file name in two directories: the declarations tell the modules apart,
+// functions of one name and parameters included.
+TEST(build_mgr, same_file_name_with_library) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/395_same_name_library.pa"), "11 22\n");
+}
+
+TEST(build_mgr, escaped_file_names_coexist) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/396_escaped_names.pa"), "3 4\n");
+}
+
+TEST(build_mgr, library_module_same_for_any_entry) {
+	cleanTestEnv();
+	string dir = fs::weakly_canonical("../test/testdata/build-mgr").string();
+	string obj = targetWorkDir() + dir + "/lib_module_id/entry_demo.pa.o";
+	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/397_library_entry_demo.pa"), "15\n");
+	fs::copy_file(obj, "out/entry_demo_imported.o");
+	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/lib_module_id/entry_demo.pa"), "demo 12\n");
+	ASSERT_EQ(execTestCommand("cmp out/entry_demo_imported.o " + obj), "");
+}
+
+TEST(build_mgr, module_same_at_any_location) {
+	cleanTestEnv();
+	string dir = fs::weakly_canonical("../test/testdata/build-mgr/lib_module_id").string();
+	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/lib_module_id/local_type.pa"), "7\n");
+	fs::copy_file("../test/testdata/build-mgr/lib_module_id/local_type.pa", "out/local_type.pa");
+	ASSERT_EQ(execTestCommand("bin/palan out/local_type.pa"), "7\n");
+	string moved = fs::weakly_canonical("out").string();
+	ASSERT_EQ(execTestCommand("cmp " + targetWorkDir() + dir + "/local_type.pa.s "
+		+ targetWorkDir() + moved + "/local_type.pa.s"), "");
+}
 
 TEST(build_mgr, import_basic) {
 	cleanTestEnv();
@@ -107,6 +179,55 @@ TEST(build_mgr, import_path_injection) {
 	ASSERT_FALSE(fs::exists("PWNED"));
 }
 
+static void writeModule(const string& path, const string& source) {
+	fs::create_directories(fs::path(path).parent_path());
+	ofstream(path) << source;
+}
+
+static const string printF = "cinclude <stdio.h>;\nprintf(\"%d\\n\", f());\n";
+
+// The relative import inside real.pa means next to the real file, not the link.
+TEST(build_mgr, import_symlink_file) {
+	cleanTestEnv();
+	writeModule("out/b/real.pa", "import \"sib.pa\";\nexport func f() -> int32 { return g(); }\n");
+	writeModule("out/b/sib.pa", "export func g() -> int32 { return 7; }\n");
+	writeModule("out/a/main.pa", "import \"link.pa\";\n" + printF);
+	fs::create_symlink("../b/real.pa", "out/a/link.pa");
+	ASSERT_EQ(execTestCommand("bin/palan out/a/main.pa"), "7\n");
+}
+
+TEST(build_mgr, import_symlink_dir) {
+	cleanTestEnv();
+	writeModule("out/real/lib.pa", "export func f() -> int32 { return 7; }\n");
+	writeModule("out/a/main.pa", "import \"linked/lib.pa\";\n" + printF);
+	fs::create_directory_symlink("../real", "out/a/linked");
+	ASSERT_EQ(execTestCommand("bin/palan out/a/main.pa"), "7\n");
+}
+
+TEST(build_mgr, import_one_file_two_spellings) {
+	cleanTestEnv();
+	writeModule("out/real.pa", "export func f() -> int32 { return 7; }\n");
+	fs::create_symlink("real.pa", "out/link.pa");
+	writeModule("out/main.pa", "import \"link.pa\";\nimport \"real.pa\";\nimport \"./real.pa\";\n" + printF);
+	ASSERT_EQ(execTestCommand("bin/palan out/main.pa"), "7\n");
+}
+
+TEST(build_mgr, import_cycle_across_dirs) {
+	cleanTestEnv();
+	writeModule("out/d1/a.pa", "import \"../d2/b.pa\";\nexport func one() -> int32 { return 1; }\n"
+		"cinclude <stdio.h>;\nprintf(\"%d\\n\", two());\n");
+	writeModule("out/d2/b.pa", "import \"./../d1/a.pa\";\nimport \"./b.pa\";\n"
+		"export func two() -> int32 { return one() + 1; }\n");
+	ASSERT_EQ(execTestCommand("bin/palan out/d1/a.pa"), "2\n");
+}
+
+TEST(build_mgr, import_absolute_path) {
+	cleanTestEnv();
+	writeModule("out/lib/abs.pa", "export func f() -> int32 { return 7; }\n");
+	writeModule("out/main.pa", "import \"" + fs::weakly_canonical("out/lib/abs.pa").string() + "\";\n" + printF);
+	ASSERT_EQ(execTestCommand("bin/palan out/main.pa"), "7\n");
+}
+
 TEST(build_mgr, import_syscall) {
 	// The library module exports no code at all, only a prototype, so this also
 	// covers assembling and linking an object with no callable symbol.
@@ -140,9 +261,10 @@ TEST(build_mgr, import_float)
 
 TEST(build_mgr, clean) {
 	cleanTestEnv();
-
-	string output = execTestCommand("bin/palan --clean");
-	ASSERT_EQ(output, "");
+	// Its own HOME, so the work files the other tests reuse stay.
+	fs::create_directories("out/home/.palan/work/" PALAN_TARGET);
+	ASSERT_EQ(execTestCommand("HOME=out/home bin/palan --clean"), "");
+	ASSERT_FALSE(fs::exists("out/home/.palan/work"));
 }
 
 TEST(build_mgr, method_call) {
@@ -364,7 +486,7 @@ TEST(build_mgr, chain_method_mtrace) {
 TEST(build_mgr, entry_at_link) {
 	cleanTestEnv();
 	string dir = fs::weakly_canonical("../test/testdata/build-mgr").string();
-	string libObj = string(getenv("HOME")) + "/.palan/work" + dir + "/lib_entry_demo.pa.o";
+	string libObj = targetWorkDir() + dir + "/lib_entry_demo.pa.o";
 
 	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/358_entry_at_link.pa"), "15\n");
 	fs::copy_file(libObj, "out/lib_entry_demo_imported.o");
@@ -389,7 +511,7 @@ TEST(build_mgr, implicit_args) {
 TEST(build_mgr, run_args) {
 	cleanTestEnv();
 	string dir = fs::weakly_canonical("../test/testdata/build-mgr").string();
-	string bin = string(getenv("HOME")) + "/.palan/work" + dir + "/359_args.pa.out";
+	string bin = targetWorkDir() + dir + "/359_args.pa.d/out";
 	fs::remove(bin);
 	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/359_args.pa x -o 'y z'"),
 		"4\n1:x\n2:-o\n3:y z\nrebound\n");
@@ -436,4 +558,307 @@ TEST(build_mgr, import_global_var) {
 TEST(build_mgr, global_after_unrelated_call) {
 	cleanTestEnv();
 	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/389_global_after_unrelated_call.pa"), "x\n1\n");
+}
+
+static string reusePath(const string& name) {
+	return targetWorkDir() + (fs::current_path() / "out" / name).string();
+}
+
+static fs::file_time_type objTime(const string& source) {
+	return fs::last_write_time(reusePath(source) + ".o");
+}
+
+// writeOldSource's times go back, which a work file left by an earlier run would hide.
+static void cleanReuseEnv() {
+	cleanTestEnv();
+	fs::remove_all(reusePath(""));
+}
+
+// Backdated, or a build finishing within one clock tick of the write would see
+// its result as not newer and compile again.
+static void writeOldSource(const string& name, const string& content) {
+	string path = "out/" + name;
+	ofstream(path) << content;
+	fs::last_write_time(path, fs::file_time_type::clock::now() - chrono::minutes(1));
+}
+
+static void writeImportChain() {
+	cleanReuseEnv();
+	writeOldSource("c.pa", "export func c() -> int32 { return 1; }\n");
+	writeOldSource("b.pa", "import \"c.pa\";\nexport func b() -> int32 { return c(); }\n");
+	writeOldSource("a.pa", "cinclude <stdio.h>;\nimport \"b.pa\";\nprintf(\"%d\\n\", b());\n");
+}
+
+struct ChainTimes {
+	fs::file_time_type a = objTime("a.pa"), b = objTime("b.pa"), c = objTime("c.pa");
+};
+
+TEST(build_mgr, reuse_nothing_changed) {
+	writeImportChain();
+	ASSERT_EQ(execTestCommand("bin/palan out/a.pa"), "1\n");
+	ChainTimes before;
+	auto astTime = fs::last_write_time(reusePath("a.pa") + ".ast.json");
+	ASSERT_EQ(execTestCommand("bin/palan out/a.pa"), "1\n");
+	ChainTimes after;
+	EXPECT_EQ(after.a, before.a);
+	EXPECT_EQ(after.b, before.b);
+	EXPECT_EQ(after.c, before.c);
+	EXPECT_EQ(fs::last_write_time(reusePath("a.pa") + ".ast.json"), astTime);
+}
+
+TEST(build_mgr, reuse_own_source_changed) {
+	writeImportChain();
+	ASSERT_EQ(execTestCommand("bin/palan out/a.pa"), "1\n");
+	ChainTimes before;
+	ofstream("out/a.pa") << "cinclude <stdio.h>;\nimport \"b.pa\";\nprintf(\"%d\\n\", b() + 1);\n";
+	ASSERT_EQ(execTestCommand("bin/palan out/a.pa"), "2\n");
+	ChainTimes after;
+	EXPECT_NE(after.a, before.a);
+	EXPECT_EQ(after.b, before.b);
+	EXPECT_EQ(after.c, before.c);
+}
+
+TEST(build_mgr, reuse_import_changed) {
+	writeImportChain();
+	ASSERT_EQ(execTestCommand("bin/palan out/a.pa"), "1\n");
+	ChainTimes before;
+	ofstream("out/b.pa") << "import \"c.pa\";\nexport func b() -> int32 { return c() + 1; }\n";
+	ASSERT_EQ(execTestCommand("bin/palan out/a.pa"), "2\n");
+	ChainTimes after;
+	EXPECT_NE(after.a, before.a);
+	EXPECT_NE(after.b, before.b);
+	EXPECT_EQ(after.c, before.c);
+}
+
+TEST(build_mgr, reuse_indirect_import_changed) {
+	writeImportChain();
+	ASSERT_EQ(execTestCommand("bin/palan out/a.pa"), "1\n");
+	ChainTimes before;
+	ofstream("out/c.pa") << "export func c() -> int32 { return 5; }\n";
+	ASSERT_EQ(execTestCommand("bin/palan out/a.pa"), "5\n");
+	ChainTimes after;
+	EXPECT_NE(after.a, before.a);
+	EXPECT_NE(after.b, before.b);
+	EXPECT_NE(after.c, before.c);
+}
+
+TEST(build_mgr, reuse_mutual_import) {
+	cleanReuseEnv();
+	writeOldSource("m1.pa", "cinclude <stdio.h>;\nimport \"m2.pa\";\nexport func f1() -> int32 { return 1; }\nprintf(\"%d\\n\", f2());\n");
+	writeOldSource("m2.pa", "import \"m1.pa\";\nexport func f2() -> int32 { return f1() + 1; }\n");
+	ASSERT_EQ(execTestCommand("bin/palan out/m1.pa"), "2\n");
+	auto m1 = objTime("m1.pa");
+	auto m2 = objTime("m2.pa");
+	ASSERT_EQ(execTestCommand("bin/palan out/m1.pa"), "2\n");
+	EXPECT_EQ(objTime("m1.pa"), m1);
+	EXPECT_EQ(objTime("m2.pa"), m2);
+}
+
+// A header counts wherever it is reached from: through another header, or a
+// `cinclude` inside a function body.
+TEST(build_mgr, reuse_header_changed) {
+	cleanReuseEnv();
+	writeOldSource("nested.h", "typedef int nested_t;\n");
+	writeOldSource("top.h", "#include \"nested.h\"\n");
+	writeOldSource("body.h", "typedef int body_t;\n");
+	writeOldSource("m.pa", "cinclude \"top.h\";\nexport func f() -> int32 { cinclude \"body.h\"; return 1; }\n");
+	writeOldSource("main.pa", "cinclude <stdio.h>;\nimport \"m.pa\";\nprintf(\"%d\\n\", f());\n");
+	ASSERT_EQ(execTestCommand("bin/palan out/main.pa"), "1\n");
+	for (const char* header : {"nested.h", "body.h"}) {
+		auto m = objTime("m.pa");
+		auto importer = objTime("main.pa");
+		ofstream("out/" + string(header)) << "typedef int changed_t;\n";
+		ASSERT_EQ(execTestCommand("bin/palan out/main.pa"), "1\n");
+		EXPECT_NE(objTime("m.pa"), m) << header;
+		EXPECT_NE(objTime("main.pa"), importer) << header;
+	}
+
+	ASSERT_TRUE(fs::remove("out/nested.h"));
+	EXPECT_NE(execTestCommand("bin/palan out/main.pa").find("nested.h"), string::npos);
+}
+
+TEST(build_mgr, reuse_tools_changed) {
+	writeImportChain();
+	// Run with system(): copying the tools can outlast execTestCommand's timeout.
+	ASSERT_EQ(system("cp -r lib/palan/dev out/dev"), 0);
+	const string palan = "out/dev/tools/palan out/a.pa";
+	ASSERT_EQ(execTestCommand(palan), "1\n");
+	ChainTimes built;
+	ASSERT_EQ(execTestCommand(palan), "1\n");
+	EXPECT_EQ(objTime("c.pa"), built.c);
+
+	auto touchedRebuilds = [&](const string& file) {
+		auto before = objTime("c.pa");
+		fs::last_write_time(file, fs::file_time_type::clock::now());
+		EXPECT_EQ(execTestCommand(palan), "1\n") << file;
+		return objTime("c.pa") != before;
+	};
+	EXPECT_TRUE(touchedRebuilds("out/dev/tools/palan-sa"));
+	EXPECT_TRUE(touchedRebuilds("out/dev/" PALAN_TARGET "/c2ast/predefined.h"));
+}
+
+TEST(build_mgr, reuse_shared_by_entries) {
+	cleanReuseEnv();
+	writeOldSource("shared.pa", "cinclude <stdio.h>;\nexport func s() -> int32 { return 7; }\nprintf(\"test\\n\");\n");
+	writeOldSource("e1.pa", "cinclude <stdio.h>;\nimport \"shared.pa\";\nprintf(\"%d\\n\", s());\n");
+	writeOldSource("e2.pa", "cinclude <stdio.h>;\nimport \"shared.pa\";\nprintf(\"%d\\n\", s() + 1);\n");
+	ASSERT_EQ(execTestCommand("bin/palan out/e1.pa"), "7\n");
+	auto shared = objTime("shared.pa");
+	ASSERT_EQ(execTestCommand("bin/palan out/e2.pa"), "8\n");
+	ASSERT_EQ(execTestCommand("bin/palan out/shared.pa"), "test\n");
+	EXPECT_EQ(objTime("shared.pa"), shared);
+}
+
+TEST(build_mgr, reuse_error_reported_every_run) {
+	cleanReuseEnv();
+	writeOldSource("bad.pa", "int32 x = undefined_name;\n");
+	string first = execTestCommand("bin/palan out/bad.pa");
+	EXPECT_NE(first.find("error"), string::npos) << first;
+	EXPECT_EQ(execTestCommand("bin/palan out/bad.pa"), first);
+}
+
+TEST(build_mgr, reuse_rebuilds_missing_sa) {
+	writeImportChain();
+	ASSERT_EQ(execTestCommand("bin/palan out/a.pa"), "1\n");
+	auto before = objTime("c.pa");
+	ASSERT_TRUE(fs::remove(reusePath("c.pa") + ".sa.json"));
+	ASSERT_EQ(execTestCommand("bin/palan out/a.pa"), "1\n");
+	EXPECT_NE(objTime("c.pa"), before);
+}
+
+TEST(build_mgr, reuse_allocators) {
+	cleanReuseEnv();
+	writeOldSource("alloc.pa", "cinclude <stdio.h>;\n[+]int32 v = [1, 2];\nprintf(\"%d\\n\", int32(len(@v)));\n");
+	ASSERT_EQ(execTestCommand("bin/palan out/alloc.pa"), "2\n");
+	string allocators = reusePath("alloc.pa") + ".d/" PALAN_ALLOCATORS_MODULE ".pa.o";
+	auto before = fs::last_write_time(allocators);
+
+	ofstream("out/alloc.pa") << "cinclude <stdio.h>;\n[+]int32 v = [1, 2, 3];\nprintf(\"%d\\n\", int32(len(@v)));\n";
+	ASSERT_EQ(execTestCommand("bin/palan out/alloc.pa"), "3\n");
+	EXPECT_EQ(fs::last_write_time(allocators), before);
+
+	ofstream("out/alloc.pa") << "cinclude <stdio.h>;\n[+]int64 v = [1, 2];\nprintf(\"%d\\n\", int32(len(@v)));\n";
+	ASSERT_EQ(execTestCommand("bin/palan out/alloc.pa"), "2\n");
+	EXPECT_NE(fs::last_write_time(allocators), before);
+}
+
+static string libBuild(const string& file) {
+	return "bin/palan --lib -o out/lib ../test/testdata/build-mgr/lib_build/" + file;
+}
+
+static const char libOut[] = "out/lib/";
+
+static string fileText(const string& path) {
+	ifstream f(path);
+	stringstream ss;
+	ss << f.rdbuf();
+	return ss.str();
+}
+
+TEST(build_mgr, lib_interface_merges_what_the_main_publishes) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(libBuild("demo.pa")), "");
+	EXPECT_EQ(fileText(string(libOut) + "demo/demo.pai"),
+		"library demo;\n"
+		"built \"" PALAN_VERSION "\";\ntarget \"" PALAN_TARGET "\";\n"
+		"link \"m\";\n"
+		"cinclude <stdio.h> export FILE;\n"
+		"type Dup {\n\tint16 keep;\n};\n"
+		"type Used {\n\tint32 q;\n\t[2]int32 owned;\n};\n"
+		"const C = 2;\n"
+		"export type W {\n\t@T t;\n\t[C]int32 c;\n\t@Dup d;\n};\n"
+		"const N = 3;\n"
+		"type OnlyInPrivate {\n\tint32 i;\n};\n"
+		"type Priv {\n\tint32 x;\n\t@OnlyInPrivate i;\n};\n"
+		"type __m1_Dup {\n\tint8 a;\n};\n"
+		"export type Color enum {\n\tRed,\n\tBlue,\n};\n"
+		"export type T {\n\t[N]int32 a;\n\t@Priv p;\n\t@FILE f;\n\t@__m1_Dup d;\n};\n"
+		"export func value(@Used u, Color c) -> int32;\n"
+		"export func many() -> [+]T;\n");
+}
+
+TEST(build_mgr, lib_archive_links_without_the_source) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(libBuild("demo.pa")), "");
+	string archive = string(libOut) + "demo/demo.a";
+	EXPECT_EQ(execTestCommand("ar t " + archive + " | sort"),
+		"demo.demo.__allocators.o\ndemo.demo.o\ndemo.shapes.__allocators.o\ndemo.shapes.o\n");
+	// A program's first use of the archive: only the stub is not from it.
+	ASSERT_EQ(execTestCommand("lib/palan/dev/tools/palan-codegen --entry demo.demo..main --target " PALAN_TARGET " -o out/entry.s"), "");
+	ASSERT_EQ(execTestCommand("as out/entry.s -o out/entry.o"), "");
+	ASSERT_EQ(execTestCommand("ld out/entry.o " + archive + " -lc -lm -dynamic-linker /lib64/ld-linux-x86-64.so.2 -o out/demo"), "");
+	string output = execTestCommand(
+		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so MALLOC_TRACE=out/trace.log out/demo");
+	ASSERT_EQ(output, "len 2 1 q 7\n");
+	expectBalancedMtrace("out/trace.log", 12);
+}
+
+// Same object file names in one archive: every module's allocators, and a file name of two directories.
+TEST(build_mgr, lib_members_of_one_file_name) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(libBuild("shared_name_a.pa")), "");
+	EXPECT_EQ(execTestCommand("ar t " + string(libOut) + "demo/a/shared_name_a.a | sort"),
+		"demo.a.shared_name_a.o\ndemo.same.__allocators.o\ndemo.same.o\ndemo.sub.same.__allocators.o\ndemo.sub.same.o\n");
+}
+
+TEST(build_mgr, lib_leaving_out_a_private_type_keeps_the_symbols) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(libBuild("private_order.pa")), "");
+	EXPECT_EQ(fileText(string(libOut) + "demo/private_order.pai"),
+		"library demo;\nbuilt \"" PALAN_VERSION "\";\ntarget \"" PALAN_TARGET "\";\ntype B {\n\tint32 b;\n};\nexport func get(@B b) -> int32;\n");
+}
+
+// The symbol of `get` holds the type the private alias stands for.
+TEST(build_mgr, lib_type_behind_a_private_alias_stays_public) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(libBuild("private_alias_public.pa")), "");
+	EXPECT_EQ(fileText(string(libOut) + "demo/private_alias_public.pai"),
+		"library demo;\nbuilt \"" PALAN_VERSION "\";\ntarget \"" PALAN_TARGET "\";\ntype A = Kept;\n"
+		"export type Kept {\n\tint32 k;\n};\nexport func get(@A a) -> int32;\n");
+}
+
+TEST(build_mgr, lib_local_header_used_only_in_bodies) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(libBuild("body_header.pa")), "");
+	EXPECT_EQ(fileText(string(libOut) + "demo/body_header.pai"),
+		"library demo;\nbuilt \"" PALAN_VERSION "\";\ntarget \"" PALAN_TARGET "\";\nexport func one() -> int32;\n");
+}
+
+// The other module's array stays for the const its public type is sized by; the unused one does not.
+TEST(build_mgr, lib_const_from_an_array_through_a_selective_import) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(libBuild("sized.pa")), "");
+	EXPECT_EQ(fileText(string(libOut) + "demo/sized.pai"),
+		"library demo;\nbuilt \"" PALAN_VERSION "\";\ntarget \"" PALAN_TARGET "\";\n"
+		"export type Color enum {\n\tRed,\n\tBlue,\n};\n"
+		"[3]int32 table;\nconst K = len(@table);\n"
+		"export type Rows {\n\t[K]int32 a;\n};\n"
+		"export func first(@Rows r, Color c) -> int32;\n");
+}
+
+TEST(build_mgr, lib_library_module_has_its_own_allocators) {
+	expectMtraceRun("398_library_allocators", "1 3\n", 12);
+	string dir = fs::weakly_canonical("../test/testdata/build-mgr").string();
+	EXPECT_TRUE(fs::exists(targetWorkDir() + dir + "/lib_build/shapes.pa.alloc/" PALAN_ALLOCATORS_MODULE ".pa.o"));
+	EXPECT_TRUE(fs::exists(targetWorkDir() + dir + "/398_library_allocators.pa.d/" PALAN_ALLOCATORS_MODULE ".pa.o"));
+}
+
+TEST(build_mgr, lib_errors) {
+	string lib_build = fs::weakly_canonical("../test/testdata/build-mgr/lib_build").string() + "/";
+	cleanTestEnv();
+	EXPECT_EQ(execTestCommand("bin/palan --lib ../test/testdata/build-mgr/lib_build/demo.pa"),
+		"return1::palan: --lib needs an output directory (-o)\n");
+	EXPECT_EQ(execTestCommand(libBuild("err_no_decl.pa")),
+		"return1::palan: '" + lib_build + "err_no_decl.pa' has no library declaration, which every module of a library needs\n");
+	EXPECT_EQ(execTestCommand(libBuild("err_inner_no_decl.pa")),
+		"return1::palan: '" + lib_build + "plain.pa' has no library declaration, which every module of a library needs\n");
+	EXPECT_EQ(execTestCommand(libBuild("err_package.pa")),
+		"return1::palan: '" + lib_build + "other_package.pa' belongs to library 'other', not 'demo'\n");
+	EXPECT_EQ(execTestCommand(libBuild("err_global.pa")),
+		"return1::palan: '" + lib_build + "err_global.pa' permits a function to use its global 'hits', but a library's top level never runs\n");
+	EXPECT_EQ(execTestCommand(libBuild("err_local_header.pa")),
+		"return1::" + lib_build + "err_local_header.pa:2:1: error: a library's public declaration cannot yet use a C type of the local header 'local_type.h': its reader would not find the header.\n");
+	EXPECT_NE(execTestCommand(libBuild("err_no_export_clause.pa")).find("FILE"), string::npos);
+	EXPECT_NE(execTestCommand(libBuild("err_private_alias.pa")).find("which its object does not define"), string::npos);
+	EXPECT_FALSE(fs::exists("out/lib"));
 }

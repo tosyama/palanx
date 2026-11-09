@@ -18,4 +18,4 @@ if [ -z "$LATEST_CORE" ]; then
 	exit 1
 fi
 
-gdb -c $LATEST_CORE build/bin/$EXE_NAME
+gdb -c $LATEST_CORE build/lib/palan/dev/tools/$EXE_NAME

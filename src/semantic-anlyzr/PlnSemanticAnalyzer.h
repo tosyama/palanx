@@ -24,7 +24,7 @@ using json = nlohmann::json;
 
 struct FieldLayout {
 	string name;
-	string typeKind;   // "prim" | "embed" | "owned" | "raw-ptr" | "embed-arr"
+	string typeKind;   // "prim" | "embed" | "owned" | "raw-ptr" | "embed-arr" | "embed-varr"
 	string typeName;   // prim type name, embed struct name, raw-ptr base type name
 	bool   isMutable;  // raw-ptr: @T=false, @!T=true
 	int    offset;     // byte offset from struct start (C ABI aligned)
@@ -45,6 +45,7 @@ struct FieldLayout {
 	// field (`$[n]...`) is the array laid out in the struct, typed as a
 	// variable whose array is laid out in a frame.
 	json    type;
+	json    initAst;   // the field's initializer as written; null when it has none
 };
 
 // Where an aggregate variable's outermost storage block lives: `$T v;` puts it
@@ -72,6 +73,7 @@ struct AggregatePlace {
 	int64_t frameBytes;
 	int frameAlign;
 	optional<AllocShapeRef> shape;
+	json build;   // what builds structs with initializers laid out in the block, once obtained
 };
 
 struct StructDef {
@@ -80,6 +82,11 @@ struct StructDef {
 	int  totalSize = -1;
 	int  maxAlign  = 0;
 	bool ownsFields = false;  // has an owned field
+	// Has a field initializer, its own or one of a struct laid out in it, so it
+	// is built wherever it comes to exist. `inits` lists its own, as in alloc-shapes.
+	bool hasInits = false;
+	json inits = json::array();
+	bool built() const { return ownsFields || hasInits; }
 	// false = tag is known but its layout isn't (C incomplete-type equivalent, e.g. FILE).
 	// Only usable through a pointer (@T/@!T); buildStructDef sets this true on success.
 	bool   isComplete = false;
@@ -140,11 +147,9 @@ struct ConstVal {
 };
 
 class PlnSemanticAnalyzer {
-	string basePath;
-	string astFileName;
 	string c2astPath;
 	string inputFilePath;
-	string moduleId_;  // canonical path of the source file, a type's origin
+	string moduleId_;  // the module's identity, a type's origin
 	json sa;
 	PlnTypeRegistry registry_;
 	map<string, string> strLiteralLabels;  // value -> label
@@ -357,10 +362,10 @@ class PlnSemanticAnalyzer {
 	void beginModule(const json& ast);
 	void prescanTypes(const json& stmts);
 	void indexTopDecls(const json& stmts);
-	json loadImportAst(const json& stmt, filesystem::path& impPath) const;
+	json loadImportAst(const json& stmt) const;
 	// The imported module's type context, shared program-wide; its types are
 	// resolved only as they are needed.
-	PlnSemanticAnalyzer& importTypeContext(json impAst, const filesystem::path& impPath);
+	PlnSemanticAnalyzer& importTypeContext(json impAst);
 	// Resolves the type or const `name` (as written in this module) if a
 	// top-level declaration or import provides it and it is not resolved yet.
 	// Through a pointer, a struct only has to exist.
@@ -397,6 +402,7 @@ class PlnSemanticAnalyzer {
 	// Exits if `written` names a Palan type this scope cannot write.
 	void requireWritableTypeName(const json& locNode, const string& written) const;
 	void sa_import(const json &stmt);
+	PlnSemanticAnalyzer& importModule(const json& stmt, const json& imp_ast);
 	void sa_cinclude(const json &stmt);
 	void registerCIncludeTypes(const json& stmt); // cinclude structs/typedefs only
 	json foldConstExpr(const json& expr);
@@ -524,16 +530,21 @@ class PlnSemanticAnalyzer {
 	AllocShapeRef varrShape(const json& vt);
 	void recordArrShape(const json& elem);
 	void recordVarrShape(const json& vt);
+	// The symbol of one of the functions build-mgr generates, and a call to it.
+	string allocHelperSymbol(const AllocShapeRef& shape, const string& op) const;
+	json allocHelperCall(const AllocShapeRef& shape, const string& op, json args) const;
 	void recordElemShape(const AllocShapeRef& shape);
 	json varrData(json varr);
 	void enterBlockDecls(const json& stmts);
-	void declareLocalTypeName(const json& stmt);
+	void declareLocalTypeName(const json& stmt, int seq);
 	void leaveBlockDecls();
 	string declaredTypeName(const string& written) const;
 	bool isDeclNameTaken(const string& name) const;
 	bool isWrittenNameTaken(const string& name) const;  // isDeclNameTaken but for topDecls_
 	static void addDeclaredVarNames(const json& stmt, set<string>& names);
 	json sa_struct_def(const json& stmt);         // consume struct-def, register in structDefs_
+	void setFieldInits(StructDef& def, const json& fields);
+	json initRunCall(const string& structName, json run, json count);
 	StructDef buildStructDef(const string& name, const json& fields, const json& locNode,
 	                         bool isUnion = false, bool packed = false, int aligned = 1);
 	int64_t fieldArrSize(const json& locNode, const json& sizeExpr);
@@ -593,7 +604,7 @@ class PlnSemanticAnalyzer {
 	// The canonical form of a signature type (an owned struct becomes pntr(struct)),
 	// also what a tapple-decl variable's declared type is compared in.
 	json  normalizeSigType(const json& locNode, const json& type);
-	json  sigType(const json& locNode, const json& type, bool isParam);
+	json  sigType(const json& locNode, const json& type);
 	void  normalizeSig(json& funcDef);
 	// Diagnose (and exit) if `funcDef`'s parameters/ret-type/rets use a type
 	// PlnTypeRegistry::fromJson cannot represent. Must be called after
@@ -723,8 +734,11 @@ class PlnSemanticAnalyzer {
 	json sa_continue_stmt(const json& stmt);
 
 public:
-	PlnSemanticAnalyzer(string base_path, string ast_filename, string c2ast_path);
+	PlnSemanticAnalyzer(string c2ast_path);
 	~PlnSemanticAnalyzer();
-	void analysis(const json &ast);
+	void analysis(const json &ast, const string& astPath);
 	const json& result();
+	// The symbols of a .pai's public functions, as an importer of it resolves them.
+	json interfaceSymbols(const json& ast);
+	void setLibraries(map<string, string> libraries);  // import <pkg/mod> -> its AST file
 };

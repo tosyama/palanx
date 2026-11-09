@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <set>
 #include <deque>
+#include <optional>
 #include <stdexcept>
 #include <boost/assert.hpp>
 #include <cstdint>
@@ -21,6 +22,8 @@ struct PlnSemanticAnalyzer::TypeProgram {
 	struct Resolving { PlnSemanticAnalyzer* module; string name; const json* stmt; };
 	vector<Resolving> resolving;
 	deque<function<void()>> settled;
+	optional<string> workRoot;  // none: the AST is outside the work tree layout
+	map<string, string> libraries;
 };
 
 // Collect release stmts for arrayScopeVars_[from_idx, to_idx) in reverse scope/decl order
@@ -36,8 +39,8 @@ json PlnSemanticAnalyzer::collectFreeStmts(size_t from_idx, size_t to_idx, const
 	return result;
 }
 
-PlnSemanticAnalyzer::PlnSemanticAnalyzer(string base_path, string ast_filename, string c2ast_path)
-	: basePath(base_path), astFileName(ast_filename), c2astPath(c2ast_path), inputFilePath(""),
+PlnSemanticAnalyzer::PlnSemanticAnalyzer(string c2ast_path)
+	: c2astPath(c2ast_path), inputFilePath(""),
 	  ownedProgram_(make_unique<TypeProgram>()), program_(ownedProgram_.get())
 {
 }
@@ -398,8 +401,8 @@ json PlnSemanticAnalyzer::deepNormalizePrimToStruct(const json& locNode, const j
 	}
 	if (resolved.value("type-kind","") == "func") {
 		json t = resolved;
-		for (auto& p : t["parameters"]) p["var-type"] = sigType(locNode, p["var-type"], true);
-		t["ret-type"] = sigType(locNode, t["ret-type"], false);
+		for (auto& p : t["parameters"]) p["var-type"] = sigType(locNode, p["var-type"]);
+		t["ret-type"] = sigType(locNode, t["ret-type"]);
 		return t;
 	}
 	if (isStructType(resolved))
@@ -409,8 +412,8 @@ json PlnSemanticAnalyzer::deepNormalizePrimToStruct(const json& locNode, const j
 
 // Structural-only counterpart to unrepresentableTypeName for native Palan
 // signatures: names were already checked by preregisterFunc, so only a
-// type-kind that can never build is reported: "arr", left only under a
-// returned array borrow by sigType. A function type's own parameters were
+// type-kind that can never build is reported: "arr", left by sigType only
+// under a pointer to a borrowed array (`@@[]T`). A function type's own parameters were
 // checked by requireFuncSigTypes.
 static string unsupportedNativeSigTypeKind(const json& vt)
 {
@@ -494,10 +497,11 @@ json PlnSemanticAnalyzer::varrData(json varr)
 optional<SaDiag> PlnSemanticAnalyzer::arrBorrowBindingMismatch(const json& srcAst,
 		const json& saValue, const json& dstType)
 {
-	bool namesBorrow = saValue.value("expr-type","") == "id" && saValue.contains("var-type")
-	                   && isArrBorrowVar(saValue["var-type"]);
+	string et = saValue.value("expr-type","");
+	bool namesBorrow = (et == "id" && saValue.contains("var-type") && isArrBorrowVar(saValue["var-type"]))
+	                   || ((et == "call" || et == "call-ptr") && isArrBorrowVar(saValue["value-type"]));
 	// Only an explicit cast converts into a borrowed array type.
-	bool castBorrow = saValue.value("expr-type","") == "convert";
+	bool castBorrow = et == "convert";
 	if (srcAst.value("expr-type","") != "addr-of" && !namesBorrow && !castBorrow)
 		return SaDiag{E_ArrBorrowNeedsAddrOf}; // LCOV_EXCL_BR_LINE
 	if (!arrShapeMatch(saValue["value-type"], dstType)) {
@@ -697,9 +701,10 @@ void PlnSemanticAnalyzer::nonConstNames(const json& expr, vector<const json*>& i
 void PlnSemanticAnalyzer::beginModule(const json& ast)
 {
 	inputFilePath = ast["original"];
-	moduleId_     = filesystem::weakly_canonical(inputFilePath).string();
-	symbolScope_  = moduleSymbol(moduleId_);
+	moduleId_     = ast["module"];
+	symbolScope_  = moduleId_;
 	sa["original"]      = ast["original"];
+	sa["target"]        = ast["target"];
 	// LCOV_EXCL_BR_START
 	json u8 = {{"type-kind","prim"},{"type-name","uint8"}};
 	sa["main"] = {{"name", symbolScope_ + "..main"}, {"parameters", {
@@ -756,10 +761,9 @@ void PlnSemanticAnalyzer::indexTopDecls(const json& stmts)
 		} else if (t == "cinclude") {
 			registerCIncludeTypes(stmt);
 		} else if (t == "import") {
-			filesystem::path impPath;
-			json impAst = loadImportAst(stmt, impPath);
+			json impAst = loadImportAst(stmt);
 			if (impAst.is_null()) continue;
-			PlnSemanticAnalyzer& mod = importTypeContext(move(impAst), impPath);
+			PlnSemanticAnalyzer& mod = importTypeContext(move(impAst));
 			if (!(*mod.moduleAstRoot_)["ast"].contains("statements")) continue;
 			string alias = stmt.value("alias", "");
 			set<string> targets;
@@ -790,7 +794,7 @@ void PlnSemanticAnalyzer::indexTopDecls(const json& stmts)
 				t == "const-decl" ? E_DuplicateConstDecl : E_DuplicateTypeName, name) << endl;
 			exit(1);
 		}
-		if (localType) declareLocalTypeName(stmt);
+		if (localType) declareLocalTypeName(stmt, 0);
 	}
 }
 
@@ -999,8 +1003,28 @@ void PlnSemanticAnalyzer::whenSettled(function<void()> f)
 	else program_->settled.push_back(move(f));
 }
 
-void PlnSemanticAnalyzer::analysis(const json &ast)
+// Work files mirror their sources' absolute paths, so where this AST is tells
+// where the ASTs of the modules it imports are.
+static optional<string> workRootOf(const string& astPath, const string& original)
 {
+	string path = filesystem::absolute(astPath).lexically_normal().string();
+	string tail = original + ".ast.json";
+	if (!path.ends_with(tail)) return nullopt;
+	return path.substr(0, path.size() - tail.size());
+}
+
+void PlnSemanticAnalyzer::setLibraries(map<string, string> libraries)
+{
+	program_->libraries = move(libraries);
+}
+
+void PlnSemanticAnalyzer::analysis(const json &ast, const string& astPath)
+{
+	if (ast["original"].get<string>().ends_with(".pai")) {
+		cerr << PlnSaMessage::getMessage(E_InterfaceAsProgram, ast["original"]) << endl;
+		exit(1);
+	}
+	program_->workRoot = workRootOf(astPath, ast["original"]);
 	beginModule(ast);
 	if (ast["ast"].contains("statements")) {
 		prescanTypes(ast["ast"]["statements"]);
@@ -1211,38 +1235,33 @@ void PlnSemanticAnalyzer::sa_cinclude(const json &stmt)
 
 } // LCOV_EXCL_BR_LINE
 
-static bool is_absolute(filesystem::path &path)
-{
-	if (path.string()[0] == '/') {
-		return true;
-	}
-	return false;
-}
-
 // Null for an import of a non-Palan file.
-json PlnSemanticAnalyzer::loadImportAst(const json& stmt, filesystem::path& impPath) const
+json PlnSemanticAnalyzer::loadImportAst(const json& stmt) const
 {
-	impPath = stmt["path"].get<string>();
-	if (stmt["path-type"] == "src" && !is_absolute(impPath))
-		impPath = basePath + '/' + impPath.string();
-
-	if (!impPath.string().ends_with(".pa")) return json();
-	filesystem::path astPath = impPath;
-	astPath += ".ast.json";
-
-	ifstream astfile(astPath.string());
+	string path = stmt["path"];
+	bool isLibrary = stmt["path-type"] == "inc";
+	if (!isLibrary && !path.ends_with(".pa")) return json();
+	string astPath = path;
+	ifstream astfile;
+	if (isLibrary) {
+		auto library = program_->libraries.find(path);
+		if (library != program_->libraries.end()) astfile.open(astPath = library->second);
+	} else {
+		astPath = program_->workRoot.value_or("") + path + ".ast.json";
+		if (program_->workRoot) astfile.open(astPath);
+	}
 	if (!astfile.is_open()) {
-		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ImportFileNotFound, astPath.string()) << endl;
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ImportFileNotFound, astPath) << endl;
 		exit(1);
 	}
 	return json::parse(astfile);
 }
 
-PlnSemanticAnalyzer& PlnSemanticAnalyzer::importTypeContext(json impAst, const filesystem::path& impPath)
+PlnSemanticAnalyzer& PlnSemanticAnalyzer::importTypeContext(json impAst)
 {
-	auto known = program_->modules.find(filesystem::weakly_canonical(impAst["original"].get<string>()).string());
+	auto known = program_->modules.find(impAst["module"].get<string>());
 	if (known != program_->modules.end()) return *known->second;
-	auto sub = make_unique<PlnSemanticAnalyzer>(impPath.parent_path().string(), "", c2astPath);
+	auto sub = make_unique<PlnSemanticAnalyzer>(c2astPath);
 	sub->ownedProgram_.reset();
 	sub->program_ = program_;
 	sub->moduleAst_ = move(impAst);
@@ -1254,17 +1273,41 @@ PlnSemanticAnalyzer& PlnSemanticAnalyzer::importTypeContext(json impAst, const f
 	return mod;
 }
 
+// The interface is imported by a module of nothing else, so it meets whatever
+// a first user of the library would, private declarations included.
+json PlnSemanticAnalyzer::interfaceSymbols(const json& ast)
+{
+	json probe = {{"original", ast["original"]}, {"module", "__interface_check"}, {"target", ast["target"]}, {"ast", json::object()}}; // LCOV_EXCL_BR_LINE
+	beginModule(probe);
+	json stmt = {{"stmt-type", "import"}}; // LCOV_EXCL_BR_LINE
+	PlnSemanticAnalyzer& sub = importModule(stmt, ast);
+	if (ast["ast"].contains("statements"))
+		for (auto& decl : ast["ast"]["statements"])
+			if (decl.contains("name") && sub.topDecls_.count(decl["name"].get<string>()))
+				sub.ensureTypeName(decl["name"].get<string>(), false);
+	json symbols = json::array();
+	for (auto& f : ast.value("export", json::array())) {
+		json entry = sub.normalizeFuncSig(f, sub.moduleId_);
+		if (entry.contains("symbol")) symbols.push_back(entry["symbol"]);
+	}
+	return symbols;
+} // LCOV_EXCL_BR_LINE
+
 void PlnSemanticAnalyzer::sa_import(const json& stmt)
 {
-	filesystem::path imp_path;
-	json imp_ast = loadImportAst(stmt, imp_path);
+	json imp_ast = loadImportAst(stmt);
 	if (imp_ast.is_null()) return;
+	importModule(stmt, imp_ast);
+}
+
+PlnSemanticAnalyzer& PlnSemanticAnalyzer::importModule(const json& stmt, const json& imp_ast)
+{
 
 	rejectImportedGlobals(stmt, imp_ast);
-	PlnSemanticAnalyzer& sub = importTypeContext(imp_ast, imp_path);
+	PlnSemanticAnalyzer& sub = importTypeContext(imp_ast);
 	adoptExportedTypes(stmt, imp_ast, sub);
 
-	if (!imp_ast.contains("export")) return;
+	if (!imp_ast.contains("export")) return sub;
 
 	string alias = stmt.value("alias", "");
 	bool hasAlias = !alias.empty();
@@ -1283,7 +1326,7 @@ void PlnSemanticAnalyzer::sa_import(const json& stmt)
 
 		// Resolved in the exporting module, where the type names it uses mean
 		// what its author meant.
-		json funcEntry = sub.normalizeFuncSig(f, moduleSymbol(sub.moduleId_));
+		json funcEntry = sub.normalizeFuncSig(f, sub.moduleId_);
 		funcEntry["_module"] = sub.moduleId_;
 		for (auto& p : funcEntry.value("parameters", json::array()))
 			adoptTypeDeps(sub, p["var-type"], stmt);
@@ -1294,4 +1337,5 @@ void PlnSemanticAnalyzer::sa_import(const json& stmt)
 		// An operator cannot be written qualified, so an alias does not hide it.
 		currentScope[operatorFuncNames().count(fname) ? "" : alias][fname].push_back(funcEntry);
 	}
+	return sub;
 }

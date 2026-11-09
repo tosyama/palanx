@@ -12,8 +12,8 @@ TEST(sa_error, tuple_c_func_single_ret) {
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_700_tuple_c_func_single_ret.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_700_tuple_c_func_single_ret.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find(":2:1: error: Function 'abs' does not have multiple return values."), string::npos);
 }
 
@@ -21,8 +21,8 @@ TEST(sa_error, cinclude_unqualified_alias)
 {
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
-	ASSERT_EQ(execTestCommand("bin/palan-gen-ast ../test/testdata/sa/error_058_cinclude_unqualified_alias.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+	ASSERT_EQ(execTestCommand("palan-gen-ast ../test/testdata/sa/error_058_cinclude_unqualified_alias.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find("requires a module alias qualifier"), string::npos);
 }
 
@@ -32,8 +32,8 @@ TEST(sa_error, cinclude_typedef_conflict)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_089_cinclude_typedef_conflict.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_089_cinclude_typedef_conflict.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find(":2:1: error: Typedef 'myint' conflicts"), string::npos);
 }
@@ -49,8 +49,8 @@ TEST(sa_error, readonly_ptr_to_nonconst_c_param)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_112_readonly_ptr_to_nonconst_c_param.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_112_readonly_ptr_to_nonconst_c_param.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("cannot pass read-only pointer '@T' to non-const parameter"), string::npos);
 }
@@ -65,8 +65,8 @@ TEST(sa_error, readonly_ptr_to_nonconst_c_param_alias)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_113_readonly_ptr_to_nonconst_c_param_alias.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_113_readonly_ptr_to_nonconst_c_param_alias.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("cannot pass read-only pointer '@T' to non-const parameter"), string::npos);
 }
@@ -81,8 +81,8 @@ TEST(sa_error, readonly_ptr_to_nonconst_c_param_unnamed)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_114_readonly_ptr_to_nonconst_c_param_unnamed.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_114_readonly_ptr_to_nonconst_c_param_unnamed.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("cannot pass read-only pointer '@T' to non-const parameter '#1'"), string::npos);
 }
@@ -98,8 +98,8 @@ TEST(sa_error, incomplete_struct_var_decl)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_123_incomplete_struct_var_decl.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_123_incomplete_struct_var_decl.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("struct 'Tag' has no known layout"), string::npos);
 }
@@ -116,8 +116,8 @@ TEST(sa_error, incomplete_struct_forward_declared)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_132_forward_declared_struct.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_132_forward_declared_struct.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("struct 'Tag' is only forward-declared in this header"), string::npos);
 }
@@ -129,8 +129,8 @@ TEST(sa_error, c_union_unknown_field)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_187_c_union_unknown_field.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_187_c_union_unknown_field.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find("union 'U' has no field 'c'"), string::npos);
 }
 
@@ -139,8 +139,8 @@ TEST(sa_error, c_union_forward_declared)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_188_c_union_forward_decl.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_188_c_union_forward_decl.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find("union 'F' is only forward-declared in this header"), string::npos);
 }
 
@@ -152,8 +152,8 @@ TEST(sa_error, incomplete_struct_owned_arr)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_124_incomplete_struct_owned_arr.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_124_incomplete_struct_owned_arr.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("struct 'Tag' has no known layout"), string::npos);
 }
@@ -166,8 +166,8 @@ TEST(sa_error, incomplete_struct_embed_arr)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_125_incomplete_struct_embed_arr.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_125_incomplete_struct_embed_arr.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("struct 'Tag' has no known layout"), string::npos);
 }
@@ -184,8 +184,8 @@ TEST(sa_error, incomplete_struct_native_embed)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_126_incomplete_struct_native_embed.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_126_incomplete_struct_native_embed.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find(":4:2: error: struct 'Tag' has no known layout"), string::npos);
 }
@@ -202,8 +202,8 @@ TEST(sa_error, incomplete_struct_field_access)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_127_incomplete_struct_field_access.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_127_incomplete_struct_field_access.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("struct 'Tag' has no known layout"), string::npos);
 	ASSERT_EQ(sa.find("has no field"), string::npos);
@@ -218,8 +218,8 @@ TEST(sa_error, incomplete_struct_index)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_128_incomplete_struct_index.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_128_incomplete_struct_index.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("struct 'Tag' has no known layout"), string::npos);
 }
@@ -236,8 +236,8 @@ TEST(sa_error, incomplete_struct_native_owned_field)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_129_incomplete_struct_native_owned_field.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_129_incomplete_struct_native_owned_field.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find(":4:2: error: struct 'Tag' has no known layout"), string::npos);
 }
@@ -251,8 +251,8 @@ TEST(sa_error, incomplete_struct_native_owned_arr)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_130_incomplete_struct_native_owned_arr.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_130_incomplete_struct_native_owned_arr.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find(":4:2: error: struct 'Tag' has no known layout"), string::npos);
 }
@@ -269,8 +269,8 @@ TEST(sa_error, incomplete_struct_native_embed_arr)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_131_incomplete_struct_native_embed_arr.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_131_incomplete_struct_native_embed_arr.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find(":4:2: error: struct 'Tag' has no known layout"), string::npos);
 }
@@ -288,8 +288,8 @@ TEST(sa_error, c_unsupported_user_param)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_134_c_unsupported_user_param.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_134_c_unsupported_user_param.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("cannot call C function 'take_handle'"), string::npos);
 	ASSERT_NE(sa.find("'mystery_t'"), string::npos);
@@ -305,8 +305,8 @@ TEST(sa_error, c_unsupported_union_param)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_136_c_unsupported_union_param.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_136_c_unsupported_union_param.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("cannot call C function 'use_val'"), string::npos);
 	ASSERT_NE(sa.find("'union'"), string::npos);
@@ -320,8 +320,8 @@ TEST(sa_error, c_unsupported_enum_param)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_137_c_unsupported_enum_param.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_137_c_unsupported_enum_param.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("cannot call C function 'pick'"), string::npos);
 	ASSERT_NE(sa.find("'enum'"), string::npos);
@@ -338,8 +338,8 @@ TEST(sa_error, c_unsupported_union_ret)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_138_c_unsupported_union_ret.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_138_c_unsupported_union_ret.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("cannot call C function 'make_val'"), string::npos);
 	ASSERT_NE(sa.find("'union'"), string::npos);
@@ -352,8 +352,8 @@ TEST(sa_error, c_unsupported_func_param)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_139_c_unsupported_func_param.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_139_c_unsupported_func_param.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("cannot call C function 'set_cb'"), string::npos);
 	ASSERT_NE(sa.find("'function pointer'"), string::npos);
@@ -370,8 +370,8 @@ TEST(sa_error, c_unsupported_anon_strct_param)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_140_c_unsupported_anon_strct_param.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_140_c_unsupported_anon_strct_param.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("cannot call C function 'f'"), string::npos);
 	ASSERT_NE(sa.find("'anonymous struct'"), string::npos);
@@ -391,8 +391,8 @@ TEST(sa_error, c_unsupported_long_double)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_141_c_unsupported_long_double.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_141_c_unsupported_long_double.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("cannot call C function 'acosl'"), string::npos);
 	ASSERT_NE(sa.find("'flt128'"), string::npos);
@@ -408,8 +408,8 @@ TEST(sa_error, c_unsupported_aliased_call)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_142_c_unsupported_aliased_call.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_142_c_unsupported_aliased_call.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("cannot call C function 'take_handle'"), string::npos);
 	ASSERT_NE(sa.find("'mystery_t'"), string::npos);
@@ -422,8 +422,8 @@ TEST(sa_error, c_global_not_assignable)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_143_c_global_not_assignable.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_143_c_global_not_assignable.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("cannot write to 'stderr'"), string::npos);
 	ASSERT_NE(sa.find("'global stderr;'"), string::npos);
@@ -436,8 +436,8 @@ TEST(sa_error, c_global_addr_of)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_144_c_global_addr_of.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_144_c_global_addr_of.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("'stderr' is already a borrow"), string::npos);
 }
@@ -451,8 +451,8 @@ TEST(sa_error, c_global_out_of_block_scope)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_146_c_global_out_of_block_scope.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_146_c_global_out_of_block_scope.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("Undefined variable"), string::npos);
 	ASSERT_NE(sa.find("'stderr'"), string::npos);
@@ -468,8 +468,8 @@ TEST(sa_error, c_global_unsupported_type)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_147_c_global_unsupported_type.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_147_c_global_unsupported_type.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("cannot reference C global variable 'ld'"), string::npos);
 	ASSERT_NE(sa.find("'flt128'"), string::npos);
@@ -483,8 +483,8 @@ TEST(sa_error, call_arg_ptr_mismatch_c)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_154_call_arg_ptr_mismatch_c.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_154_call_arg_ptr_mismatch_c.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("cannot convert '@!int32' to '@!int64'"), string::npos);
 }
@@ -495,8 +495,8 @@ TEST(sa_error, callback_arg_not_func)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_159_callback_arg_not_func.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_159_callback_arg_not_func.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find(":5:1: error: cannot convert 'int64' to '@func(@void, @void) -> int32'."), string::npos) << sa;
 }
@@ -507,8 +507,8 @@ TEST(sa_error, callback_sig_arity_mismatch)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_160_callback_sig_arity_mismatch.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_160_callback_sig_arity_mismatch.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find(":4:1: error: cannot convert '@func(@int32) -> int32' to '@func(@void, @void) -> int32'."), string::npos) << sa;
 }
@@ -520,8 +520,8 @@ TEST(sa_error, callback_sig_ptr_permission)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_161_callback_ptr_permission.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_161_callback_ptr_permission.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find(":4:1: error: cannot convert '@func(@!int32, @!int32) -> int32' to '@func(@void, @void) -> int32'."), string::npos) << sa;
 }
@@ -533,8 +533,8 @@ TEST(sa_error, callback_sig_width_mismatch)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_162_callback_sig_width_mismatch.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_162_callback_sig_width_mismatch.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find(":4:1: error: cannot convert '@func(int64, @int8)' to '@func(int32, @!void)'."), string::npos) << sa;
 }
@@ -546,8 +546,8 @@ TEST(sa_error, c_unsupported_func_ret)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_163_c_unsupported_func_ret.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_163_c_unsupported_func_ret.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("cannot call C function 'set_cb'"), string::npos);
 	ASSERT_NE(sa.find("'function pointer'"), string::npos);
@@ -559,8 +559,8 @@ TEST(sa_error, callback_ret_void_mismatch)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_164_callback_ret_void_mismatch.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_164_callback_ret_void_mismatch.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find(":3:1: error: cannot convert '@func() -> int32' to '@func()'."), string::npos) << sa;
 }
@@ -571,8 +571,8 @@ TEST(sa_error, callback_ret_type_mismatch)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_165_callback_ret_type_mismatch.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_165_callback_ret_type_mismatch.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find(":4:1: error: cannot convert '@func(@int32, @int32) -> int64' to '@func(@void, @void) -> int32'."), string::npos) << sa;
 }
@@ -583,8 +583,8 @@ TEST(sa_error, callback_multi_ret_mismatch)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_169_callback_multi_ret_mismatch.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_169_callback_multi_ret_mismatch.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find(":4:34: error: function 'cmp' cannot be used as a function pointer: it returns multiple values."), string::npos) << sa;
 }
@@ -595,8 +595,8 @@ TEST(sa_error, callback_ret_missing_mismatch)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_170_callback_ret_missing_mismatch.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_170_callback_ret_missing_mismatch.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find(":4:1: error: cannot convert '@func(@int32, @int32)' to '@func(@void, @void) -> int32'."), string::npos) << sa;
 }
@@ -610,8 +610,8 @@ TEST(sa_error, invalid_link_lib_name)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_171_invalid_link_lib.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_171_invalid_link_lib.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find(": error:"), string::npos);
 	ASSERT_NE(sa.find("invalid library name"), string::npos);
@@ -622,8 +622,8 @@ TEST(sa_error, link_obj_not_found)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_611_link_obj_not_found.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_611_link_obj_not_found.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find(":1:1: error: object file '"), string::npos);
 	ASSERT_NE(sa.find("/test/testdata/sa/error_611_missing.o' in a cinclude link clause is not found."), string::npos);
 }
@@ -637,8 +637,8 @@ TEST(sa_error, empty_link_lib_name)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_172_empty_link_lib.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_172_empty_link_lib.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("invalid library name"), string::npos);
 }
@@ -650,8 +650,8 @@ TEST(sa_error, syscall_number_not_constant)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_173_syscall_number_not_constant.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_173_syscall_number_not_constant.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("number must be a literal integer"), string::npos);
 }
@@ -662,8 +662,8 @@ TEST(sa_error, syscall_number_out_of_range)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_175_syscall_number_out_of_range.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_175_syscall_number_out_of_range.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("does not fit in a 32-bit unsigned integer"), string::npos);
 }
@@ -675,8 +675,8 @@ TEST(sa_error, syscall_too_many_params)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_176_syscall_too_many_params.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_176_syscall_too_many_params.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("Linux syscall ABI supports at most 6"), string::npos);
 }
@@ -689,8 +689,8 @@ TEST(sa_error, syscall_float_param)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_179_syscall_float_param.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_179_syscall_float_param.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("cannot pass through the Linux syscall ABI: 'flo64'"), string::npos);
 }
@@ -701,8 +701,8 @@ TEST(sa_error, syscall_float_return)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_180_syscall_float_return.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_180_syscall_float_return.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("cannot pass through the Linux syscall ABI: 'flo64'"), string::npos);
 }
@@ -717,8 +717,8 @@ TEST(sa_error, syscall_narrow_param)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_184_syscall_narrow_param.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_184_syscall_narrow_param.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("cannot pass through the Linux syscall ABI: 'int8'"), string::npos);
 }
@@ -732,8 +732,8 @@ TEST(sa_error, syscall_duplicate)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_181_syscall_duplicate.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_181_syscall_duplicate.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find(":2:1: error: Function 'foo' is already defined."), string::npos);
 }
@@ -747,8 +747,8 @@ TEST(sa_error, syscall_call_narrowing)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_182_syscall_call_narrowing.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_182_syscall_call_narrowing.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("Implicit conversion from 'int64' to 'int32' is not allowed"), string::npos);
 }
@@ -762,8 +762,8 @@ TEST(sa_error, syscall_call_ptr_permission)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_183_syscall_call_ptr_permission.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_183_syscall_call_ptr_permission.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("cannot bind a read-only pointer"), string::npos);
 }
@@ -778,8 +778,8 @@ TEST(sa_error, macro_backref_undefined)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_185_macro_backref_undefined.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_185_macro_backref_undefined.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("Undefined variable"), string::npos);
 }
@@ -792,8 +792,8 @@ TEST(sa_error, macro_backref_arr_field)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_186_macro_backref_arr_field.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_186_macro_backref_arr_field.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find(":1:1: error: struct field array size must be a compile-time constant integer; 'ARR_N' is not a const."), string::npos) << sa;
 }
@@ -803,8 +803,8 @@ TEST(sa_error, c_call_too_many_args)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_382_c_call_too_many_args.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_382_c_call_too_many_args.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find(":2:11: error: function 'abs' takes 1 argument(s), but 2 given."), string::npos);
 }
 
@@ -813,8 +813,8 @@ TEST(sa_error, c_call_too_few_args)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_383_c_call_too_few_args.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_383_c_call_too_few_args.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find(":2:11: error: function 'abs' takes 1 argument(s), but 0 given."), string::npos);
 }
 
@@ -823,8 +823,8 @@ TEST(sa_error, c_void_call_with_arg)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_384_c_void_call_with_arg.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_384_c_void_call_with_arg.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find(":2:11: error: function 'getchar' takes 0 argument(s), but 1 given."), string::npos);
 }
 
@@ -833,8 +833,8 @@ TEST(sa_error, variadic_too_few_args)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_385_variadic_too_few_args.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_385_variadic_too_few_args.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find(":2:1: error: function 'printf' takes at least 1 argument(s), but 0 given."), string::npos);
 }
 
@@ -843,8 +843,8 @@ TEST(sa_error, c_enum_field_from_int)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_403_c_enum_field_from_int.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_403_c_enum_field_from_int.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find(":3:1: error: Implicit conversion from 'int32' to 'CSpace' is not allowed"), string::npos);
 }
 
@@ -853,15 +853,15 @@ TEST(sa_error, c_enum_name_conflict)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_404_c_enum_name_conflict.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_404_c_enum_name_conflict.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	// A top-level cinclude's types are registered before any Palan declaration.
 	ASSERT_NE(sa.find(":1:1: error: type 'Color' is already defined."), string::npos);
 
 	cleanTestEnv();
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_525_c_enum_name_conflict_nested.pa -o " + ast_out), "");
-	sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_525_c_enum_name_conflict_nested.pa -o " + ast_out), "");
+	sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find(":3:2: error: type 'Color' is already defined."), string::npos);
 }
 
@@ -876,8 +876,8 @@ TEST(sa_error, c_macro_unexported)
 		cleanTestEnv();
 		string ast_out = "out/test.ast.json";
 		ASSERT_EQ(execTestCommand(
-			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
-		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+			"palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }
@@ -896,8 +896,8 @@ TEST(sa_error, unsupported_c_field)
 		cleanTestEnv();
 		string ast_out = "out/test.ast.json";
 		ASSERT_EQ(execTestCommand(
-			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
-		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+			"palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }
@@ -916,8 +916,8 @@ TEST(sa_error, c_bit_field)
 		cleanTestEnv();
 		string ast_out = "out/test.ast.json";
 		ASSERT_EQ(execTestCommand(
-			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
-		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+			"palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }
@@ -934,8 +934,8 @@ TEST(sa_error, c_const_ptr_field)
 		cleanTestEnv();
 		string ast_out = "out/test.ast.json";
 		ASSERT_EQ(execTestCommand(
-			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
-		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+			"palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }
@@ -953,8 +953,8 @@ TEST(sa_error, c_struct_arg)
 		cleanTestEnv();
 		string ast_out = "out/test.ast.json";
 		ASSERT_EQ(execTestCommand(
-			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
-		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+			"palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }

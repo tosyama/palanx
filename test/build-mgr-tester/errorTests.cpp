@@ -37,10 +37,30 @@ TEST(build_mgr_error, could_not_open_file) {
 	ASSERT_NE(out.find("could not open file"), string::npos);
 }
 
+TEST(build_mgr_error, unsupported_target) {
+	cleanTestEnv();
+	// Reported ahead of the missing source: nothing runs for such a target.
+	string out = execTestCommand("bin/palan --target aarch64-linux-gnu no_such_file.pa");
+	ASSERT_NE(out.find("palan: unsupported target 'aarch64-linux-gnu'"), string::npos);
+}
+
 TEST(build_mgr_error, block_import_scope_out) {
 	cleanTestEnv();
 	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_045_block_import_scope.pa");
 	ASSERT_NE(out.find("Undefined function"), string::npos);
+}
+
+TEST(build_mgr_error, same_module_identity) {
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_064_same_identity.pa");
+	ASSERT_NE(out.find("plain_b/util.pa' has the same module identity 'util' as '"), string::npos) << out;
+	ASSERT_NE(out.find("plain_a/util.pa'"), string::npos) << out;
+}
+
+TEST(build_mgr_error, allocators_identity) {
+	cleanTestEnv();
+	string out = execTestCommand("bin/palan ../test/testdata/build-mgr/error_065_allocators_identity.pa");
+	ASSERT_NE(out.find("has the same module identity '__allocators' as '"), string::npos) << out;
 }
 
 TEST(build_mgr_error, unqualified_alias_call) {

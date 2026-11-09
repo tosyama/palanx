@@ -1,0 +1,3 @@
+library demo;
+cinclude "body_header.h";
+export func one() -> int32 { return one_value(); }

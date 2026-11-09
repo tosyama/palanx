@@ -12,6 +12,7 @@ enum PlnC2AstMessageCode {
 	M_Help,
 	M_Version,
 	E_NoInputFile,
+	E_UnsupportedTarget,	// arg1: target name
 	E_ErrorDirective,		// arg1: message text from #error directive
 	E_InvalidDefinedSyntax,
 	E_MalformedMacroArgList,

@@ -1,0 +1,6 @@
+library demo;
+export func top() -> int32 {
+	[+]int64 v;
+	v.push(4);
+	return int32(v[0]);
+}

@@ -11,6 +11,7 @@ using std::string;
 enum PlnCodegenMessageCode {
 	M_Help,
 	M_Version,
+	E_UnsupportedTarget,	// arg1: target name
 	E_UnknownType,		// arg1: type name
 	E_UnknownExprType,	// arg1: expr-type string
 	E_UnknownStmtType,	// arg1: stmt-type string

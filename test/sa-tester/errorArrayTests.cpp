@@ -12,8 +12,8 @@ TEST(sa_error, embed_arr_unsized_inner) {
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_050_embed_arr_unsized_inner.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_050_embed_arr_unsized_inner.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("inner dimension"), string::npos);
 }
@@ -22,8 +22,8 @@ TEST(sa_error, embed_arr_inner_size_mismatch) {
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_051_embed_arr_inner_size_mismatch.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_051_embed_arr_inner_size_mismatch.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("mismatch"), string::npos);
 }
@@ -32,8 +32,8 @@ TEST(sa_error, array_size_not_integer) {
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_044_array_size_float.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_044_array_size_float.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");  // SA must fail
 	ASSERT_NE(sa.find("integer"), string::npos);
 }
@@ -42,8 +42,8 @@ TEST(sa_error, arr_index_float_idx) {
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_045_arr_index_float_idx.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_045_arr_index_float_idx.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");  // SA must fail
 	ASSERT_NE(sa.find("Array index expression must be an integer type"), string::npos);
 }
@@ -52,8 +52,8 @@ TEST(sa_error, arr_not_array_type) {
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_046_arr_not_array_type.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_046_arr_not_array_type.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");  // SA must fail
 	ASSERT_NE(sa.find("Expression is not an array (pointer) type"), string::npos);
 }
@@ -62,8 +62,8 @@ TEST(sa_error, arr_assign_void) {
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_047_arr_assign_void.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_047_arr_assign_void.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");  // SA must fail
 	ASSERT_NE(sa.find("Void function call cannot be used as a value"), string::npos);
 }
@@ -72,8 +72,8 @@ TEST(sa_error, unsized_arr_var_decl) {
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_048_unsized_arr_var.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_048_unsized_arr_var.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");  // SA must fail
 	ASSERT_NE(sa.find("Unsized array type cannot be used in variable declaration"), string::npos);
 }
@@ -82,8 +82,8 @@ TEST(sa_error, embed_arr_variable_inner_arg) {
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_052_embed_arr_variable_inner_arg.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_052_embed_arr_variable_inner_arg.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("mismatch"), string::npos);
 	ASSERT_NE(sa.find("variable"), string::npos);
@@ -93,8 +93,8 @@ TEST(sa_error, embed_arr_float_size) {
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_053_embed_arr_float_size.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_053_embed_arr_float_size.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("Array size expression must be an integer type"), string::npos);
 }
@@ -106,8 +106,8 @@ TEST(sa_error, embed_arr_owned_sub_struct)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_076_embed_arr_owned_struct.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_076_embed_arr_owned_struct.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("it owns storage of its own"), string::npos) << sa;
 }
@@ -119,8 +119,8 @@ TEST(sa_error, write_readonly_arr_elem)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_077_write_readonly_arr_elem.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_077_write_readonly_arr_elem.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("cannot write through read-only pointer"), string::npos);
 }
@@ -132,8 +132,8 @@ TEST(sa_error, arr_field_size_not_constant)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_080_arr_field_size_not_constant.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_080_arr_field_size_not_constant.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find(":2:1: error: struct field array size must be a compile-time constant"), string::npos);
 }
@@ -146,8 +146,8 @@ TEST(sa_error, embed_arr_field_owned_substruct)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_081_embed_arr_field_owned_substruct.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_081_embed_arr_field_owned_substruct.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find(":4:1: error: cannot embed 'Rect' with '$': it owns storage of its own"), string::npos) << sa;
 }
@@ -159,8 +159,8 @@ TEST(sa_error, recursive_arr_field)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_082_recursive_arr_field.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_082_recursive_arr_field.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find(":1:1: error: struct 'A' recursively contains itself"), string::npos);
 }
@@ -175,8 +175,8 @@ TEST(sa_error, write_readonly_arr_field_elem)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_083_write_readonly_arr_field_elem.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_083_write_readonly_arr_field_elem.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find("cannot write through read-only pointer"), string::npos);
 }
@@ -187,8 +187,8 @@ TEST(sa_error, field_inline_unsized_row)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_088_field_inline_unsized_row.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_088_field_inline_unsized_row.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find(":1:1: error: unsupported struct field type"), string::npos);
 }
@@ -198,8 +198,8 @@ TEST(sa_error, arr_lit_func_arg)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_208_arr_lit_func_arg.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_208_arr_lit_func_arg.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa, "");
 	ASSERT_NE(sa.find(":2:5: error: parameter 'a' of type '[?]int32' cannot take an array literal: only a struct or fixed-size array parameter can."), string::npos);
 }
@@ -229,8 +229,8 @@ TEST(sa_error, arr_lit_init)
 		cleanTestEnv();
 		string ast_out = "out/test.ast.json";
 		ASSERT_EQ(execTestCommand(
-			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
-		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+			"palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }
@@ -250,7 +250,7 @@ TEST(sa_error, arr_borrow)
 		{"error_241_arr_borrow_mut_of_ro.pa", "cannot bind a read-only pointer"},
 		{"error_242_arr_borrow_local_no_addr_of.pa", ":2:1: error: an array given to a borrowed array ('@[n]T'/'@![n]T') or a '@T'/'@!T' pointer must be written as"},
 		{"error_243_arr_borrow_assign_mismatch.pa", ":4:1: error: array shape '[3]int32' does not match"},
-		{"error_245_arr_borrow_return.pa", "cannot represent: 'array'"},
+		{"error_245_ptr_to_arr_borrow.pa", "cannot represent: 'array'"},
 		{"error_858_ro_unsized_borrow_write.pa", ":1:22: error: cannot write through read-only pointer '@T'"},
 		{"error_859_unsized_borrow_no_addr_of.pa", ":3:1: error: an array given to a borrowed array ('@[n]T'/'@![n]T') or a '@T'/'@!T' pointer must be written as"},
 		{"error_860_unsized_borrow_ro_to_mut.pa", ":2:1: error: cannot bind a read-only pointer"},
@@ -280,8 +280,8 @@ TEST(sa_error, arr_borrow)
 		cleanTestEnv();
 		string ast_out = "out/test.ast.json";
 		ASSERT_EQ(execTestCommand(
-			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
-		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+			"palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }
@@ -302,8 +302,8 @@ TEST(sa_error, copy)
 		cleanTestEnv();
 		string ast_out = "out/test.ast.json";
 		ASSERT_EQ(execTestCommand(
-			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
-		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+			"palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }
@@ -323,8 +323,8 @@ TEST(sa_error, embed_elem_not_struct)
 		cleanTestEnv();
 		string ast_out = "out/test.ast.json";
 		ASSERT_EQ(execTestCommand(
-			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
-		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+			"palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }
@@ -334,7 +334,6 @@ TEST(sa_error, field_arr_level_errors)
 	// An owned field's every level is checked as the field's own.
 	const pair<string, string> cases[] = {
 		{"error_324_field_2d_embed_prim.pa", ":1:1: error: '$' applies only to a struct element or a '$[m]' row, not 'int32'."},
-		{"error_524_field_embed_varr.pa", ":1:1: error: cannot embed '[+]int32' with '$': it owns storage of its own; use '[+]int32' without '$'."},
 		{"error_804_field_row_size_not_const.pa", ":3:2: error: struct field array size must be a compile-time constant integer; 'n' is not a const."},
 		{"error_805_field_unsized_row.pa", ":1:1: error: unsupported struct field type."},
 		{"error_806_field_ptr_slot_rows.pa", ":1:1: error: unsupported struct field type."},
@@ -342,15 +341,14 @@ TEST(sa_error, field_arr_level_errors)
 		{"error_809_field_sized_varr.pa", ":1:1: error: a variable-length array element is written '[+]T', without a size: it starts empty."},
 		{"error_810_field_embed_varr_rows.pa", ":1:1: error: cannot embed '[+]int32' with '$': it owns storage of its own; use '[+]int32' without '$'."},
 		{"error_811_field_inline_embed_owning.pa", ":2:1: error: cannot embed 'O' with '$': it owns storage of its own; use 'O' without '$'."},
-		{"error_812_field_inline_owned_embed.pa", ":3:1: error: cannot embed 'S' with '$': it owns storage of its own; use 'S' without '$'."},
 		{"error_813_field_embed_prim.pa", ":1:1: error: '$' applies only to a struct element or a '$[m]' row, not 'int32'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
 		string ast_out = "out/test.ast.json";
 		ASSERT_EQ(execTestCommand(
-			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
-		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+			"palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }
@@ -360,8 +358,8 @@ TEST(sa_error, row_borrow_readonly)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_377_row_borrow_readonly.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_377_row_borrow_readonly.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find("cannot write through read-only pointer"), string::npos);
 }
 
@@ -370,8 +368,8 @@ TEST(sa_error, row_borrow_size)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_378_row_borrow_size.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_378_row_borrow_size.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find("array shape '[3]int32' does not match the borrowed array type '@[4]int32'"), string::npos);
 }
 
@@ -380,8 +378,8 @@ TEST(sa_error, row_borrow_runtime_size)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_379_row_borrow_runtime_size.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_379_row_borrow_runtime_size.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find("array shape '[?]int32' does not match the borrowed array type '@[4]int32'"), string::npos);
 }
 
@@ -390,8 +388,8 @@ TEST(sa_error, row_by_name)
 	cleanTestEnv();
 	string ast_out = "out/test.ast.json";
 	ASSERT_EQ(execTestCommand(
-		"bin/palan-gen-ast ../test/testdata/sa/error_380_row_by_name.pa -o " + ast_out), "");
-	string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+		"palan-gen-ast ../test/testdata/sa/error_380_row_by_name.pa -o " + ast_out), "");
+	string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 	ASSERT_NE(sa.find("must be written as '@name' or '@!name'"), string::npos);
 }
 
@@ -445,8 +443,8 @@ TEST(sa_error, arr_lit_assign)
 		cleanTestEnv();
 		string ast_out = "out/test.ast.json";
 		ASSERT_EQ(execTestCommand(
-			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
-		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+			"palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }
@@ -494,6 +492,8 @@ TEST(sa_error, varr)
 		{"error_751_arrow_after_cmp.pa", ":2:5: error: '->' binds tighter than '<'; parenthesize the operation to store its result: '(a < b) -> c'."},
 		{"error_752_arrow_after_logical.pa", ":2:7: error: '->' binds tighter than '&&'; parenthesize the operation to store its result: '(a && b) -> c'."},
 		{"error_753_varr_transfer_from_frame.pa", ":3:1: error: '->>' needs a source that owns its value: an owning variable, an owned field or element, a call result, or a pointer viewed as an owner ('p as T')."},
+		{"error_945_transfer_from_embed_varr.pa", ":4:1: error: '->>' needs a source that owns its value: an owning variable, an owned field or element, a call result, or a pointer viewed as an owner ('p as T')."},
+		{"error_946_transfer_to_embed_varr.pa", ":4:1: error: '->>' needs a field that owns its value (T or [n]T); 'bytes' does not."},
 		{"error_754_varr_param_elem_mismatch.pa", ":3:1: error: cannot convert '[+]int64' to '[+]int32'."},
 		{"error_755_varr_named_ret_init.pa", ":1:26: error: named return 'r' of a struct or array type cannot have an initializer."},
 		{"error_756_varr_return_borrow_mismatch.pa", ":2:2: error: cannot copy '@[+]int64' into '[+]int32': both need the same element type and layout, and the same sizes where both are known at compile time; a size known only at run time must be its owner's."},
@@ -546,8 +546,8 @@ TEST(sa_error, varr)
 		cleanTestEnv();
 		string ast_out = "out/test.ast.json";
 		ASSERT_EQ(execTestCommand(
-			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
-		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+			"palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }
@@ -565,8 +565,8 @@ TEST(sa_error, owned_rows_c_ptrptr)
 		cleanTestEnv();
 		string ast_out = "out/test.ast.json";
 		ASSERT_EQ(execTestCommand(
-			"bin/palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
-		string sa = execTestCommand("bin/palan-sa " + ast_out + " -o out/test.sa.json");
+			"palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }

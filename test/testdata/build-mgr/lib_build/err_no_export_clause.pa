@@ -1,0 +1,3 @@
+library demo;
+cinclude <stdio.h>;
+export func f(@FILE p) { }

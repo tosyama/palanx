@@ -1,4 +1,5 @@
 {
+    "target": "x86_64-linux-gnu",
     "functions": [
         {
             "name": "load_elem",

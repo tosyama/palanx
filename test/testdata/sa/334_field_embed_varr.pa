@@ -1,0 +1,4 @@
+type Str { bool valid; $[+]uint8 bytes; };
+type Named { int64 id; $Str name; [+]int32 xs; };
+Named n;
+n.name.bytes.push(65);

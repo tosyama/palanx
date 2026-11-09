@@ -9,6 +9,7 @@ add_executable(palan-c2ast
 	CPreprocessor.cpp
 	CParser.cpp
 )
+palan_tool(palan-c2ast)
 
 target_compile_options(palan-c2ast PRIVATE -Wno-multichar)
 
@@ -22,6 +23,6 @@ if (CMAKE_COMPILER_IS_GNUCXX)
 	endif()
 endif()
 
-file(MAKE_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/c2ast)
-file(COPY_FILE predefined.h ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/c2ast/predefined.h)
+configure_file(predefined.h ${PALAN_BUILD_LIB_DIR}/${PALAN_TARGET}/c2ast/predefined.h COPYONLY)
+install(FILES predefined.h DESTINATION ${PALAN_INSTALL_LIB_DIR}/${PALAN_TARGET}/c2ast COMPONENT tools)
 

@@ -22,4 +22,5 @@
 nlohmann::json execute_c2ast(const std::string& path_type,
                              const std::string& path,
                              const std::string& base_dir,
-                             const std::string& c_state);
+                             const std::string& c_state,
+                             const std::string& target);

@@ -1,7 +1,7 @@
 Palan Semantic Analyzer JSON Specification
 ==========================================
 
-ver. 0.2.3
+ver. 0.2.4
 
 Output of palan-sa. Extends the AST JSON format (see ASTSpec.md) with resolved
 type information and pre-collected literal tables.
@@ -11,6 +11,8 @@ type information and pre-collected literal tables.
 Root
 ----
 - original\* - original source file path
+- target\* - Target name string, as in the AST (see ASTSpec.md's Root). palan-codegen rejects a
+  missing or unsupported one.
 - main\* - The module's top-level function, whose body is `statements`: `name` (its symbol,
   `<module>..main`; see Symbol names) and `parameters` (`__argc` int64 and `__argv`
   `pntr(pntr(uint8))`, in the Function definition model's form), and `globals` as a Palan
@@ -130,13 +132,35 @@ Root
     (`$[n]T field`, `$[n][m]U field`, `$[n]$[m]T field`, ...). Each is one element built,
     dropped and copied as an array element of that type is (a `[+]U` field's header is built
     empty with its struct); an array laid out in the struct is a row laid out in place, the run
-    of its elements' slots:
-    - name\* - Field name string
+    of its elements' slots. A `$[+]U field` is its header laid out in the struct, built empty
+    with it (`__pln_init_varr_U(h, 0, 0)`), released with `__pln_fini_varr_U` and copied with
+    `__pln_copy_varr_U`. A `$T field` of a struct owning fields lists `T`'s owned fields in
+    place of itself, at their offsets in the outer struct and named by their path (`name.bytes`):
+    - name\* - Field name string, or the path to it through structs laid out in the struct
     - offset\* - Byte offset within the struct
     - elem\* - The element, as in the arr and varr entries (`"struct"` for `T`, `"varr"` for
-      `[+]U`, `"row"` for an owned array, `"embed-row"` for an array laid out in the struct)
+      `[+]U`, `"row"` for an owned array, `"embed-row"` for an array laid out in the struct),
+      or `"embed-varr"` for `$[+]U`: the varr element's description with `"size"` 24
     - lens\* - The lengths of the field's levels, outermost first and on through the elements
       of a `[+]U`, which its element's helpers take (`[3]`, `[3, 4]`; empty for `T`)
+
+  - inits - The struct's field initializers, constants palan-sa has evaluated, its own and
+    those of structs laid out in it at their offsets there (omitted when it has none). A struct
+    with initializers has a struct entry even when it owns nothing. Each is stored after the owned
+    fields are built:
+    - offset\* - Byte offset within the struct
+    - kind\* - `"prim"` (a primitive field), `"run"` (`$[n]T`), `"row"` (`[n]T`, the owned field
+      at the same offset), `"varr"` / `"embed-varr"` (`[+]T` / `$[+]T`, the owned field at the same
+      offset, resized to the count of `values` first), or `"structs"` (a `$[n]$P` field with `P`
+      a struct with initializers, built by `__pln_initrun_P`)
+    - type - The values' type as the generated module stores it: an integer as the signed integer
+      of its width (`uint8` and `bool` as `int8`), a float as itself (not for `"structs"`)
+    - values - The values, as literal text in that type (`200` of a `uint8` is `-56`; not for `"structs"`)
+    - name, count - For `"structs"`: the struct and how many of it the field lays out
+    A struct with initializers that owns nothing also has `__pln_initrun_P(@!P run, int64 from,
+    int64 to)`, which builds `run[from]` to `run[to - 1]`. palan-sa calls it after obtaining an
+    array laid out in one block (`[n]$P`, `[m]$[n]$P`); the generated helpers call it wherever
+    elements laid out in place come into use (`[+]$P`'s resize, a row block of `$P`).
 
   Non-owned fields are deliberately not described: build-mgr re-declares the struct in the
   generated allocator module with only the owned fields at their offsets and opaque padding
@@ -150,7 +174,7 @@ Root
 String literal table entry
 --------------------------
 - label\* - Assembly label string (e.g. ".str0")
-- value\* - String value
+- value\* - The bytes as escaped text, as the lit-str value of ASTSpec.md
 
 Function model (sa.json)
 ------------------------
@@ -198,10 +222,12 @@ among such blocks of the enclosing function or of the top level (`util..a.v..b1.
 - `<name>`: the function's name; an operator function's is a word that starts with a digit, so that
   no written name can be it: `0add` `0sub` `0mul` `0div` `0mod` for `+ - * / %`
   (`vecmath..0sub.R4vec3.R4vec3`).
-- `<module>`: the source file's name without `.pa`, with each byte outside `[A-Za-z0-9_]` written
-  `_` and two lowercase hex digits, and `_` in front of a leading digit (`001_hello.pa` →
-  `_001_hello`). The allocators build-mgr generates are in module `__allocators`, which SA names
-  in the calls it makes to them.
+- `<module>`: the `module` of ast.json: the source file's name without `.pa`, with each byte outside
+  `[A-Za-z0-9_]` and each `_` followed by two lowercase hex digits written `_` and two lowercase hex
+  digits, and `_` in front of a leading digit (`001_hello.pa` → `_001_hello`), after the name of the
+  file's `library` declaration if any (`library std;` in `utf8.pa` gives `std.utf8..len.v`). The
+  allocators build-mgr generates are in module `__allocators`, or `<module>.__allocators` for a module
+  with a `library` declaration (`std.utf8.__allocators`), which SA names in the calls it makes to them.
 - `<param>`: the parameter's normalized `var-type`, each type self-delimiting:
   - prim: its name (`int32`, `flo64`, `bool`, `void`); an enum: `N<len><enum name><base prim>`
   - struct: `<len><type-name>`
@@ -230,8 +256,9 @@ is owned as a `[+]T` parameter or return value is (see `[+]T` below): a paramete
 result as it is and otherwise a copy, of what a copy into it accepts (E_IncompatibleTypes);
 `return` copies a value the function doesn't own, and any value whose shape a copy would reject,
 an owning variable's included, is E_CopyShapeMismatch; `return [..]` declares `__ret_N` from the
-literal, as for a struct. Only a parameter may borrow an array, so `-> @[n]T` is
-E_UnsupportedParamType.
+literal, as for a struct. A borrowed array return (`-> @[]T`, `@[n]T`, `@[+]T`) is normalized as a
+parameter is (see `@[n]T` below); its call is a borrow, bound and passed by name. Only a pointer
+to a borrowed array (`@@[n]T`) is E_UnsupportedParamType.
 
 A struct parameter `T` (`pntr(struct)` with no `mutable`) is owned the same way: a call result
 is passed as it is, anything else (a struct literal included) is copied into a `temp`
@@ -310,9 +337,10 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   - Struct and enum names are program-wide identities (build-mgr keys struct allocators
     by them). Each records its defining module, so the same name from a second module,
     or one a C type has, is `E_DuplicateTypeName`. An alias has no program-wide name.
-    An exported struct/enum keeps its written name. One that is not exported, or is
-    declared in a block, is named `__pln_L<module hash>_<seq>_<Name>` in sa.json, so
-    modules and blocks may each declare their own; a message shows the written name.
+    An exported struct/enum keeps its written name. One that is not exported is named
+    `__pln_L<module hash>_<Name>` in sa.json, and one declared in a block
+    `__pln_L<module hash>_<seq>_<Name>`, so modules and blocks may each declare their own;
+    a message shows the written name.
   - A type declaration clashes only with names written in its scope: a type an import
     makes writable, a C type, a const, or another declaration. An imported type that is
     not writable does not clash.
@@ -454,7 +482,9 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     `embedded` and `stride` (the struct's or the row's bytes) as a `[n]$T` or `[m]$[n]U`
     variable's does.
   - A C call argument (fixed or variadic) and a `[]T`-family Palan parameter (an unsized
-    elements pointer: no `mutable`, no `arr-size`) are passed the same `field-access` to `data`.
+    elements pointer: no `mutable`, no `arr-size`) are passed the same `field-access` to `data`,
+    and so is a borrow (`@v`/`@!v`, or a `@[+]T` variable) bound to a `@[]T`/`@![]T` (an unsized
+    elements pointer with `mutable`) parameter, variable, field or return value.
     Through a read-only borrow it is typed `pntr(T)` with `"mutable": false` (and a row element
     has `"mutable": false` on its levels, as a read-only `@[m][n]U`'s row does), so writing an
     element or passing it to `[]T` is rejected as for any `@T`. An owned element (a struct, a
@@ -522,7 +552,12 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   - A field `[+]U` is an owned field (see the struct entry of alloc-shapes): its header is built
     empty with the struct, and `s.a[i]`, the builtins, borrows, copies and `->>` treat `s.a` as a
     `[+]U` variable. A struct literal resizes it to the literal's count before storing the
-    elements, as an inner row. `$[+]U` is E_EmbedOwningType and `[+n]U` is E_VarrElemSized.
+    elements, as an inner row. `[+n]U` is E_VarrElemSized.
+  - A field `$[+]U` lays the 24-byte header out in the struct. `s.a` is a `field-access` with
+    `addr-only: true` and the same `pntr(varr(E))` type as an owned `[+]U` field, so everything
+    above applies to it, except that it is neither the source nor the target of `->>`
+    (E_TransferFromNonOwner, E_TransferToNonOwnedField), as the header of a `$[+]U` variable.
+    `$[n]$[+]U` is E_EmbedOwningType.
 
   **`[]$[m]T` (unsized embedded array parameter):** Normalized by SA to the same
   `pntr(pntr(T, arr-size:m), embedded:true, stride:m*sizeof(T))` type as the sized form. The inner dimension `m`
@@ -552,7 +587,7 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   takes its lengths from the location receiving or releasing it, and a `run-size` level matches
   any size.
 
-  **`@[n]T` / `@![n]T` (borrowed array):** In a parameter or a local variable declaration, a
+  **`@[n]T` / `@![n]T` (borrowed array):** In a parameter, a return type or a local variable declaration, a
   `pntr` whose `base-type` is an `arr` is normalized to the array's own pntr chain, with
   `arr-size` on every level and `mutable` (`false` for `@`, `true` for `@!`) on every level down
   to the elements — `@[n][m]T` becomes `pntr(pntr(T, mutable, arr-size:m), mutable, arr-size:n)`,

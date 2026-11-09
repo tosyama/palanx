@@ -28,6 +28,7 @@ enum {
 	STRING =	PlnParser::token::STRING,
 	PATH =	PlnParser::token::PATH,
 	INCLUDE_FILE =	PlnParser::token::INCLUDE_FILE,
+	KW_LIBRARY =	PlnParser::token::KW_LIBRARY,
 	KW_EXPORT =	PlnParser::token::KW_EXPORT,
 	KW_IMPORT =	PlnParser::token::KW_IMPORT,
 	KW_CINCLUDE =	PlnParser::token::KW_CINCLUDE,
@@ -122,6 +123,7 @@ COMMENT1	\/\/[^\n]*\n
 			loc.begin.line, loc.begin.column,
 			PlnGenAstMessage::getMessage(E_InvalidNumberLiteral, yytext)));
 	}
+<*>"library" { return KW_LIBRARY; }
 <*>"export" { return KW_EXPORT; }
 <*>"import" {
 		BEGIN(import);

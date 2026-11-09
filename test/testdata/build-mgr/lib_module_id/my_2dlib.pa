@@ -1,0 +1,1 @@
+export func escaped() -> int32 { return 4; }

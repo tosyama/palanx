@@ -723,14 +723,6 @@ static json strct(const char* n) { return {{"type-kind","struct"},{"type-name",n
 static json pntr(json base) { return {{"type-kind","pntr"},{"base-type",base}}; }
 static json pntr(json base, bool mut) { json p = pntr(base); p["mutable"] = mut; return p; }
 
-TEST(symbol, module) {
-    EXPECT_EQ(moduleSymbol("/home/u/src/util.pa"), "util");
-    EXPECT_EQ(moduleSymbol("/a.pa/b.pa"), "b");
-    // A leading digit is read as a number by `as`; '-' and '.' are no symbol characters.
-    EXPECT_EQ(moduleSymbol("/t/001_hello.pa"), "_001_hello");
-    EXPECT_EQ(moduleSymbol("/t/my-lib.v2.pa"), "my_2dlib_2ev2");
-}
-
 TEST(symbol, prim_and_user_types) {
     EXPECT_EQ(funcSymbol("f", json::array()), "f.v");
     EXPECT_EQ(funcSymbol("show", params({prim("int32")})), "show.int32");

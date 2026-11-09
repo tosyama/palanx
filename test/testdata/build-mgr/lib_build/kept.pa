@@ -1,0 +1,2 @@
+library demo;
+export type Kept { int32 k; };

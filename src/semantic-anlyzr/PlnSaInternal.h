@@ -95,7 +95,6 @@ inline bool isFloatPrim(const PlnType* t) {
 // struct/array variables, which carry no read-only concept of their own.
 inline bool isWritableThrough(const json& vt) { return vt.value("mutable", true); }
 
-// The symbol of one of the functions build-mgr generates, and a call to it.
 json shapeElem(const json& elem);
 json helperLens(const json& elem);
 // The root of an array location (the variable `a` of `a[i][j]`) and how many
@@ -105,15 +104,14 @@ std::pair<const json*, size_t> arrRoot(const json& location);
 // variable keeps from its declaration as __<name>_d<level>.
 json runtimeLen(const json& root, size_t level);
 string allocShapeKey(const AllocShapeRef& shape);
-string allocHelperSymbol(const AllocShapeRef& shape, const string& op);
-json allocHelperCall(const AllocShapeRef& shape, const string& op, json args);
 inline AllocShapeRef structShape(const string& name)
 {
 	return {AllocFamily::Struct, {{"type-kind","struct"},{"type-name",name}}}; // LCOV_EXCL_BR_LINE
 } // LCOV_EXCL_BR_LINE
 // len, push, resize and pop of the `[+]T` whose header type is varr, as call
-// candidates calling impl's helpers; only their signatures without impl.
-json varrBuiltinDefs(const json& varr, const AllocShapeRef* impl = nullptr);
+// candidates calling impl's helpers in module `allocators`; only their signatures
+// without impl.
+json varrBuiltinDefs(const json& varr, const AllocShapeRef* impl = nullptr, const string& allocators = "");
 
 enum class PtrPermission { Ok, Upgrade, InnerNarrowing, FuncSigMismatch };
 
@@ -247,13 +245,16 @@ inline bool isArrBorrowVar(const json& vt)
 	return vt.value("type-kind","") == "pntr" && vt.contains("mutable")
 	    && (vt.contains("arr-size") || isVarrPntr(vt));
 }
-// Where a `[+]T` argument passes its data instead of its header: to C, or to
-// an unsized `[]T` (whose length the callee is told some other way).
+// Where a `[+]T` passes its data instead of its header: to C, to an unsized
+// `[]T` (whose length the callee is told some other way), or, borrowed, to a
+// borrow of elements of no known count (`@[]T`).
 inline bool takesVarrData(const json& argVT, const json* paramVT, bool isCFunc)
 {
 	if (!isVarrPntr(argVT)) return false;
-	return isCFunc || (paramVT && paramVT->value("type-kind","") == "pntr" && !paramVT->contains("mutable")
-	                   && !paramVT->contains("arr-size") && !isStructStorage(*paramVT) && !isVarrPntr(*paramVT));
+	if (isCFunc) return true;
+	if (!paramVT || paramVT->value("type-kind","") != "pntr" || paramVT->contains("arr-size")
+	    || isStructStorage(*paramVT) || isVarrPntr(*paramVT)) return false;
+	return !paramVT->contains("mutable") || argVT.contains("mutable");
 }
 // elem is one element as the data holds it: a primitive, an owned struct's
 // storage (`[+]T`), or the struct itself (`[+]$T`). `embedded` marks the
@@ -421,14 +422,15 @@ inline string fieldStructName(const FieldLayout& f)
 // An array a struct literal gives the field, embedded or owned.
 inline bool isLitArrField(const FieldLayout& f)
 {
-	return f.typeKind == "embed-arr" || (f.typeKind == "owned" && (isArrLevel(f.type) || isVarrStorage(f.type)));
+	return f.typeKind == "embed-arr" || f.typeKind == "embed-varr"
+	    || (f.typeKind == "owned" && (isArrLevel(f.type) || isVarrStorage(f.type)));
 }
 
 inline json fieldValueType(const FieldLayout& f)
 {
 	if (f.typeKind == "prim")
 		return fieldPrimLeaf(f);
-	if (f.typeKind == "owned" || f.typeKind == "embed-arr")
+	if (f.typeKind == "owned" || f.typeKind == "embed-arr" || f.typeKind == "embed-varr")
 		return f.type;
 	if (f.typeKind == "raw-ptr")
 		return {{"type-kind","pntr"},{"base-type",fieldPointeeType(f)},{"mutable",f.isMutable}};
@@ -502,8 +504,8 @@ inline void classifySysVWalk(const StructDef& d, int base, int nEightbytes,
 		int off = base + f.offset;
 		if (f.typeKind == "prim") {
 			markPrim(off, f.typeName, f.size);
-		} else if (f.typeKind == "raw-ptr" || f.typeKind == "owned") {
-			markInt(off, 8);
+		} else if (f.typeKind == "raw-ptr" || f.typeKind == "owned" || f.typeKind == "embed-varr") {
+			markInt(off, f.size);
 		} else if (f.typeKind == "embed") {
 			classifySysVWalk(defs.at(f.typeName), off, nEightbytes, defs, ebs);
 		} else if (f.typeKind == "embed-arr") {

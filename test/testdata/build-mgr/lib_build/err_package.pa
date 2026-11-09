@@ -1,0 +1,3 @@
+library demo;
+import "other_package.pa";
+export func f() { h(); }

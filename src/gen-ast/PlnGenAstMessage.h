@@ -14,6 +14,7 @@ enum PlnMessageCode {
 	E_CouldNotOpenFile,		// filename
 	E_CouldNotOpenOutputFile,	// filename
 	E_NoInputFile,
+	E_UnsupportedTarget,		// target name
 	E_C2AstFailed,			// header path
 	E_ExpectedLinkKeyword,		// identifier
 	E_UnexpectedChar,		// character
@@ -23,6 +24,15 @@ enum PlnMessageCode {
 	E_ExpectedInKeyword,		// identifier
 	E_ForElemNoMode,		// loop variable name
 	E_ExpectedCopyKeyword,	// identifier
+	E_InterfaceOnly,		// what was written
+	E_InterfaceOtherVersion,	// the version it records
+	E_InterfaceNoVersion,
+	E_InterfaceOtherTarget,	// the target it records
+	E_InterfaceNoTarget,
+	E_NestedCIncludeExport,
+	E_UnexpectedString,		// the identifier before it
+	E_LibpathInInterface,
+	E_BadLibraryImport,		// the path as written
 };
 
 class PlnGenAstMessage

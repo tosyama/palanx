@@ -1,0 +1,20 @@
+cinclude <stdio.h>;
+import "lib_arr_borrow_return.pa";
+
+func show(@[]uint8 p) { printf("%s\n", p); }
+
+U u;
+u.b.resize(0);
+u.b.push(104); u.b.push(105); u.b.push(0);
+printf("%s %s\n", cs(@u), u -> cs());
+@[]uint8 p = cs(@u);
+printf("%s %d\n", pass(p), p[1]);
+@![4]int32 a = ar(@!u);
+7 -> a[2];
+printf("%d %ld\n", u.a[2], len(a));
+@![+]uint8 v = vb(@!u);
+v.push(33);
+printf("%ld\n", len(@u.b));
+[+]uint8 w = [111, 107, 0];
+show(@w);
+show(@u.b);
