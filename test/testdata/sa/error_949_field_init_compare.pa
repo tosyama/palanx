@@ -1,0 +1,1 @@
+type S { bool b = 1 < 2; };

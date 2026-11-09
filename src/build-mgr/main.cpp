@@ -137,7 +137,7 @@ static int compileModule(const string& base, const string& exec_path, fs::file_t
 	sa_argv.insert(sa_argv.end(), library_args.begin(), library_args.end());
 	if (int ret = runToolTo(sa_argv, sa_file)) // LCOV_EXCL_BR_LINE
 		return ret;
-	if (int ret = runToolTo({exec_path + "/palan-codegen", sa_file}, asm_file))
+	if (int ret = runToolTo({exec_path + "/palan-codegen", sa_file}, asm_file)) // LCOV_EXCL_BR_LINE
 		return ret;
 	return runToolTo({"as", asm_file}, obj_file); // LCOV_EXCL_BR_LINE
 }
@@ -187,9 +187,9 @@ static int buildAllocators(const PlnAllocShapes& shapes, const string& dir, cons
 	renameIfChanged(tempNameOf(alloc_pa), alloc_pa);
 
 	json alloc_ast_json;
-	if (int ret = generateAst(alloc_pa, alloc_ast, exec_path, target, tools_time, alloc_ast_json))
+	if (int ret = generateAst(alloc_pa, alloc_ast, exec_path, target, tools_time, alloc_ast_json)) // LCOV_EXCL_BR_LINE
 		return ret;
-	if (int ret = compileModule(alloc_pa, exec_path, tools_time, {alloc_ast}))
+	if (int ret = compileModule(alloc_pa, exec_path, tools_time, {alloc_ast})) // LCOV_EXCL_BR_LINE
 		return ret;
 	obj_file = alloc_pa + ".o";
 	return 0;
@@ -281,7 +281,7 @@ static int buildLibrary(const vector<json>& asts, const string& base, const vect
 	// The interface's reader takes the identity from its file name, as palan-gen-ast does for the source.
 	string pai_ast = pai + ".ast.json";
 	string symbols_file = pai + ".symbols.json";
-	if (int ret = runToolTo({exec_path + "/palan-gen-ast", pai, "--target", target}, pai_ast))
+	if (int ret = runToolTo({exec_path + "/palan-gen-ast", pai, "--target", target}, pai_ast)) // LCOV_EXCL_BR_LINE
 		return ret;
 	vector<string> sa_argv{exec_path + "/palan-sa", pai_ast, "--interface"};
 	sa_argv.insert(sa_argv.end(), library_args.begin(), library_args.end());
@@ -542,7 +542,7 @@ int main(int argc, char* argv[])
 		shapes.add(sa);
 		if (shapes.empty()) continue;
 		string alloc_o;
-		if (int ret = buildAllocators(shapes, palan_work_path + target_files[i] + ".alloc", id,
+		if (int ret = buildAllocators(shapes, palan_work_path + target_files[i] + ".alloc", id, // LCOV_EXCL_BR_LINE
 				exec_path, target, tools_time, module_ids, alloc_o))
 			return ret;
 		obj_files.push_back(alloc_o);

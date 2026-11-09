@@ -807,6 +807,9 @@ TEST(sa_error, field_init)
 	const pair<string, string> cases[] = {
 		{"error_947_field_init_not_const.pa", ":2:27: error: the initializer of field 'x' must be a compile-time constant."},
 		{"error_948_field_init_unsupported.pa", ":2:16: error: field 'p' cannot have an initializer in this version: only a primitive field or a one-dimensional array of primitives can."},
+		// Constants fold, but a comparison is not one.
+		{"error_949_field_init_compare.pa", ":1:19: error: the initializer of field 'b' must be a compile-time constant."},
+		{"error_950_field_arr_init_not_lit.pa", ":1:23: error: the array literal's dimensions do not match array 'x'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

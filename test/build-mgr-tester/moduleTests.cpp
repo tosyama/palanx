@@ -824,6 +824,18 @@ TEST(build_mgr, lib_local_header_used_only_in_bodies) {
 		"library demo;\nbuilt \"" PALAN_VERSION "\";\ntarget \"" PALAN_TARGET "\";\nexport func one() -> int32;\n");
 }
 
+// The other module's array stays for the const its public type is sized by; the unused one does not.
+TEST(build_mgr, lib_const_from_an_array_through_a_selective_import) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(libBuild("sized.pa")), "");
+	EXPECT_EQ(fileText(string(libOut) + "demo/sized.pai"),
+		"library demo;\nbuilt \"" PALAN_VERSION "\";\ntarget \"" PALAN_TARGET "\";\n"
+		"export type Color enum {\n\tRed,\n\tBlue,\n};\n"
+		"[3]int32 table;\nconst K = len(@table);\n"
+		"export type Rows {\n\t[K]int32 a;\n};\n"
+		"export func first(@Rows r, Color c) -> int32;\n");
+}
+
 TEST(build_mgr, lib_library_module_has_its_own_allocators) {
 	expectMtraceRun("398_library_allocators", "1 3\n", 12);
 	string dir = fs::weakly_canonical("../test/testdata/build-mgr").string();

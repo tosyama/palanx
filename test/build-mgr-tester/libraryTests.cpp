@@ -114,6 +114,26 @@ printf("%.1f\n", norm(@a));
 	EXPECT_EQ(execTestCommand("bin/palan out/app/main.pa"), "5.0\n");
 }
 
+// The object a `cinclude` links goes into the archive, since its source does not ship.
+TEST(build_mgr, library_carries_a_linked_object) {
+	cleanTestEnv();
+	string c = "../test/testdata/build-mgr/295_link_obj";
+	ASSERT_EQ(execTestCommand("mkdir -p out/src && cp " + c + ".h out/src/ && gcc -c -O1 " + c + ".c -o out/src/295_link_obj.o"), "");
+	writeFile("out/src/sum.pa", R"(library calc;
+cinclude "295_link_obj.h" link "295_link_obj.o";
+export func sum3() -> int32 { return add3(1, 2, 3); }
+)");
+	ASSERT_EQ(execTestCommand("bin/palan --lib -o out/libs out/src/sum.pa"), "");
+	fs::remove_all("out/src");
+	EXPECT_EQ(execTestCommand("ar t out/libs/calc/sum.a"), "calc.sum.o\n__obj0_295_link_obj.o\n");
+	writeFile("out/app/main.pa", R"(libpath "../libs";
+import <calc/sum>;
+cinclude <stdio.h>;
+printf("%d\n", sum3());
+)");
+	EXPECT_EQ(execTestCommand("bin/palan out/app/main.pa"), "6\n");
+}
+
 TEST(build_mgr, library_using_a_library) {
 	buildGeoLibrary();
 	buildDrawLibrary();

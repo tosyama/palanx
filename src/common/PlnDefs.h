@@ -25,11 +25,8 @@ inline bool isLibraryModule(const std::string& moduleId)
 	return moduleId.find('.') != std::string::npos;
 }
 
-// The module holding the allocators `moduleId` calls; those of the generated
-// allocators themselves are their own.
+// The module holding the allocators `moduleId` calls.
 inline std::string allocatorsModuleOf(const std::string& moduleId)
 {
-	if (moduleId == PALAN_ALLOCATORS_MODULE || moduleId.ends_with("." PALAN_ALLOCATORS_MODULE))
-		return moduleId;
 	return isLibraryModule(moduleId) ? moduleId + "." PALAN_ALLOCATORS_MODULE : PALAN_ALLOCATORS_MODULE;
 }

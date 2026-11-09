@@ -9,4 +9,4 @@ func dump(@[]uint8 s, int32 n) {
 
 // An invalid UTF-8 byte, written as an escape or as the byte itself.
 dump("x\xFFy\x00z", 5);
-dump("\\\"\t\x01\xe2\x82\xACÿ\xC3\xA9", 10);
+dump("\\\"\t\r\x01\xe2\x82\xACÿ\xC3\xA9", 11);

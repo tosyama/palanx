@@ -12,11 +12,13 @@ const N = 3 * (BUFSIZ + 1);
 []$[]int32 rows = [[1, 2], [3, 4]];
 int32 count = f(1);
 [count]int32 unknown;
+[f(N)]int32 called;
 const M = lit->len();
 const GR = rows[0]->len();
 const NO = count;
 const NO2 = NO + 1;
 const LATE = later->len();
+const CALLED = called->len();
 []int32 later = [1];
 printf("%d\n", count);
 {
