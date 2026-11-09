@@ -1,0 +1,60 @@
+name: release
+on:
+  push:
+    tags: ['v*']
+  # Builds a tag again, so a release can be published after its artifact has expired.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to build (v<version>)
+        required: true
+      publish:
+        description: Attach the archive to a GitHub Release of the tag
+        type: boolean
+        default: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+
+    steps:
+      - name: prepare
+        run: |
+          sudo apt-get -y install libboost-dev libfl-dev
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+          submodules: recursive
+
+      - name: check the tag
+        run: |
+          version=$(sed -n 's/^#define PALAN_VERSION "\(.*\)"/\1/p' src/common/PlnDefs.h)
+          case "$TAG" in
+            "v$version"|"v$version"-*) ;;
+            *) echo "tag $TAG does not match version $version" >&2; exit 1 ;;
+          esac
+
+      - name: build and test
+        run: make
+
+      - name: pack and check
+        id: pack
+        run: |
+          .github/scripts/release.sh build dist | tee pack.log
+          echo "archive=$(tail -1 pack.log)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: palan-${{ env.TAG }}
+          path: ${{ steps.pack.outputs.archive }}
+
+      - name: publish
+        if: ${{ inputs.publish }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$TAG" "${{ steps.pack.outputs.archive }}" --verify-tag --title "Palan $TAG"

@@ -132,6 +132,21 @@ cmake --install build --prefix ~/.local --strip
 `bin/palan` then points at the version installed last, and versions can stay side by side. To remove
 one, run `lib/palan/<version>/uninstall` under the prefix; `bin/palan` moves to the newest one left.
 
+## Installing a Release
+
+A tag `v<version>` makes CI build `palan-<version>-x86_64-linux-gnu.tar.gz`, kept as an artifact
+of the `release` workflow's run (and attached to the GitHub Release when one is published). Its top
+level is the installed layout, so it unpacks into a prefix as `cmake --install` would:
+
+```bash
+tar -xzf palan-0.2.4-x86_64-linux-gnu.tar.gz -C ~/.local
+~/.local/bin/palan hello.pa
+```
+
+It needs `as` and `ld` (binutils), the C headers (libc6-dev), glibc 2.38 or newer and the
+libstdc++ of GCC 13.2 or newer, as on Ubuntu 24.04. `lib/palan/<version>/uninstall` removes it,
+as for a version built and installed from the sources.
+
 ## Toolchain
 
 Palan compiles through a pipeline of independent tools that pass JSON between them:

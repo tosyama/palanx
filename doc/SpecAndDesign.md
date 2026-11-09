@@ -689,6 +689,12 @@ it is per target.
   the version was installed. It removes the version's directories, and any left empty. If `bin/palan`
   points at that version, it is pointed at the newest one left, or removed if none is. Each user's
   `~/.palan/work/` stays, for `palan --clean`.
-- Release: a tag starts a CI job that packs the layout as `palan-<version>-<target>.tar.gz`, then
-  unpacks it elsewhere and runs the same test. The system must provide `as`, `ld`, C headers, and
-  a libc and libstdc++ at least as new as the ones the release was built with.
+- Release: a tag `v<version>` (`v<version>-<suffix>` for a trial) starts a CI job that checks it
+  against `PALAN_VERSION`, runs the tests, installs with `--strip` and packs the result as
+  `palan-<version>-<target>.tar.gz`, then unpacks it elsewhere and runs the same test
+  (`.github/scripts/release.sh`). The archive's top level is the layout, so it unpacks into a
+  prefix with the same result as `cmake --install`. It is kept as the run's artifact; the job run
+  by hand for a tag with `publish` builds it again and attaches it to a GitHub Release of that tag,
+  so a release can be published at any time after the artifact has expired. The system must
+  provide `as`, `ld`, C headers, and a libc and libstdc++ at least as new as the ones the release
+  was built with (README.md names them).
