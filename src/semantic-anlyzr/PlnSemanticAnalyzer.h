@@ -604,7 +604,7 @@ class PlnSemanticAnalyzer {
 	// The canonical form of a signature type (an owned struct becomes pntr(struct)),
 	// also what a tapple-decl variable's declared type is compared in.
 	json  normalizeSigType(const json& locNode, const json& type);
-	json  sigType(const json& locNode, const json& type, bool isParam);
+	json  sigType(const json& locNode, const json& type);
 	void  normalizeSig(json& funcDef);
 	// Diagnose (and exit) if `funcDef`'s parameters/ret-type/rets use a type
 	// PlnTypeRegistry::fromJson cannot represent. Must be called after

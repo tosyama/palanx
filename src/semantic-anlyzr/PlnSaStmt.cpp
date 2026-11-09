@@ -472,12 +472,12 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef, bool topLevel)
 	// A named return owning a block is allocated at body entry, where an
 	// initializer can't run yet. A struct is written into storage the caller
 	// provides, which the function sees as a variable it does not own.
-	auto isStructRet = [&](const json& t) { return isStructStorage(sigType(funcDef, t, false)); };
-	auto allocatedAtEntry = [&](const json& t) { return isOwnedBlock(sigType(funcDef, t, false)) && !isStructRet(t); };
+	auto isStructRet = [&](const json& t) { return isStructStorage(sigType(funcDef, t)); };
+	auto allocatedAtEntry = [&](const json& t) { return isOwnedBlock(sigType(funcDef, t)) && !isStructRet(t); };
 	json ownedParams = json::array();
 	if (sig.contains("parameters"))
 		for (auto& p : sig["parameters"]) {
-			json vt = sigType(funcDef, p["var-type"], true);
+			json vt = sigType(funcDef, p["var-type"]);
 			if (isOwnedBlock(vt)) ownedParams.push_back(p["name"]);
 			declareVar(p["name"], move(vt), &funcDef);
 		}
@@ -488,7 +488,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef, bool topLevel)
 				exit(1);
 			}
 			if (!allocatedAtEntry(r["var-type"])) {
-				declareVar(r["name"], sigType(funcDef, r["var-type"], false), &funcDef);
+				declareVar(r["name"], sigType(funcDef, r["var-type"]), &funcDef);
 			} else if (r.contains("init")) {
 				cerr << locPrefix(r["init"]) << PlnSaMessage::getMessage(E_NamedRetInitOnStruct, r["name"].get<string>()) << endl;
 				exit(1);
@@ -503,7 +503,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef, bool topLevel)
 	retSlot_.clear();
 	if (sig.contains("ret-type") && isStructRet(sig["ret-type"])) {
 		retSlot_ = "__ret";
-		declareVar(retSlot_, sigType(funcDef, sig["ret-type"], false), &funcDef);
+		declareVar(retSlot_, sigType(funcDef, sig["ret-type"]), &funcDef);
 	} else if (sig.contains("rets") && sig["rets"].size() == 1 && isStructRet(sig["rets"][0]["var-type"])) {
 		retSlot_ = sig["rets"][0]["name"];
 	}
@@ -1649,7 +1649,7 @@ json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
 		// A length known only at run time is no signature's, so such an array
 		// copies from the returned one.
 		json declared = varType.value("type-kind","") == "arr" ? takeOverType(stmt, varType)
-		              : sigType(stmt, varType, false);
+		              : sigType(stmt, varType);
 		if (isStructStorage(retType) && declared == retType) {
 			declareVar(name, retType);
 			structDest(name, retType, storage);

@@ -245,13 +245,16 @@ inline bool isArrBorrowVar(const json& vt)
 	return vt.value("type-kind","") == "pntr" && vt.contains("mutable")
 	    && (vt.contains("arr-size") || isVarrPntr(vt));
 }
-// Where a `[+]T` argument passes its data instead of its header: to C, or to
-// an unsized `[]T` (whose length the callee is told some other way).
+// Where a `[+]T` passes its data instead of its header: to C, to an unsized
+// `[]T` (whose length the callee is told some other way), or, borrowed, to a
+// borrow of elements of no known count (`@[]T`).
 inline bool takesVarrData(const json& argVT, const json* paramVT, bool isCFunc)
 {
 	if (!isVarrPntr(argVT)) return false;
-	return isCFunc || (paramVT && paramVT->value("type-kind","") == "pntr" && !paramVT->contains("mutable")
-	                   && !paramVT->contains("arr-size") && !isStructStorage(*paramVT) && !isVarrPntr(*paramVT));
+	if (isCFunc) return true;
+	if (!paramVT || paramVT->value("type-kind","") != "pntr" || paramVT->contains("arr-size")
+	    || isStructStorage(*paramVT) || isVarrPntr(*paramVT)) return false;
+	return !paramVT->contains("mutable") || argVT.contains("mutable");
 }
 // elem is one element as the data holds it: a primitive, an owned struct's
 // storage (`[+]T`), or the struct itself (`[+]$T`). `embedded` marks the

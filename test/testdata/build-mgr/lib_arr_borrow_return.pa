@@ -1,0 +1,5 @@
+export type U { $[+]uint8 b = [0]; [4]int32 a; };
+export func cs(@U s) -> @[]uint8 { return @s.b; }
+export func ar(@!U s) -> @![4]int32 { return @!s.a; }
+export func vb(@!U s) -> @![+]uint8 { return @!s.b; }
+export func pass(@[]uint8 p) -> @[]uint8 { return p; }

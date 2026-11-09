@@ -385,12 +385,9 @@ json PlnSemanticAnalyzer::ownedTypeOf(const json& locNode, const json& varType)
 }
 
 // A parameter's or return value's type as the function and its callers see it.
-// Only a parameter may borrow an array: a returned borrow would outlive the
-// storage it borrows, so it stays for validateNativeSig to reject.
-json PlnSemanticAnalyzer::sigType(const json& locNode, const json& type, bool isParam)
+json PlnSemanticAnalyzer::sigType(const json& locNode, const json& type)
 {
-	json t = unsizedArrToPntr(locNode, type);
-	if (isParam) t = normalizeArrBorrowType(locNode, t);
+	json t = normalizeArrBorrowType(locNode, unsizedArrToPntr(locNode, type));
 	if (isVarrAstType(t)) {
 		t = varrStorageType(locNode, t);
 	} else if (t.value("type-kind","") == "arr") {
@@ -410,12 +407,12 @@ void PlnSemanticAnalyzer::normalizeSig(json& funcDef)
 {
 	if (funcDef.contains("parameters"))
 		for (auto& p : funcDef["parameters"])
-			p["var-type"] = sigType(funcDef, p["var-type"], true);
+			p["var-type"] = sigType(funcDef, p["var-type"]);
 	if (funcDef.contains("rets"))
 		for (auto& r : funcDef["rets"])
-			r["var-type"] = sigType(funcDef, r["var-type"], false);
+			r["var-type"] = sigType(funcDef, r["var-type"]);
 	if (funcDef.contains("ret-type"))
-		funcDef["ret-type"] = sigType(funcDef, funcDef["ret-type"], false);
+		funcDef["ret-type"] = sigType(funcDef, funcDef["ret-type"]);
 }
 
 // An element's type as its generated functions see it: they take the lengths

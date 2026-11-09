@@ -256,8 +256,9 @@ is owned as a `[+]T` parameter or return value is (see `[+]T` below): a paramete
 result as it is and otherwise a copy, of what a copy into it accepts (E_IncompatibleTypes);
 `return` copies a value the function doesn't own, and any value whose shape a copy would reject,
 an owning variable's included, is E_CopyShapeMismatch; `return [..]` declares `__ret_N` from the
-literal, as for a struct. Only a parameter may borrow an array, so `-> @[n]T` is
-E_UnsupportedParamType.
+literal, as for a struct. A borrowed array return (`-> @[]T`, `@[n]T`, `@[+]T`) is normalized as a
+parameter is (see `@[n]T` below); its call is a borrow, bound and passed by name. Only a pointer
+to a borrowed array (`@@[n]T`) is E_UnsupportedParamType.
 
 A struct parameter `T` (`pntr(struct)` with no `mutable`) is owned the same way: a call result
 is passed as it is, anything else (a struct literal included) is copied into a `temp`
@@ -481,7 +482,9 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
     `embedded` and `stride` (the struct's or the row's bytes) as a `[n]$T` or `[m]$[n]U`
     variable's does.
   - A C call argument (fixed or variadic) and a `[]T`-family Palan parameter (an unsized
-    elements pointer: no `mutable`, no `arr-size`) are passed the same `field-access` to `data`.
+    elements pointer: no `mutable`, no `arr-size`) are passed the same `field-access` to `data`,
+    and so is a borrow (`@v`/`@!v`, or a `@[+]T` variable) bound to a `@[]T`/`@![]T` (an unsized
+    elements pointer with `mutable`) parameter, variable, field or return value.
     Through a read-only borrow it is typed `pntr(T)` with `"mutable": false` (and a row element
     has `"mutable": false` on its levels, as a read-only `@[m][n]U`'s row does), so writing an
     element or passing it to `[]T` is rejected as for any `@T`. An owned element (a struct, a
@@ -584,7 +587,7 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   takes its lengths from the location receiving or releasing it, and a `run-size` level matches
   any size.
 
-  **`@[n]T` / `@![n]T` (borrowed array):** In a parameter or a local variable declaration, a
+  **`@[n]T` / `@![n]T` (borrowed array):** In a parameter, a return type or a local variable declaration, a
   `pntr` whose `base-type` is an `arr` is normalized to the array's own pntr chain, with
   `arr-size` on every level and `mutable` (`false` for `@`, `true` for `@!`) on every level down
   to the elements — `@[n][m]T` becomes `pntr(pntr(T, mutable, arr-size:m), mutable, arr-size:n)`,

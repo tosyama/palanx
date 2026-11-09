@@ -20,7 +20,7 @@ type Point { int64 x; int64 y; };
 printf("%ld\n", p[0]);
 ```
 
-Reading through `p` after the block exits reads freed memory — undefined behavior, observed to print a garbage value rather than crash. Detecting this requires a borrow-lifetime/escape analysis, which is out of scope for the address-of/dereference work that introduced general `@`/`@!` — no such analysis is implemented today. A stack variable (`$Point s;`) widens the reach of the same gap: a pointer into it that is returned from the function points into a frame that no longer exists.
+Reading through `p` after the block exits reads freed memory — undefined behavior, observed to print a garbage value rather than crash. Detecting this requires a borrow-lifetime/escape analysis, which is out of scope for the address-of/dereference work that introduced general `@`/`@!` — no such analysis is implemented today. A stack variable (`$Point s;`) widens the reach of the same gap: a pointer into it that is returned from the function points into a frame that no longer exists. A returned borrow (`-> @T`, and a borrowed array `-> @[]T` since v0.2.4) may likewise point to the function's own storage (`P loc; return @loc;`). Checking only where a returned borrow comes from — a borrowed parameter, or what is reached from one — would catch that case without a full analysis, but not one that goes through a local borrow variable.
 
 A variable-length array (v0.2.1) adds a shorter-lived case: `push` and `resize` can move its elements, so a borrow of an element (`@!v[i]`) or the elements given to a `[]T` parameter dangles after the length changes, within the same block.
 

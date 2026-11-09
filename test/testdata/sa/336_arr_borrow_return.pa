@@ -1,0 +1,6 @@
+type U { $[+]uint8 b = [0]; [4]int32 a; };
+func cs(@U s) -> @[]uint8 { return @s.b; }
+func ar(@!U s) -> @![4]int32 { return @!s.a; }
+func vb(@!U s) -> @![+]uint8 { return @!s.b; }
+U u;
+@![4]int32 a = ar(@!u);

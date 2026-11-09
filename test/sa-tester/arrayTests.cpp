@@ -1281,3 +1281,22 @@ TEST(sa, top_var_const_in_sig)
 	// len(a) + len(@q.v): q.v is sized by M = PN * 2.
 	ASSERT_EQ(fs[1]["body"][0]["value"]["value"], "10");
 }
+
+TEST(sa, arr_borrow_return)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/336_arr_borrow_return.pa");
+	ASSERT_TRUE(jout.is_object());
+	map<string, json> funcs;
+	for (auto& f : jout["functions"]) funcs[funcName(f["name"])] = f;
+	const json elems = {{"type-kind","pntr"},{"mutable",false},{"base-type",{{"type-kind","prim"},{"type-name","uint8"}}}};
+	ASSERT_EQ(funcs.at("cs")["ret-type"], elems);
+	// A borrowed [+]T gives its elements: the header's data pointer.
+	const json& ret = funcs.at("cs")["body"][0]["values"][0];
+	ASSERT_EQ(ret["expr-type"], "field-access");
+	ASSERT_EQ(ret["offset"], 16);
+	ASSERT_EQ(ret["value-type"], elems);
+	ASSERT_EQ(funcs.at("ar")["ret-type"]["arr-size"], 4);
+	ASSERT_EQ(funcs.at("ar")["ret-type"]["mutable"], true);
+	ASSERT_EQ(funcs.at("vb")["ret-type"]["base-type"]["type-kind"], "varr");
+}

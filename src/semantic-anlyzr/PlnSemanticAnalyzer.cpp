@@ -401,8 +401,8 @@ json PlnSemanticAnalyzer::deepNormalizePrimToStruct(const json& locNode, const j
 	}
 	if (resolved.value("type-kind","") == "func") {
 		json t = resolved;
-		for (auto& p : t["parameters"]) p["var-type"] = sigType(locNode, p["var-type"], true);
-		t["ret-type"] = sigType(locNode, t["ret-type"], false);
+		for (auto& p : t["parameters"]) p["var-type"] = sigType(locNode, p["var-type"]);
+		t["ret-type"] = sigType(locNode, t["ret-type"]);
 		return t;
 	}
 	if (isStructType(resolved))
@@ -412,8 +412,8 @@ json PlnSemanticAnalyzer::deepNormalizePrimToStruct(const json& locNode, const j
 
 // Structural-only counterpart to unrepresentableTypeName for native Palan
 // signatures: names were already checked by preregisterFunc, so only a
-// type-kind that can never build is reported: "arr", left only under a
-// returned array borrow by sigType. A function type's own parameters were
+// type-kind that can never build is reported: "arr", left by sigType only
+// under a pointer to a borrowed array (`@@[]T`). A function type's own parameters were
 // checked by requireFuncSigTypes.
 static string unsupportedNativeSigTypeKind(const json& vt)
 {
@@ -497,10 +497,11 @@ json PlnSemanticAnalyzer::varrData(json varr)
 optional<SaDiag> PlnSemanticAnalyzer::arrBorrowBindingMismatch(const json& srcAst,
 		const json& saValue, const json& dstType)
 {
-	bool namesBorrow = saValue.value("expr-type","") == "id" && saValue.contains("var-type")
-	                   && isArrBorrowVar(saValue["var-type"]);
+	string et = saValue.value("expr-type","");
+	bool namesBorrow = (et == "id" && saValue.contains("var-type") && isArrBorrowVar(saValue["var-type"]))
+	                   || ((et == "call" || et == "call-ptr") && isArrBorrowVar(saValue["value-type"]));
 	// Only an explicit cast converts into a borrowed array type.
-	bool castBorrow = saValue.value("expr-type","") == "convert";
+	bool castBorrow = et == "convert";
 	if (srcAst.value("expr-type","") != "addr-of" && !namesBorrow && !castBorrow)
 		return SaDiag{E_ArrBorrowNeedsAddrOf}; // LCOV_EXCL_BR_LINE
 	if (!arrShapeMatch(saValue["value-type"], dstType)) {

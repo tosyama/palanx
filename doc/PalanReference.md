@@ -1271,7 +1271,18 @@ func fill(@![H][W]int32 g, int32 x) {
   field (`@!s.v`). Only a `[]T` parameter and a C function take an array by name, as in C, and a
   `[]T` parameter, which owns nothing, is passed on by name.
 - `@!arr` also works where a C function takes a pointer to the elements (`memset(@!v, 0, 32)`).
-- A borrowed array cannot be a return type.
+- A function may return a borrowed array (`-> @[]T`, `@[n]T`, `@[+]T`, or `@!`), such as one
+  reached through a borrowed parameter. The call is itself a borrow, passed and bound by name
+  (`@[]uint8 p = name(@s);`). As with a returned `@T`, nothing checks that it does not outlive
+  what it borrows (see [Address-Of Operator](#10-address-of-operator)).
+
+  ```palan
+  type Text { $[+]uint8 bytes = [0]; };
+  func cstr(@Text t) -> @[]uint8 { return @t.bytes; }
+
+  Text t;
+  printf("[%s]\n", t -> cstr());     // []
+  ```
 
 ### Array of Pointer Slots (`[n]@![]T`)
 
@@ -1574,7 +1585,8 @@ printf("\n");                // 1 2 3
 
 **Borrowing and passing.** `@[+]T` and `@![+]T` borrow the array, as for other arrays (see
 [Borrowing Arrays](#borrowing-arrays)); only `@!` can change its length. Passed to a `[]T`
-parameter, such as a C function's pointer, the array gives its elements. A `[+]T` parameter, a
+parameter, such as a C function's pointer, the array gives its elements, and so does `@v`/`@!v`
+(or a `@[+]T` borrow) given to a `@[]T`/`@![]T`. A `[+]T` parameter, a
 `[+]T` return and copying follow the rules of other arrays and structs:
 
 ```palan

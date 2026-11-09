@@ -1034,6 +1034,7 @@ json PlnSemanticAnalyzer::convertForBinding(const json& locNode, json value,
 		const PlnType* toType, const json& toTypeJson)
 {
 	noteEscape(value);
+	if (takesVarrData(value["value-type"], &toTypeJson, false)) value = varrData(move(value));
 	if (value["value-type"] == toTypeJson) return value;
 	const PlnType* fromType = registry_.fromJson(value["value-type"]);
 	TypeCompat compat = typeCompat(fromType, toType, registry_);
