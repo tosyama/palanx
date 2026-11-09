@@ -101,100 +101,102 @@ A variable-length array (v0.2.1) adds a shorter-lived case: `push` and `resize` 
 
 ---
 
-## 13. Same-Named Source Files in Different Directories Share a Module Name
-
-**Summary:** The module part of a symbol is the source file's name without its directory, so a symbol does not depend on where the source is checked out. Two modules `a/util.pa` and `b/util.pa` that export a function of the same name and parameter types therefore give it the same symbol, and `ld` reports it as defined twice. Escaping `-` and `.` as `_` plus hex digits can likewise make two file names meet (`my-lib.pa` and `my_2dlib.pa`).
-
----
-
-## 14. Using a Value After `->>` Is Not Detected
+## 13. Using a Value After `->>` Is Not Detected
 
 **Summary:** `a ->> b` leaves `a` NULL (as do `f(a>>)` and `T b <<= a;`), and nothing stops `a` from being used afterwards: `len(@a)`, `a[0]` or `a.x` dereferences NULL and the program crashes. This holds for structs, `[+]T` and rows alike, and for a field or element given away (`p ->> q; s -> p;` copies into a NULL struct). A pointer viewed as an owner (`T b <<= p as T;`) is not even reset, so `p` is left dangling once `b` is freed. Detecting it needs flow analysis of moved-from variables.
 
 ---
 
-## 15. Run-Time Failures of Array Allocation Are Unchecked
+## 14. Run-Time Failures of Array Allocation Are Unchecked
 
 **Summary:** A size or capacity known only at run time is not checked: a negative `n` in `[n]T` or `[+n]T` becomes a huge `uint64`. Nor is the result of `malloc`/`calloc`/`realloc` for any heap allocation, so running out of memory dereferences NULL later. `pop` on an empty `[+]T` and a negative `resize` do abort; an option to leave those checks out of a release build has been requested.
 
 ---
 
-## 16. `len` Error Messages
+## 15. `len` Error Messages
 
 **Summary:** `len` reports a missing length only for an array it recognizes (an array whose size is known only at run time, or a `[]T`). A target containing a call, such as `len(@c[f()])`, is not folded, and a value that is not an array, such as `len(@x)` for an `int32 x`, both report "Undefined function 'len'", which does not say what was given. `len` of a run-time-sized array would need the array to keep its length, which it does not.
 
 ---
 
-## 17. Variable-Length Arrays of Pointer Slots
+## 16. Variable-Length Arrays of Pointer Slots
 
 **Summary:** `[+][n]@T` (a variable-length array of rows of borrowed pointers) is not supported; `[+]@T`/`[+]@!T` are (v0.2.2). Neither is a `[][+]T` parameter, which would need each element's header to be passed rather than its data; `@[n][+]T` or `@[+][+]T` borrows such an array instead.
 
 ---
 
-## 18. A Row Is Pushed with `@`, a Struct Without
+## 17. A Row Is Pushed with `@`, a Struct Without
 
 **Summary:** `push` on `[+]S` takes its element as a struct-type parameter, which takes a copy of a struct given by name (`ps.push({x: 5, y: 6})`). On `[+][n]T` it takes a row as `@[n]T`, and a borrowed array must be written with `@` (`vp.push(@[7, 8])`; `vp.push([7, 8])` is an error), because arrays have no parameter form that borrows implicitly: a `[n]T` parameter takes a copy. Taking the row as `[n]T` would allow the plain literal, and a row given away with `>>` would then be taken without a copy. Separately, the message for a struct given to `@T` without `@` names only `@[..]` for a literal, though `@{..}` works too.
 
 ---
 
-## 19. C Bit-Fields Cannot Be Accessed
+## 18. C Bit-Fields Cannot Be Accessed
 
 **Summary:** A struct from a C header that has bit-fields gets the same layout as in C (v0.2.2), but a bit-field member cannot be read, written, have its address taken or be given in a struct literal (E_UnsupportedCFieldType). Accessing one needs loads and stores that shift and mask within the storage unit, which codegen does not have.
 
 ---
 
-## 20. A `for` Loop Does Not Track Other Names for Its Array
+## 19. A `for` Loop Does Not Track Other Names for Its Array
 
 **Summary:** A `for` loop holds its array's storage and length until it ends, so its body may not change the array's length or replace it (v0.2.2). The check follows only the name the loop was given: a borrow made before the loop (`@![+]int64 q = @!v;` and then `q.push(1)` in `for copy a in v { }`) or a pointer stored elsewhere changes the array unnoticed, and the loop then reads freed or moved elements. It is conservative the other way: indices on the path are not compared, so in `for copy a in vv[0] { }` a `vv[1].push(1)` is rejected too.
 
 ---
 
-## 21. c2ast Reports a Syntax Error at the Start of the Declaration
+## 20. c2ast Reports a Syntax Error at the Start of the Declaration
 
 **Summary:** When c2ast fails to parse a declaration, it backtracks to the declaration's first token and tries the next form, so the error it finally reports points there (often `1:1` of a line) rather than at the token that failed. Reporting the furthest token reached would need every consume helper to record it, and would change the positions in existing expected messages.
 
 ---
 
-## 22. Arrays Sized at Run Time Are Moved and Copied Unchecked
+## 21. Arrays Sized at Run Time Are Moved and Copied Unchecked
 
 **Summary:** An array whose size is known only at run time is moved, given, taken over and copied by the sizes of the variable or row receiving or releasing it (v0.2.3); whether the other side has those sizes is not checked, so a shorter source is read past its end and a block freed by the wrong sizes leaks or frees elements it does not have. Two cases have no sizes on one side and stay compile errors: copying from a `[]T` parameter into an array, and copying an array sized at run time into a `[+]T`. Keeping each array's length with it (see #16) would allow checking and both cases.
 
 ---
 
-## 23. An Operator Over a Call Whose Functions Return Different Types
+## 22. An Operator Over a Call Whose Functions Return Different Types
 
 **Summary:** Before an overloaded function is chosen, an argument that is an arithmetic operator over a literal is taken to be a number the parameter types, unless an operand is known to be a struct without analyzing it: a variable, a field reached from one, or a call whose functions all return one struct type (v0.2.3). When the functions of a call's name return different types, `g(h(x) * 2.0)` is still taken to be a number, so a `g` taking the struct `h` returns is not chosen. Telling it would need the call analyzed before the choice, and once more after it.
 
 ---
 
-## 24. Error Messages Name a C Struct by Its Tag
+## 23. Error Messages Name a C Struct by Its Tag
 
 **Summary:** A type alias is resolved where it is used, and the resolved type keeps no record of the alias, so error messages name the type it resolves to. For a struct from a C header that is its tag: with `typedef struct uv_tcp_s uv_tcp_t;`, a bad cast of a `uv_tcp_t` value to `@!uv_stream_t` reports `Cannot cast type 'uv_tcp_s' to '@!uv_stream_s'`, names the program never wrote. The cast target could be shown as written, but the type of a value has only its resolved form; keeping the alias name on resolved types would give one type two representations.
 
 ---
 
-## 25. Global Variables Cannot Be Exported or Initialized in an Imported File
+## 24. Global Variables Cannot Be Exported or Initialized in an Imported File
 
 **Summary:** A `global` variable can be used only by functions of its own file, and a file whose functions use its global variables cannot be imported, since an imported file's top-level statements, which would initialize them, do not run (v0.2.3). A module keeping its own state, or state shared between modules, needs both a way to export a global variable and a way to initialize an imported file's top-level variables.
 
 ---
 
-## 26. Versions Side by Side in a deb Package
+## 25. Versions Side by Side in a deb Package
 
 **Summary:** Versions install side by side and `bin/palan` selects one (v0.2.4), but two deb packages cannot both own `/usr/bin/palan`. A deb needs either `update-alternatives` to manage the link, or a single package that replaces the version before it. The install rules already fit a package build, respecting `DESTDIR` and keeping `uninstall` and the documents in separate components; Debian's `share/doc/<package>/` would also have to be settled then.
 
 ---
 
-## 27. A Library's Public Declarations Cannot Use a Local Header's C Types
+## 26. A Library's Public Declarations Cannot Use a Local Header's C Types
 
 **Summary:** `palan --lib` reports an error when a public declaration needs a type of `cinclude "x.h" export T;`, since the `.pai` would name a path only the build machine has (v0.2.4). Supporting it means installing the header beside the `.pai`, along with the local headers it includes, and rules for where they go. To be decided when a real library needs it.
 
 ---
 
-## 28. Field Initializers Take Only Primitives and One-Dimensional Arrays of Them
+## 27. Field Initializers Take Only Primitives and One-Dimensional Arrays of Them
 
 **Summary:** A field initializer is a compile-time constant for a primitive field or a one-dimensional array of primitives (v0.2.4); any other field with one is E_FieldInitUnsupported. A struct field given a struct value (`Point p = {x: 1};`), an array of structs and an array of more dimensions would follow the same scheme, palan-sa listing the values in the struct's shape for the generated allocators to store, with more kinds of entry to describe where each value goes. A pointer field initialized to `NULL` is a separate question, since nothing yet treats a pointer field as having a known value. To be extended when a type needs it.
 
-## 29. A Type Cannot Hide Its Fields, and Exported Type Names Share One Namespace
+---
+
+## 28. A Type Cannot Hide Its Fields, and Exported Type Names Share One Namespace
 
 **Summary:** Every field of an exported struct can be read and written by any importer, so a library type cannot keep its invariants: writing `bytes` of a `std/utf8` `utf8` can drop the NUL at its end or contradict `hadInvalid`. The library therefore offers functions for everything ordinary use needs, so that the fields can later be hidden without breaking callers. Separately, an exported struct or enum name is shared by the whole program, an alias import included, so library types take a prefix (`utf8mode`) to avoid clashing with others. Both are to be revisited as the standard library grows.
+
+---
+
+## 29. palan Aborts When `HOME` Is Not Set
+
+**Summary:** palan keeps its work files under `$HOME/.palan`, and with `HOME` unset it aborts (constructing a `std::string` from a null `getenv("HOME")` in `src/build-mgr/main.cpp`) instead of reporting it. A package build may run without a home; building `std` is not affected, since CMake passes it `HOME=<build>/std-home`. A clear error, or a work directory that can be given otherwise, would fix it.

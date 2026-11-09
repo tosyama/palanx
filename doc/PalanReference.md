@@ -75,6 +75,10 @@ the intermediate files under `~/.palan/work/`, not in the current directory.
 
 **Identifiers:** `[A-Za-z_][A-Za-z0-9_]*`
 
+Names starting with `__` belong to the toolchain, which uses them in generated code and in a
+library's interface. Do not declare one, nor name a source file so; this is not checked. A name
+from a cincluded C header may start with `__` and is used as it is.
+
 **Integer literals:**
 - Signed: `[0-9]+` (e.g., `42`, `1000`)
 - Unsigned: `[0-9]+u` (e.g., `42u`)
@@ -2454,6 +2458,23 @@ flo32 l = len2(@p);
 - Two files may import each other and use each other's types anywhere, including in type
   declarations, as long as no type contains itself (see [Declaration order](#declaration-order)).
 
+### Module Names (`library`)
+
+A module's name comes from its file alone, not from where it is or what imports it. It is the file
+name without `.pa`, unless the file starts with a `library` declaration, which puts it in a
+library:
+
+```palan
+// utf8.pa
+library std;       // the module std.utf8
+```
+
+- `library std.io;` in `file.pa` names the module `std.io.file`.
+- The declaration comes first in the file, at most once; `library` is a reserved word.
+- Two modules of one name in a program are a compile error. Two `util.pa` in different
+  directories meet unless they declare different libraries (`library proj.a;` and
+  `library proj.b;`). A few different file names also give one name, such as `1x.pa` and `_1x.pa`.
+
 ### Building a Library
 
 `palan --lib -o <dir> main.pa` builds a library from `main.pa` and the files it imports, each of
@@ -2472,7 +2493,7 @@ This writes `<dir>/std/utf8.pai`, the interface a person reads to learn the libr
   whatever private types and constants those need. Any other `export` of an imported file is
   visible only inside the library, including a type only a private type uses.
 - A file permitting a function to use its `global` is a compile error, since a library's top level never runs.
-- Names starting with `__` should not be declared: the interface may rename a private type to one.
+- The interface may rename a private type to a name starting with `__` (see [Lexical Rules](#2-lexical-rules)).
 - Publishing a function with a type alias of another file's private type is a compile error.
 
 ### Using a Library

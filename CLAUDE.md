@@ -135,7 +135,7 @@ src/
 │   ├── PlnX86Mem.cpp    Memory/address instruction emission
 │   ├── PlnDeserialize.* sa.json → Module
 │   └── PlnCodeGen.h     Abstract base class
-├── common/          Shared utilities (PlnProcess — argv-based child process spawning; PlnInterface — writes a module's interface)
+├── common/          Shared utilities (PlnProcess — argv-based child process spawning; PlnInterface — writes a module's interface; PlnStrLit — the text a string literal's value travels as)
 └── std/             The standard library, in Palan (CMakeLists.txt lists its public mains)
 test/
 ├── testdata/        Test input files (numbered sequentially per tool)

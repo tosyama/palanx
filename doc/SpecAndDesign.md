@@ -412,7 +412,8 @@ into a program uses them too, in place of the program's.
 Implemented: module identity, `import "..."` resolution, the `.pai` form and reading it,
 `palan-gen-ast --interface` for one module, skipping steps whose result is still valid (5.1), `palan
 --lib` and archives, merging and narrowing a library's modules, and a library module's own allocators
-(3.6), `import <...>` and `libpath`, building `std` in the build tree (6.2).
+(3.6), `import <...>` and `libpath`, building `std` in the build tree (6.2), and `std/utf8`. Not yet:
+the release archive (6.2).
 
 **Module identity.** A module's identity is the module part of its symbols (SASpec.md's Symbol
 names). It comes from its source alone, never from the entry or the source's location:
