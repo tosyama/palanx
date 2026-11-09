@@ -255,7 +255,7 @@ optional<json> sizedArrayType(const json& var, const set<string>& consts)
 		level = &(*level)["base-type"];
 	}
 	return result;
-}
+} // LCOV_EXCL_BR_LINE -- closing brace of a function with local json temporaries; the branch coverpoints here are compiler-generated destructor dispatch, not source-level conditionals
 
 string Writer::write()
 {
@@ -555,7 +555,7 @@ json Merger::merged()
 	}
 	return {{"original", main["original"]}, {"module", main["module"]}, {"target", main["target"]},
 		{"ast", {{"statements", move(out)}}}, {"export", move(funcs)}};
-}
+} // LCOV_EXCL_BR_LINE -- closing brace of a function with many local json/string temporaries; the branch coverpoints here are compiler-generated destructor dispatch, not source-level conditionals
 
 } // namespace
 

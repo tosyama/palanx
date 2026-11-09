@@ -667,7 +667,7 @@ void PlnSemanticAnalyzer::recordAllocShape(const string& name)
 			});
 			// LCOV_EXCL_BR_STOP
 		}
-	};
+	}; // LCOV_EXCL_BR_LINE -- closing brace of a lambda with many local json/string temporaries; the branch coverpoints here are compiler-generated destructor dispatch, not source-level conditionals
 	const StructDef& def = structDefs_[name];
 	collect(def, 0, "");
 	// LCOV_EXCL_BR_START
