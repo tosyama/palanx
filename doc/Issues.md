@@ -194,3 +194,7 @@ A variable-length array (v0.2.1) adds a shorter-lived case: `push` and `resize` 
 ## 28. Field Initializers Take Only Primitives and One-Dimensional Arrays of Them
 
 **Summary:** A field initializer is a compile-time constant for a primitive field or a one-dimensional array of primitives (v0.2.4); any other field with one is E_FieldInitUnsupported. A struct field given a struct value (`Point p = {x: 1};`), an array of structs and an array of more dimensions would follow the same scheme, palan-sa listing the values in the struct's shape for the generated allocators to store, with more kinds of entry to describe where each value goes. A pointer field initialized to `NULL` is a separate question, since nothing yet treats a pointer field as having a known value. To be extended when a type needs it.
+
+## 29. A Type Cannot Hide Its Fields, and Exported Type Names Share One Namespace
+
+**Summary:** Every field of an exported struct can be read and written by any importer, so a library type cannot keep its invariants: writing `bytes` of a `std/utf8` `utf8` can drop the NUL at its end or contradict `hadInvalid`. The library therefore offers functions for everything ordinary use needs, so that the fields can later be hidden without breaking callers. Separately, an exported struct or enum name is shared by the whole program, an alias import included, so library types take a prefix (`utf8mode`) to avoid clashing with others. Both are to be revisited as the standard library grows.

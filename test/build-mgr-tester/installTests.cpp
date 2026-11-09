@@ -37,7 +37,8 @@ static string outPath(const string& name)
 static string usesStd()
 {
 	string path = outPath("uses_std.pa");
-	ofstream(path) << "import <std/utf8>;\ncinclude <stdio.h>;\nprintf(\"%d\\n\", seqLen(226));\n";
+	ofstream(path) << "import <std/utf8>;\ncinclude <stdio.h>;\nutf8 s = toUtf8(\"\\xE2\\x82\\xAC\", utf8mode.KEEP_INVALID);\n"
+		"printf(\"%ld\\n\", s -> byteLen());\n";
 	return path;
 }
 
