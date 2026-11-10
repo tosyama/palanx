@@ -26,9 +26,10 @@ jobs:
         run: |
           sudo apt-get -y install libboost-dev libfl-dev
 
+      # A full ref: given a bare name, checkout takes a branch of the same name first.
       - uses: actions/checkout@v4
         with:
-          ref: ${{ env.TAG }}
+          ref: refs/tags/${{ env.TAG }}
           submodules: recursive
 
       - name: check the tag
