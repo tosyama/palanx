@@ -71,6 +71,7 @@ static set<string> expectedFiles()
 		doc + "LICENSE",
 		doc + "doc/ASTSpec.md",
 		doc + "doc/PalanReference.md",
+		doc + "doc/PalanStdLibReference.md",
 		doc + "doc/SASpec.md",
 		doc + "doc/SpecAndDesign.md",
 	};
