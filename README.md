@@ -68,7 +68,8 @@ Other features include variable-length arrays (`[+]T` with `len`/`push`/`resize`
 return values, method-form calls (`c.add(1)` for `add(@!c, 1)`), function pointers, enums,
 field initializers, modules (`import`/`export`), libraries (`palan --lib`, `import <...>`), a
 standard library starting with `std/utf8`, and raw Linux syscalls.
-See the [Palan Language Reference](doc/PalanReference.md) for the whole language.
+See the [Palan Language Reference](doc/PalanReference.md) for the whole language, and the
+[Palan Standard Library Reference](doc/PalanStdLibReference.md) for `std`.
 
 ## Quick Start
 
@@ -162,6 +163,7 @@ Palan compiles through a pipeline of independent tools that pass JSON between th
 ## Documentation
 
 - [doc/PalanReference.md](doc/PalanReference.md) — language reference
+- [doc/PalanStdLibReference.md](doc/PalanStdLibReference.md) — standard library reference
 - [doc/SpecAndDesign.md](doc/SpecAndDesign.md) — toolchain design
 - [doc/ASTSpec.md](doc/ASTSpec.md), [doc/SASpec.md](doc/SASpec.md) — JSON formats between the tools
 - [doc/Issues.md](doc/Issues.md) — known limitations and open issues
