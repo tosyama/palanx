@@ -836,6 +836,10 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			return "parameter '" + arg2 + "' of operator function '" + arg1
 			       + "' cannot be '@!': an operand is never passed for writing.";
 
+		case E_CompareFuncRet:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "operator function '" + arg1 + "' must return 'bool'.";
+
 		case E_NoOperatorFunc:
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");

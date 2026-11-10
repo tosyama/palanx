@@ -206,6 +206,12 @@ inline bool isPtrBorrow(const json& vt)
 	return vt.value("type-kind","") == "pntr" && vt.contains("mutable")
 	    && !vt.contains("arr-size") && !vt.contains("unsized");
 }
+// NULL, as gen-ast folds the C macro.
+inline bool isNullPtrLit(const json& expr)
+{
+	return expr.value("expr-type", "") == "lit-int" && expr.contains("value-type")
+	    && expr["value-type"].value("type-kind", "") == "pntr";
+}
 inline bool isAggregateLit(const json& expr)
 {
 	string et = expr.value("expr-type", "");

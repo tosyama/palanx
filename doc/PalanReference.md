@@ -263,9 +263,10 @@ adopts the destination's type instead of being checked for narrowing (this is wh
 `add(1, 2)` bind to `int32` parameters without a cast).
 
 A pointer or struct operand has no common type with anything under this rule: using one with
-`+ - * / % & | ^` is a compile error (Palan has no pointer arithmetic). A comparison is the
-exception — `p == NULL` and similar pointer comparisons are valid and leave both operands
-unconverted; a comparison's result is always `bool` regardless of operand type.
+`+ - * / % & | ^` is a compile error (Palan has no pointer arithmetic). A comparison of pointers
+is valid and leaves both operands unconverted (`p == NULL`); a comparison with a struct operand is
+a call of the type's comparison function (see [Operator Functions](#operator-functions)). A
+comparison's result is always `bool` regardless of operand type.
 
 ### Variadic Argument Promotion
 
@@ -1032,7 +1033,38 @@ printf("%g %g %g\n", c.x, c.y, c.z);
   struct (`T` or `@T`), and none can be `@!`.
 - An operator over numbers only is the built-in one and cannot be defined.
 - A struct an operator returns can be borrowed as a call argument: `f(@(a + b))`.
-- Comparison operators cannot be defined.
+
+#### Comparison Functions
+
+A type defines `==` and `<`; `!=`, `>`, `<=` and `>=` are derived from them and cannot be
+defined:
+
+```palan
+cinclude <stdio.h>;
+
+type ver { int32 major; int32 minor; };
+
+func ==(@ver a, @ver b) -> bool { return a.major == b.major && a.minor == b.minor; }
+func <(@ver a, @ver b) -> bool {
+    if (a.major != b.major) { return a.major < b.major; }
+    return a.minor < b.minor;
+}
+
+ver a = [1, 2];
+ver b = [1, 3];
+printf("%d %d %d\n", a == b, a != b, a >= b);   // 0 1 0
+```
+
+- `a != b` is `!(a == b)`, `a > b` is `b < a`, `a <= b` is `!(b < a)` and `a >= b` is
+  `!(a < b)`. `a` is still evaluated before `b`. A type without an order defines only `==`.
+- A comparison function takes two parameters, at least one a struct (`T` or `@T`), none `@!`, and
+  returns `bool`. The two types may differ: `a == b` looks for `==(A, B)` only, never `==(B, A)`,
+  and `5 > s` looks for `<(S, int32)`.
+- A comparison with a struct operand — a struct variable, field, borrow or returned struct, of a
+  Palan type or a C one — calls these functions; with no function for the operands' types it is
+  a compile error. Two structs are never compared by address.
+- A comparison with `NULL` stays a pointer comparison: `p == NULL` for a borrow `@T p`. Whether
+  two borrows point to the same value is written `int64(a) == int64(b)`.
 
 ---
 

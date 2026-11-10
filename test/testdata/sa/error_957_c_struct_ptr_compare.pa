@@ -1,0 +1,2 @@
+cinclude <stdio.h>;
+bool same = stdout == stderr;

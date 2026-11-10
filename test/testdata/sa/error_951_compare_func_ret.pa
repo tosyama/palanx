@@ -1,0 +1,2 @@
+type ver { int32 major; int32 minor; };
+func ==(@ver a, @ver b) -> int32 { return a.major - b.major; }

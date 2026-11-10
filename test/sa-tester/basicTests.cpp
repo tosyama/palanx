@@ -1404,3 +1404,47 @@ TEST(sa, operator_func_overload_arg)
 		if (s["stmt-type"] == "expr") names.push_back(s["body"]["name"]);
 	ASSERT_EQ(names, vector<string>({gVec2, gVec2, "_331_operator_func_overload_arg..g.int32"}));
 }
+
+// '==' and '<' are called for struct operands; the other comparisons are
+// derived from them, and a comparison with NULL stays a pointer comparison.
+TEST(sa, compare_func)
+{
+	cleanTestEnv();
+	json jout = written(run_sa("../test/testdata/sa/337_compare_func.pa"));
+	ASSERT_TRUE(jout.is_object());
+	const auto& fs = jout["functions"];
+	const string eq = fs[0]["name"], lt = fs[1]["name"], ltInt = fs[2]["name"];
+	ASSERT_EQ(eq.rfind("_337_compare_func..0eq.", 0), 0u);
+	ASSERT_EQ(lt.rfind("_337_compare_func..0lt.", 0), 0u);
+	map<string, json> init;
+	for (auto& s : jout["statements"])
+		if (s["stmt-type"] == "var-decl") init[s["vars"][0]["name"]] = s["vars"][0]["init"];
+
+	// The function called, whether its result is negated, and the operands passed.
+	auto check = [&](const string& var, const string& func, bool negated, const string& first, const string& second) {
+		json call = init[var];
+		ASSERT_EQ(call["expr-type"] == "logical-not", negated) << var;
+		if (negated) call = call["operand"];
+		ASSERT_EQ(call["name"], func) << var;
+		ASSERT_EQ(call["args"][0]["name"], first) << var;
+		ASSERT_EQ(call["args"][1]["name"], second) << var;
+	};
+	check("r1", eq, false, "a", "b");
+	check("r2", eq, true, "a", "b");
+	check("r3", lt, false, "a", "b");
+	check("r4", lt, false, "b", "a");
+	check("r5", lt, true, "b", "a");
+	check("r6", lt, true, "a", "b");
+	// 2 > a: the literal typed by the parameter it is passed to.
+	ASSERT_EQ(init["r7"]["name"], ltInt);
+	ASSERT_EQ(init["r7"]["args"][1]["value-type"]["type-name"], "int32");
+	ASSERT_EQ(init["r8"]["expr-type"], "cmp");
+	ASSERT_EQ(init["r9"]["expr-type"], "cmp");
+	// next(@!a) > b: next() is evaluated into a temp before b.
+	const auto& ahead = init["r10"];
+	ASSERT_EQ(ahead["expr-type"], "temp");
+	ASSERT_EQ(ahead["body"][0]["vars"][0]["init"]["name"], fs[3]["name"]);
+	ASSERT_EQ(ahead["value"]["name"], lt);
+	ASSERT_EQ(ahead["value"]["args"][0]["name"], "b");
+	ASSERT_EQ(ahead["value"]["args"][1]["name"], ahead["body"][0]["vars"][0]["name"]);
+}

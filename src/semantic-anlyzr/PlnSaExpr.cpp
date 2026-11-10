@@ -727,23 +727,7 @@ json PlnSemanticAnalyzer::sa_expr_maybe_void(const json &rawExpr, const PlnType*
 		sa_expr["value-type"] = operand["value-type"];
 
 	} else if (expr_type == "cmp") {
-		rejectArrowOperand(expr, expr["op"].get<string>());
-		json left  = promoteOperand(sa_expression(expr["left"]));
-		json right = promoteOperand(sa_expression(expr["right"]));
-		const PlnType* leftType  = registry_.fromJson(left["value-type"]);
-		const PlnType* rightType = registry_.fromJson(right["value-type"]);
-		// A pointer/struct pair (usualArithConv returns nullptr) is left
-		// unconverted -- pointer comparison (`p == NULL`, `p == q`) is a valid
-		// use of `==`/`!=` that has no common numeric type to convert to.
-		const PlnType* promoted = usualArithConv(leftType, rightType);
-		if (promoted) {
-			if (leftType != promoted)  left  = wrapConvert(left,  registry_.toJson(promoted));
-			if (rightType != promoted) right = wrapConvert(right, registry_.toJson(promoted));
-		}
-		sa_expr["op"]         = expr["op"];
-		sa_expr["left"]       = left;
-		sa_expr["right"]      = right;
-		sa_expr["value-type"] = {{"type-kind", "prim"}, {"type-name", "bool"}}; // LCOV_EXCL_BR_LINE
+		return sa_expr_cmp(expr);
 
 	} else if (expr_type == "logical-and" || expr_type == "logical-or") {
 		rejectArrowOperand(expr, expr_type == "logical-and" ? "&&" : "||");
@@ -932,6 +916,43 @@ json PlnSemanticAnalyzer::literalDefaultType(const json& rawExpr)
 	if (!isPureOperand(expr)) return json();
 	return sa_expression(expr)["value-type"];
 }
+
+// A struct operand makes a comparison a call of the type's '==' or '<'; a
+// comparison with NULL stays a pointer comparison, which the generated
+// allocators and C interop code rely on.
+json PlnSemanticAnalyzer::sa_expr_cmp(const json& expr)
+{
+	rejectArrowOperand(expr, expr["op"].get<string>());
+	json probes[2];
+	bool structOperand = false, nullOperand = false;
+	for (int i : {0, 1}) {
+		const json operand = foldConstExpr(expr[i ? "right" : "left"]);
+		if (isNullPtrLit(operand)) nullOperand = true;
+		if (isAggregateLit(operand) || operand.value("expr-type", "") == "lit-int") continue;
+		probes[i] = sa_expression(expr[i ? "right" : "left"]);
+		structOperand = structOperand || isStructPntr(probes[i]["value-type"]);
+	}
+	if (structOperand && !nullOperand)
+		return sa_compare_call(expr, probes);
+
+	json left  = promoteOperand(probes[0].is_null() ? sa_expression(expr["left"]) : move(probes[0]));
+	json right = promoteOperand(probes[1].is_null() ? sa_expression(expr["right"]) : move(probes[1]));
+	const PlnType* leftType  = registry_.fromJson(left["value-type"]);
+	const PlnType* rightType = registry_.fromJson(right["value-type"]);
+	// A pointer pair (usualArithConv returns nullptr) is left unconverted --
+	// pointer comparison (`p == NULL`, `p == q`) has no common numeric type
+	// to convert to.
+	const PlnType* promoted = usualArithConv(leftType, rightType);
+	if (promoted) {
+		if (leftType != promoted)  left  = wrapConvert(left,  registry_.toJson(promoted));
+		if (rightType != promoted) right = wrapConvert(right, registry_.toJson(promoted));
+	}
+	json sa_expr = expr;
+	sa_expr["left"]       = left;
+	sa_expr["right"]      = right;
+	sa_expr["value-type"] = {{"type-kind", "prim"}, {"type-name", "bool"}}; // LCOV_EXCL_BR_LINE
+	return sa_expr;
+} // LCOV_EXCL_BR_LINE
 
 json PlnSemanticAnalyzer::sa_expr_arith(const json& expr, const PlnType* expectedType)
 {

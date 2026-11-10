@@ -472,6 +472,11 @@ void PlnSemanticAnalyzer::validateOperatorSig(const json& funcDef)
 		cerr << locPrefix(funcDef) << PlnSaMessage::getMessage(E_OperatorFuncNoStruct, name) << endl;
 		exit(1);
 	}
+	if ((name == "==" || name == "<")
+	    && !(funcDef.contains("ret-type") && isBoolPrim(registry_.fromJson(funcDef["ret-type"])))) {
+		cerr << locPrefix(funcDef) << PlnSaMessage::getMessage(E_CompareFuncRet, name) << endl;
+		exit(1);
+	}
 }
 
 // The header's data pointer: what `v[i]` indexes and a C function or a `[]T`

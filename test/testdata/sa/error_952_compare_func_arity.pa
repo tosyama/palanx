@@ -1,0 +1,2 @@
+type ver { int32 major; int32 minor; };
+func <(@ver a) -> bool { return a.major < 0; }

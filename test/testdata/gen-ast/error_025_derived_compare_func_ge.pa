@@ -1,0 +1,2 @@
+type ver { int32 major; int32 minor; };
+func >=(@ver a, @ver b) -> bool { return a.major >= b.major; }

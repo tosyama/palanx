@@ -48,7 +48,7 @@ AST model
 
 Function definition model
 -------------------------
-- name\* - Function name string; an operator function's is its operator: "+" "-" "*" "/" "%"
+- name\* - Function name string; an operator function's is its operator: "+" "-" "*" "/" "%" "==" "<"
 - func-type\* - Function type string: "palan" "c" "syscall"
 - loc\* - Location Array (palan, syscall only)
 

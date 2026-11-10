@@ -1,0 +1,4 @@
+type ver { int32 major; int32 minor; };
+func ==(@ver a, @ver b) -> bool { return a.major == b.major && a.minor == b.minor; }
+ver a = [1, 2];
+bool later = 3 > a;

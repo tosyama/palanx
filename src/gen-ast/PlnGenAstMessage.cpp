@@ -9,7 +9,7 @@
 #include "../common/PlnDefs.h"
 #include <boost/assert.hpp>
 
-string PlnGenAstMessage::getMessage(PlnMessageCode msg_code, string arg1)
+string PlnGenAstMessage::getMessage(PlnMessageCode msg_code, string arg1, string arg2)
 {
 	switch (msg_code) {
 		case M_Help:
@@ -111,6 +111,11 @@ string PlnGenAstMessage::getMessage(PlnMessageCode msg_code, string arg1)
 		case E_ExpectedCopyKeyword:
 			BOOST_ASSERT(arg1 != "\x01");
 			return "Expected 'copy', '@' or '@!' before the loop variable, but found '" + arg1 + "'.";
+
+		case E_DerivedCompareFunc:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "'" + arg1 + "' cannot be defined: it is derived from '" + arg2 + "'.";
 
 		default:
 			BOOST_ASSERT(false);

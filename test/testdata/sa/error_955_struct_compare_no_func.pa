@@ -1,0 +1,4 @@
+type ver { int32 major; int32 minor; };
+ver a = [1, 2];
+ver b = [1, 2];
+bool same = a == b;

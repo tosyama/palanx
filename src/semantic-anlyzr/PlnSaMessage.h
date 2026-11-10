@@ -196,6 +196,7 @@ enum PlnSaMessageCode {
 	E_OperatorFuncNoStruct,	// arg1: operator
 	E_OperatorFuncWritableParam,	// arg1: operator, arg2: parameter name
 	E_NoOperatorFunc,	// arg1: operator, arg2: operand types
+	E_CompareFuncRet,	// arg1: operator
 	E_FieldInitNotConst,	// arg1: field name
 	E_FieldInitUnsupported,	// arg1: field name
 };

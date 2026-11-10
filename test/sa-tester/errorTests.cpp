@@ -1436,6 +1436,18 @@ TEST(sa_error, give_and_take)
 		{"error_922_operator_func_ambiguous.pa", ":5:10: error: Ambiguous function call '-': it can mean -(@vec2), -(vec2)."},
 		{"error_923_operator_func_no_match.pa",
 		 ":4:10: error: No function '+' takes (vec2, flo64); there are +(@vec2, @vec2)."},
+		{"error_951_compare_func_ret.pa", ":2:1: error: operator function '==' must return 'bool'."},
+		{"error_952_compare_func_arity.pa", ":2:1: error: operator function '<' must take two parameters."},
+		{"error_953_compare_func_writable_param.pa",
+		 ":2:1: error: parameter 'a' of operator function '==' cannot be '@!': an operand is never passed for writing."},
+		{"error_954_compare_func_no_struct.pa",
+		 ":1:1: error: operator function '<' must take a struct ('T' or '@T') parameter."},
+		// Two structs once compared by address, silently.
+		{"error_955_struct_compare_no_func.pa", ":4:13: error: No operator function '==' takes (ver, ver)."},
+		// A derived '>' looks for '<' with the operands swapped.
+		{"error_956_derived_compare_no_func.pa", ":4:14: error: No operator function '<' takes (ver, int64)."},
+		{"error_957_c_struct_ptr_compare.pa",
+		 ":2:13: error: No operator function '==' takes (@!_IO_FILE, @!_IO_FILE)."},
 		{"error_924_keep_param_count_nested.pa",
 		 ":3:2: error: the cast's function type has 2 parameters, but '@func(int32)' has 1."},
 		{"error_925_given_twice.pa",

@@ -220,8 +220,8 @@ among such blocks of the enclosing function or of the top level (`util..a.v..b1.
 `util..b1..f.v`).
 
 - `<name>`: the function's name; an operator function's is a word that starts with a digit, so that
-  no written name can be it: `0add` `0sub` `0mul` `0div` `0mod` for `+ - * / %`
-  (`vecmath..0sub.R4vec3.R4vec3`).
+  no written name can be it: `0add` `0sub` `0mul` `0div` `0mod` `0eq` `0lt` for
+  `+ - * / % == <` (`vecmath..0sub.R4vec3.R4vec3`).
 - `<module>`: the `module` of ast.json: the source file's name without `.pa`, with each byte outside
   `[A-Za-z0-9_]` and each `_` followed by two lowercase hex digits written `_` and two lowercase hex
   digits, and `_` in front of a leading digit (`001_hello.pa` → `_001_hello`), after the name of the
@@ -1193,9 +1193,14 @@ operand's, and the count is wrapped in a `convert` to that type when it differs.
 must be integers (`E_BitwiseOpNotInteger`). Codegen takes the count modulo the width.
 
 A pointer or struct operand (non-Prim) has no common type: `usualArithConv` returns none, and
-an arithmetic operator diagnoses E_ArithOpNotNumeric. A comparison instead leaves both operands
-unconverted (pointer comparison, e.g. `p == NULL`, is valid and has no numeric common type); the
-comparison's own result type is always `bool` regardless.
+an arithmetic operator diagnoses E_ArithOpNotNumeric. A comparison of pointers instead leaves both
+operands unconverted (`p == NULL`); the comparison's own result type is always `bool` regardless.
+
+An operator with a struct operand is instead a `call` of the operator function (`0add` .. `0lt`).
+A comparison is so unless the other operand is `NULL`, which stays a `cmp`. `!=` `>` `<=` `>=`
+call `0eq` or `0lt`: `>` and `<=` with the operands swapped, `!=` `<=` `>=` inside a
+`logical-not`. When swapped and either operand has a call, the call is a `temp` whose body
+evaluates the left operand into a `__pin_N` first.
 
 Float promotion rules (subsumed by usual arithmetic conversions above, restated for clarity):
 

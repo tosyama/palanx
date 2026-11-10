@@ -199,6 +199,14 @@ struct BodyList {
 			for (auto& child : node) rejectCIncludeExport(child, file);
 	}
 
+	// Defining one would let it disagree with the operator it is derived from.
+	[[noreturn]] static void derivedCompare(const PlnLexer& lexer, const palan::PlnParser::location_type& loc,
+	                                        const string& op, const string& base)
+	{
+		throw runtime_error(PlnGenAstMessage::locatedError(lexer.inputFile, loc.begin.line, loc.begin.column,
+			PlnGenAstMessage::getMessage(E_DerivedCompareFunc, op, base)));
+	}
+
 	static json libraryImport(json pathInf, const string& file, const palan::PlnParser::location_type& loc)
 	{
 		if (pathInf["path-type"] == "inc" && !isLibraryImportPath(pathInf["path"]))
@@ -1314,6 +1322,12 @@ op_func_name: '+' { $$ = "+"; }
 	| '*' { $$ = "*"; }
 	| '/' { $$ = "/"; }
 	| '%' { $$ = "%"; }
+	| OPE_EQ { $$ = "=="; }
+	| '<' { $$ = "<"; }
+	| OPE_NE { derivedCompare(lexer, @$, "!=", "=="); }
+	| '>' { derivedCompare(lexer, @$, ">", "<"); }
+	| OPE_LE { derivedCompare(lexer, @$, "<=", "<"); }
+	| OPE_GE { derivedCompare(lexer, @$, ">=", "<"); }
 	;
 
 func_item: func_def

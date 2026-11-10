@@ -310,6 +310,22 @@ TEST(gen_ast_error, for_elem_mode) {
 	}
 }
 
+// Only '==' and '<' are defined; the other comparisons are derived from them.
+TEST(gen_ast_error, derived_compare_func) {
+	const pair<string, string> cases[] = {
+		{"error_024_derived_compare_func_ne.pa", ":2:6: error: '!=' cannot be defined: it is derived from '=='."},
+		{"error_025_derived_compare_func_ge.pa", ":2:6: error: '>=' cannot be defined: it is derived from '<'."},
+		{"error_026_derived_compare_func_gt.pa", ":2:6: error: '>' cannot be defined: it is derived from '<'."},
+		{"error_027_derived_compare_func_le.pa", ":2:6: error: '<=' cannot be defined: it is derived from '<'."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string out = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/" + file);
+		EXPECT_EQ(out.rfind("return1::", 0), 0u) << out;
+		EXPECT_NE(out.find(expected), string::npos) << out;
+	}
+}
+
 TEST(gen_ast_error, cinclude_local_path_injection) {
 	// Same shell-metacharacter-injection risk as cinclude_sys_path_injection
 	// above, for the "..." local-path branch (fs::path(base_dir) / resolved).

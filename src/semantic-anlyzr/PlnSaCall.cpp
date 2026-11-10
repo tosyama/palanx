@@ -345,6 +345,42 @@ json PlnSemanticAnalyzer::sa_operator_call(const json& expr, const string& op,
 	return makeCallNode(call, callee, op, &args);
 } // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 
+// A comparison a type defines: '!=' '>' '<=' '>=' are derived from '==' and
+// '<'. Where the operands are passed swapped, the left one is evaluated ahead
+// into a temp when a call could see the other's evaluation, as a value chained
+// to a method-form call is.
+json PlnSemanticAnalyzer::sa_compare_call(const json& expr, json probes[2])
+{
+	const string& op = expr["op"].get<string>();
+	bool swap = op == ">" || op == "<=";
+	string func = op == "==" || op == "!=" ? "==" : "<";
+	const json& left = expr["left"];
+	const json& right = expr["right"];
+	json call;
+	if (swap && (hasCall(left) || hasCall(right))) {
+		enterScope();
+		json body = json::array();
+		json ahead = chainValueAhead(left, nullptr, body);
+		json aheadProbe = probes[0].is_null() ? json() : sa_expression(ahead);
+		json saCall = sa_operator_call(expr, func, {&right, &ahead}, {move(probes[1]), move(aheadProbe)});
+		size_t idx = arrayScopeVars_.size() - 1;
+		json release = collectFreeStmts(idx, idx + 1);
+		leaveScope();
+		call = makeTempExpr(move(body), move(saCall), move(release));
+	} else if (swap) {
+		call = sa_operator_call(expr, func, {&right, &left}, {move(probes[1]), move(probes[0])});
+	} else {
+		call = sa_operator_call(expr, func, {&left, &right}, {move(probes[0]), move(probes[1])});
+	}
+	if (op != "!=" && op != "<=" && op != ">=") return call;
+	// LCOV_EXCL_BR_START
+	json out = {{"expr-type", "logical-not"}, {"operand", move(call)},
+	            {"value-type", {{"type-kind", "prim"}, {"type-name", "bool"}}}};
+	if (expr.contains("loc")) out["loc"] = expr["loc"];
+	return out;
+	// LCOV_EXCL_BR_STOP
+} // LCOV_EXCL_BR_LINE
+
 // A call of one of `cands`: a single one is bound as it is, so its own
 // diagnostics are what an unfit argument reports.
 json PlnSemanticAnalyzer::makeCall(const json& expr, const vector<Callee>& cands, const string& writtenName)
