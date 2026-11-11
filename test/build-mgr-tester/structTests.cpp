@@ -1391,6 +1391,12 @@ TEST(build_mgr, compare_func_mtrace) {
 		"1 0 0\n1 0 1 0\n0 1 1 1\n1 0\n1 1\n0 1\n1 2 0\n3 4 1\n", 4);
 }
 
+// Struct elements are copies the callee owns: those left are released at its
+// exit, one moved out is not, and the caller releases none of them.
+TEST(build_mgr, variadic_struct_mtrace) {
+	expectMtraceRun("407_variadic_struct_mtrace", "10\n5 1 2\n8\n12\n", 29);
+}
+
 TEST(build_mgr, chain_ahead_of_receiver_mtrace) {
 	expectMtraceRun("386_chain_ahead_of_receiver_mtrace", "5\n1 4\n1 4\n1 5\n4\n4\n4\n", 10);
 }

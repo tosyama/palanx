@@ -81,12 +81,13 @@ const EnumType* PlnTypeRegistry::enumType(const std::string& name, const PrimTyp
     return ins->second.get();
 } // LCOV_EXCL_BR_LINE
 
-const FuncType* PlnTypeRegistry::funcType(const std::vector<const PlnType*>& params, const PlnType* ret)
+const FuncType* PlnTypeRegistry::funcType(const std::vector<const PlnType*>& params, const PlnType* ret,
+                                          bool variadic)
 {
-    auto key = std::make_pair(params, ret);
+    auto key = std::make_tuple(params, ret, variadic);
     auto it = funcCache_.find(key);
     if (it != funcCache_.end()) return it->second.get();
-    auto [ins, ok] = funcCache_.emplace(key, std::make_unique<FuncType>(params, ret));
+    auto [ins, ok] = funcCache_.emplace(key, std::make_unique<FuncType>(params, ret, variadic));
     return ins->second.get();
 } // LCOV_EXCL_BR_LINE
 
@@ -159,7 +160,9 @@ const PlnType* PlnTypeRegistry::fromJson(const json& j)
     if (kind == "func") {
         std::vector<const PlnType*> params;
         for (auto& p : j["parameters"]) params.push_back(fromJson(p["var-type"]));
-        return funcType(params, fromJson(j["ret-type"]));
+        const json& ps = j["parameters"];
+        bool variadic = !ps.empty() && ps.back().contains("var-type") && ps.back()["var-type"].value("variadic", false);
+        return funcType(params, fromJson(j["ret-type"]), variadic);
     }
     // kind == "struct" (the only remaining possibility once unrepresentableTypeName
     // returns "")
@@ -197,6 +200,7 @@ json PlnTypeRegistry::toJson(const PlnType* t)
         const auto* f = static_cast<const FuncType*>(t);
         json params = json::array();
         for (auto* p : f->params) params.push_back({{"var-type", toJson(p)}}); // LCOV_EXCL_BR_LINE
+        if (f->variadic) params.back()["var-type"]["variadic"] = true;
         return {{"type-kind", "func"}, {"parameters", params}, {"ret-type", toJson(f->ret)}}; // LCOV_EXCL_BR_LINE
     }
     throw std::runtime_error("unknown PlnType::Kind"); // LCOV_EXCL_LINE
@@ -291,7 +295,7 @@ TypeCompat typeCompat(const PlnType* from, const PlnType* to,
         if (pf->base->kind == PlnType::Kind::Func && pt->base->kind == PlnType::Kind::Func) {
             const auto* ff = static_cast<const FuncType*>(pf->base);
             const auto* ft = static_cast<const FuncType*>(pt->base);
-            if (ff->params.size() != ft->params.size()) return TypeCompat::Incompatible;
+            if (ff->params.size() != ft->params.size() || ff->variadic != ft->variadic) return TypeCompat::Incompatible;
             for (size_t i = 0; i < ff->params.size(); i++)
                 if (typeCompat(ft->params[i], ff->params[i], registry) != TypeCompat::Identical)
                     return TypeCompat::Incompatible;
@@ -375,6 +379,8 @@ static std::string symbolUserName(const std::string& name)
 static std::string symbolPntr(const json& t)
 {
     // LCOV_EXCL_BR_START
+    // A variadic parameter is its elements' address and count, not a pointer.
+    if (t.value("variadic", false)) return "X" + symbolType(t["base-type"]);
     std::string s;
     if (t.value("embedded", false)) s += "E";
     if (t.contains("stride")) s += "S" + std::to_string(t["stride"].get<int64_t>()) + "_";
@@ -391,7 +397,7 @@ std::string symbolType(const json& t)
     static const std::map<std::string, std::set<std::string>> knownKeys = {
         {"prim",   {"type-kind", "type-name", "enum"}},
         {"struct", {"type-kind", "type-name"}},
-        {"pntr",   {"type-kind", "base-type", "mutable", "embedded", "stride", "arr-size"}},
+        {"pntr",   {"type-kind", "base-type", "mutable", "embedded", "stride", "arr-size", "variadic"}},
         {"func",   {"type-kind", "parameters", "ret-type"}},
         {"varr",   {"type-kind", "base-type", "embedded"}},
     };

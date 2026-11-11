@@ -1470,6 +1470,41 @@ TEST(sa, runtime_len)
 	ASSERT_EQ(init["r"]["value"], "2");
 }
 
+// A variadic parameter is two: the array sized at run time and its length.
+// A call lays its arguments out in a frame array (NULL with none) and passes
+// their count; struct elements are copies the callee finalizes, not frees.
+TEST(sa, variadic)
+{
+	cleanTestEnv();
+	json jout = written(run_sa("../test/testdata/sa/341_variadic.pa"));
+	ASSERT_TRUE(jout.is_object());
+	const auto& sum = jout["functions"][0];
+	ASSERT_EQ(sum["name"].get<string>().substr(sum["name"].get<string>().rfind("..")), "..sum.int32.Xint64");
+	ASSERT_EQ(sum["parameters"].size(), 3u);
+	ASSERT_EQ(sum["parameters"][1]["var-type"]["run-size"], true);
+	ASSERT_EQ(sum["parameters"][2]["name"], "__xs_d0");
+	ASSERT_EQ(sum["body"].back()["values"][0]["src"]["name"], "__xs_d0");
+	const auto& fini = jout["functions"][1]["body"].back()["body"];
+	ASSERT_NE(fini["name"].get<string>().find("fini"), string::npos);
+
+	vector<json> calls;
+	for (auto& st : jout["statements"])
+		if (st["stmt-type"] == "expr") calls.push_back(st["body"]);
+	const auto& three = calls[0]["args"];
+	ASSERT_EQ(three.size(), 3u);
+	ASSERT_EQ(three[1]["expr-type"], "temp");
+	ASSERT_EQ(three[1]["body"][0]["vars"][0]["init"]["expr-type"], "frame-alloc");
+	ASSERT_EQ(three[1]["body"][0]["vars"][0]["init"]["size"], 16);
+	ASSERT_EQ(three[1]["body"][2]["value"]["value-type"]["type-name"], "int64");
+	ASSERT_EQ(three[2]["value"], "2");
+	const auto& none = calls[1]["args"];
+	ASSERT_EQ(none[1]["value"], "0");
+	ASSERT_EQ(none[1]["value-type"]["type-kind"], "pntr");
+	ASSERT_EQ(none[2]["value"], "0");
+	// The copy of `p` is the callee's: the caller releases nothing.
+	ASSERT_TRUE(calls[2]["args"][0]["release"].empty());
+}
+
 // '==' and '<' are called for struct operands; the other comparisons are
 // derived from them, and a comparison with NULL stays a pointer comparison.
 TEST(sa, compare_func)

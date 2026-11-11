@@ -138,11 +138,18 @@ void PlnSemanticAnalyzer::requireAlias(const json& locNode, const string& alias)
 	exit(1);
 }
 
-static bool isVariadicSig(const json& funcParams)
+// C's `...`, whose arguments take no parameter's type.
+static bool isCVariadicSig(const json& funcParams)
 {
 	for (auto& p : funcParams)
 		if (p.value("name", "") == "...") return true;
 	return false;
+}
+
+// The parameter an argument at or past a `[...]E` parameter is given as.
+static json variadicElemParam(const json& variadic)
+{
+	return {{"name", variadic.value("name", "")}, {"var-type", variadic["var-type"]["base-type"]}}; // LCOV_EXCL_BR_LINE
 }
 
 static bool isAggregateLitArg(const json& arg)
@@ -290,22 +297,25 @@ Callee PlnSemanticAnalyzer::selectCallee(const json& locNode, const string& name
                                          const vector<Callee>& cands, const vector<CallArg>& args)
 {
 	vector<Callee> viable, exact, narrowed;
-	bool defaulted = false;
+	bool unranked = false;
 	for (auto& c : cands) {
 		const json& params = (*c.def)["parameters"];
-		bool variadic = isVariadicSig(params);
+		const json* palanVariadic = palanVariadicParam(params);
+		bool variadic = palanVariadic || isCVariadicSig(params);
 		size_t fixedCount = params.size() - (variadic ? 1 : 0);
 		size_t required = requiredArgCount(params, fixedCount);
 		if (args.size() < required || (!variadic && args.size() > fixedCount)) continue;
+		json elemParam = palanVariadic ? variadicElemParam(*palanVariadic) : json();
+		size_t checked = palanVariadic ? args.size() : min(fixedCount, args.size());
 		bool fits = true;
 		ArgFit worst = args.size() == fixedCount ? ArgFit::Exact : ArgFit::Viable;
-		for (size_t i = 0; i < min(fixedCount, args.size()) && fits; i++) {
-			ArgFit f = argFit(args[i], params[i], i, c.isC, name);
+		for (size_t i = 0; i < checked && fits; i++) {
+			ArgFit f = argFit(args[i], i < fixedCount ? params[i] : elemParam, i, c.isC, name);
 			fits = f != ArgFit::None;
 			worst = min(worst, f);
 		}
 		if (!fits) continue;
-		defaulted = defaulted || args.size() < fixedCount;
+		unranked = unranked || args.size() < fixedCount || palanVariadic;
 		viable.push_back(c);
 		if (worst == ArgFit::Exact) exact.push_back(c);
 		if (worst == ArgFit::Narrowed) narrowed.push_back(c);
@@ -316,11 +326,12 @@ Callee PlnSemanticAnalyzer::selectCallee(const json& locNode, const string& name
 			name, argTypesText(args), calleesText(name, cands)) << endl;
 		exit(1);
 	}
-	// A candidate fitting through its defaults is not ranked against the others,
-	// so that a reader follows no further rule to tell which one is called.
-	if (!defaulted && exact.size() == 1) return exact[0];
-	if (!defaulted && exact.empty() && narrowed.size() == 1) return narrowed[0];
-	const vector<Callee>& best = defaulted ? viable : !exact.empty() ? exact : !narrowed.empty() ? narrowed : viable;
+	// A candidate fitting through its defaults or its variadic parameter is not
+	// ranked against the others, so that a reader follows no further rule to
+	// tell which one is called.
+	if (!unranked && exact.size() == 1) return exact[0];
+	if (!unranked && exact.empty() && narrowed.size() == 1) return narrowed[0];
+	const vector<Callee>& best = unranked ? viable : !exact.empty() ? exact : !narrowed.empty() ? narrowed : viable;
 	cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_AmbiguousCall,
 		name, calleesText(name, best)) << endl;
 	exit(1);
@@ -727,7 +738,7 @@ json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, const json& funcParams,
                                       bool isCFunc, const string& funcName)
 {
-	bool isVariadic = isVariadicSig(funcParams);
+	bool isVariadic = palanVariadicParam(funcParams) || isCVariadicSig(funcParams);
 	size_t fixedCount = funcParams.size() - (isVariadic ? 1 : 0);
 	// C's `()` arrives as an empty list just like `(void)` and is checked as
 	// `(void)` (as C23 reads it); glibc headers are fully prototyped.
@@ -964,8 +975,10 @@ void PlnSemanticAnalyzer::checkGivenOwners(const json& locNode, const vector<jso
 json PlnSemanticAnalyzer::bindCallArgs(const json& locNode, vector<CallArg>& args, const json& funcParams,
                                         bool isCFunc, const string& funcName)
 {
-	bool isVariadic = isVariadicSig(funcParams);
-	size_t fixedCount = funcParams.size() - (isVariadic ? 1 : 0);
+	const json* palanVariadic = palanVariadicParam(funcParams);
+	bool cVariadic = isCVariadicSig(funcParams);
+	size_t fixedCount = funcParams.size() - (palanVariadic || cVariadic ? 1 : 0);
+	json elemParam = palanVariadic ? variadicElemParam(*palanVariadic) : json();
 	// A string default is analyzed here, where its label joins this module's table.
 	for (size_t i = args.size(); i < fixedCount; i++) {
 		const json& d = funcParams[i]["default"];
@@ -980,7 +993,7 @@ json PlnSemanticAnalyzer::bindCallArgs(const json& locNode, vector<CallArg>& arg
 	vector<json> argAsts;
 	for (size_t argIdx = 0; argIdx < args.size(); argIdx++) {
 		CallArg& ca = args[argIdx];
-		const json* param = argIdx < fixedCount ? &funcParams[argIdx] : nullptr;
+		const json* param = argIdx < fixedCount ? &funcParams[argIdx] : palanVariadic ? &elemParam : nullptr;
 		const json* paramVT = param ? &(*param)["var-type"] : nullptr;
 		bool probed = ca.chained && ca.probe.contains("expr-type");
 		json arg = ca.chained ? chainArg(ca.ast, paramVT, isCFunc, probed ? &ca.probe["value-type"] : nullptr)
@@ -1021,7 +1034,7 @@ json PlnSemanticAnalyzer::bindCallArgs(const json& locNode, vector<CallArg>& arg
 			if (!isCFunc)
 				checkRangeBorrowBinding(locNode, argAst, *paramVT);
 			saArg = convertCallArg(move(saArg), *paramVT);
-		} else if (isVariadic) {
+		} else if (cVariadic) {
 			const PlnType* fromType = registry_.fromJson(saArg["value-type"]);
 			const PlnType* promoted = variadicPromote(fromType, registry_);
 			if (promoted != fromType)
@@ -1040,7 +1053,57 @@ json PlnSemanticAnalyzer::bindCallArgs(const json& locNode, vector<CallArg>& arg
 		saArgs.push_back(saArg);
 	}
 	checkGivenOwners(locNode, argAsts, saArgs);
+	if (palanVariadic) {
+		json elems = json::array();
+		while (saArgs.size() > fixedCount) {
+			elems.insert(elems.begin(), move(saArgs.back()));
+			saArgs.erase(saArgs.size() - 1);
+		}
+		size_t count = elems.size();
+		saArgs.push_back(variadicArrayArg(locNode, elemParam["var-type"], move(elems), funcName));
+		saArgs.push_back({{"expr-type","lit-int"},{"value",to_string(count)},
+		                  {"value-type",{{"type-kind","prim"},{"type-name","uint64"}}}}); // LCOV_EXCL_BR_LINE
+	}
 	return saArgs;
+} // LCOV_EXCL_BR_LINE
+
+// The arguments for a `[...]E` parameter, laid out in an array in the caller's
+// frame: NULL when there are none. An argument's temporaries move to the
+// array's own, so that what they release outlives the call.
+json PlnSemanticAnalyzer::variadicArrayArg(const json& locNode, const json& elemVT, json elems, const string& funcName)
+{
+	// LCOV_EXCL_BR_START
+	if (elems.empty())
+		return {{"expr-type","lit-int"},{"value","0"},
+		        {"value-type",{{"type-kind","pntr"},{"base-type",{{"type-kind","prim"},{"type-name","void"}}}}}};
+	string name = "__va_" + to_string(tempVarCounter_++);
+	int64_t slot = elemVT.value("type-kind", "") == "prim" ? typeByteSize(locNode, elemVT) : 8;
+	json arrType = {{"type-kind","pntr"},{"arr-size",(int64_t)elems.size()},{"base-type",elemVT}};
+	json body = json::array({{{"stmt-type","var-decl"},{"vars",json::array({{{"name",name},{"var-type",arrType},
+		{"init",{{"expr-type","frame-alloc"},{"size",slot * (int64_t)elems.size()},{"align",8},{"value-type",arrType}}}}})}}});
+	declareVar(name, arrType);
+	json release = json::array(), reset = json::array();
+	for (size_t i = 0; i < elems.size(); i++) {
+		json value = move(elems[i]);
+		if (value.value("expr-type", "") == "temp") {
+			for (auto& s : value["body"]) body.push_back(move(s));
+			for (auto& s : value["release"]) release.push_back(move(s));
+			for (auto& s : value.value("reset", json::array())) reset.push_back(s);
+			value = json(value["value"]);
+		}
+		if (holdsCallTemps(value)) {
+			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_VariadicArgTempBorrow, funcName) << endl;
+			exit(1);
+		}
+		json target = sa_expression({{"expr-type","arr-index"},{"array",{{"expr-type","id"},{"name",name}}},
+		                             {"index",{{"expr-type","lit-int"},{"value",to_string(i)}}}});
+		body.push_back({{"stmt-type","arr-assign"},{"target",move(target)},{"value",move(value)}});
+	}
+	json array = {{"expr-type","id"},{"name",name},{"var-type",arrType},{"value-type",arrType}};
+	json temp = makeTempExpr(move(body), move(array), move(release));
+	if (!reset.empty()) temp["reset"] = move(reset);
+	return temp;
+	// LCOV_EXCL_BR_STOP
 } // LCOV_EXCL_BR_LINE
 
 // An owned parameter takes the argument over: a returned array block as it
@@ -1207,7 +1270,10 @@ json PlnSemanticAnalyzer::normalizeMethodCall(const json& expr)
 
 static const json* fixedParamType(const json* callee, size_t idx)
 {
-	if (!callee || idx >= (*callee)["parameters"].size()) return nullptr;
+	if (!callee) return nullptr;
+	const json* variadic = palanVariadicParam((*callee)["parameters"]);
+	if (variadic && idx + 1 >= (*callee)["parameters"].size()) return &(*variadic)["var-type"]["base-type"];
+	if (idx >= (*callee)["parameters"].size()) return nullptr;
 	const json& param = (*callee)["parameters"][idx];
 	if (param.value("name", "") == "...") return nullptr;
 	return &param["var-type"];

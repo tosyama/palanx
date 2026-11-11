@@ -751,6 +751,28 @@ TEST(symbol, array_shapes) {
     EXPECT_EQ(funcSymbol("f", params({embed})), "f.ES16_P1P");
 }
 
+// A variadic parameter is passed as an address and a count, so it is told
+// apart from a borrowed array and from that array followed by an int64.
+TEST(symbol, variadic) {
+    json xs = {{"type-kind","pntr"},{"variadic",true},{"base-type",prim("int64")}};
+    EXPECT_EQ(funcSymbol("f", params({xs})), "f.Xint64");
+    EXPECT_NE(funcSymbol("f", params({xs})), funcSymbol("f", params({pntr(prim("int64"), false)})));
+    EXPECT_NE(funcSymbol("f", params({xs})),
+              funcSymbol("f", params({pntr(prim("int64"), false), prim("int64")})));
+}
+
+TEST(typecompat, variadic_func_type) {
+    PlnTypeRegistry reg;
+    json xs = {{"type-kind","pntr"},{"variadic",true},{"base-type",prim("int64")}};
+    json variadic = {{"type-kind","func"},{"parameters",params({xs})},{"ret-type",prim("void")}};
+    json borrow = {{"type-kind","func"},{"parameters",params({pntr(prim("int64"), false)})},{"ret-type",prim("void")}};
+    const PlnType* v = reg.fromJson(pntr(variadic));
+    const PlnType* b = reg.fromJson(pntr(borrow));
+    EXPECT_NE(v, b);
+    EXPECT_EQ(typeCompat(v, b, reg), TypeCompat::Incompatible);
+    EXPECT_EQ(reg.toJson(static_cast<const PtrType*>(v)->base)["parameters"][0]["var-type"]["variadic"], true);
+}
+
 TEST(symbol, func_pointer) {
     json fn = {{"type-kind","func"},{"parameters",params({prim("int32"), pntr(prim("void"), false)})},
                {"ret-type",prim("int32")}};

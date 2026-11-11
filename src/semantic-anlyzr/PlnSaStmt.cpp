@@ -499,9 +499,21 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef, bool topLevel)
 	auto isStructRet = [&](const json& t) { return isStructStorage(sigType(funcDef, t)); };
 	auto allocatedAtEntry = [&](const json& t) { return isOwnedBlock(sigType(funcDef, t)) && !isStructRet(t); };
 	json ownedParams = json::array();
+	// A variadic parameter is an array sized at run time, as a local `[n]E` is,
+	// whose length arrives in a parameter of its own.
+	string variadic;
+	json variadicType;
+	const json u64 = {{"type-kind","prim"},{"type-name","uint64"}};
 	if (sig.contains("parameters"))
 		for (auto& p : sig["parameters"]) {
 			json vt = sigType(funcDef, p["var-type"]);
+			if (vt.value("variadic", false)) {
+				variadic = p["name"];
+				variadicType = {{"type-kind","pntr"},{"run-size",true},{"base-type",vt["base-type"]}};
+				declareVar(variadic, variadicType, &funcDef);
+				declareVar("__" + variadic + "_d0", u64, &funcDef);
+				continue;
+			}
 			if (isOwnedBlock(vt)) ownedParams.push_back(p["name"]);
 			declareVar(p["name"], move(vt), &funcDef);
 		}
@@ -539,6 +551,10 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef, bool topLevel)
 	// the function frees it as one of its own variables.
 	for (auto& name : ownedParams)
 		addOwnedScopeVar(name, makeOwnedFreeStmt(name, *findVar(name)));
+	// The array is the caller's, as a frame array is no one's to free; the
+	// elements it owns are the function's.
+	if (!variadic.empty())
+		arrayScopeVars_.back().push_back({variadic, elemsFiniStmt(variadic, variadicType), false});
 
 	const json& blk = funcDef["block"];
 	enterBlockDecls(blk["body"]);
@@ -564,6 +580,10 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef, bool topLevel)
 	normalizeSig(saFunc);
 	validateEmbeddedParams(saFunc);
 	validateNativeSig(saFunc);
+	if (!variadic.empty()) {
+		saFunc["parameters"].back()["var-type"] = variadicType;
+		saFunc["parameters"].push_back({{"name","__" + variadic + "_d0"},{"var-type",u64}});
+	}
 	// Single named return: add ret-type so codegen knows the return type
 	if (!saFunc.contains("ret-type") && saFunc.contains("rets") && saFunc["rets"].size() == 1)
 		saFunc["ret-type"] = saFunc["rets"][0]["var-type"];

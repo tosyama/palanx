@@ -122,6 +122,36 @@ K.run(2, 7, K.Mode.Fast);
 	EXPECT_EQ(execTestCommand("bin/palan out/app/main.pa"), "1 42 1 dflt\n2 7 0 dflt\n");
 }
 
+// A variadic parameter crosses the interface as written, also inside a
+// function pointer type, and is called through an alias.
+TEST(build_mgr, library_variadic) {
+	cleanTestEnv();
+	writeFile("out/src/va.pa", R"(library kit;
+cinclude <stdio.h>;
+export type P { int32 x; };
+export func join(@[]uint8 sep, [...]@[]uint8 parts) {
+	for copy s, i in parts { if i > 0 { printf("%s", sep); } printf("%s", s); }
+	printf("\n");
+}
+export func sum([...]P ps) -> int32 t { for @p in ps { t + p.x -> t; } }
+export func pick(@func(int32, [...]int32) -> int32 f) -> int32 { return f(1, 2, 3); }
+)");
+	ASSERT_EQ(execTestCommand("bin/palan --lib -o out/libs out/src/va.pa"), "");
+	fs::remove_all("out/src");
+	string pai = fileText("out/libs/kit/va.pai");
+	EXPECT_NE(pai.find("export func join(@[]uint8 sep, [...]@[]uint8 parts);\n"), string::npos) << pai;
+	EXPECT_NE(pai.find("export func pick(@func(int32, [...]int32) -> int32 f) -> int32;\n"), string::npos) << pai;
+	writeFile("out/app/main.pa", R"(libpath "../libs";
+import <kit/va> as K;
+cinclude <stdio.h>;
+func add(int32 a, [...]int32 xs) -> int32 t { a -> t; for copy x in xs { t + x -> t; } }
+K.join(", ", "a", "b", "c");
+K.P p = {x: 2};
+printf("%d %d\n", K.sum(p, [3]), K.pick(add));
+)");
+	EXPECT_EQ(execTestCommand("bin/palan out/app/main.pa"), "a, b, c\n5 6\n");
+}
+
 // A libpath adds a place for the whole program, wherever it is written and relative to that file.
 TEST(build_mgr, libpath_in_an_imported_module) {
 	buildGeoLibrary();

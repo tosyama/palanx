@@ -532,3 +532,12 @@ TEST(build_mgr, float_neg_on_stack) {
 	ASSERT_EQ(execTestCommand("bin/palan ../test/testdata/build-mgr/390_float_neg_on_stack.pa"),
 		"1\n2\n3\n4\n5\n6\n-2.500000\n");
 }
+
+// Any number of arguments, string literals for borrowed arrays, through a
+// function pointer and after `->`; a function taking no variadic argument is
+// chosen when the other one does not fit.
+TEST(build_mgr, variadic) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/406_variadic.pa");
+	ASSERT_EQ(output, "n=3 11\nn=0 10\n0:a 1:bc 2:def \n\nn=2 102\nn=1 15\n1 2\n");
+}

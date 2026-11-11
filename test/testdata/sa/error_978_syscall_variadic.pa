@@ -1,0 +1,1 @@
+syscall s([...]int64 xs) -> int64 = 60;

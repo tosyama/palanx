@@ -69,7 +69,8 @@ enum {
 	OPE_EQ =	PlnParser::token::OPE_EQ,
 	OPE_NE =	PlnParser::token::OPE_NE,
 	OPE_AND =	PlnParser::token::OPE_AND,
-	OPE_OR =	PlnParser::token::OPE_OR
+	OPE_OR =	PlnParser::token::OPE_OR,
+	ELLIPSIS =	PlnParser::token::ELLIPSIS
 };
 
 struct LitError { PlnMessageCode code; string arg; };
@@ -208,6 +209,7 @@ COMMENT1	\/\/[^\n]*\n
 <*>"!="	{ return OPE_NE; }
 <*>"&&"	{ return OPE_AND; }
 <*>"||"	{ return OPE_OR; }
+<*>"..."	{ return ELLIPSIS; }
 <*>[ \t]+	{ loc.step(); }
 <*>\r\n|\r|\n	{ loc.lines(); loc.step(); }
 <*>.	{

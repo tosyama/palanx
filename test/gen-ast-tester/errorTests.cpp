@@ -68,6 +68,29 @@ TEST(gen_ast_error, interface_only_forms_in_source) {
 	}
 }
 
+TEST(gen_ast_error, variadic_not_last) {
+	const string message = "error: a variadic parameter ('[...]T') must be the last parameter.";
+	struct { string source, location; } cases[] = {
+		{"func f([...]int32 xs, int32 a) { }\n", "m.pa:1:8: "},
+		{"func f(int32 a, [...]int32 xs, int32 b) { }\n", "m.pa:1:17: "},
+		{"@func([...]int32, int32) fp;\n", "m.pa:1:7: "},
+		{"@func(int32, [...]int32, int32) fp;\n", "m.pa:1:14: "},
+	};
+	for (auto& c : cases) {
+		cleanTestEnv();
+		ofstream("out/m.pa") << c.source;
+		string out = execTestCommand("palan-gen-ast out/m.pa");
+		ASSERT_NE(out.find(c.location + message), string::npos) << c.source << out;
+	}
+	// Only a parameter is variadic.
+	for (string source : {"[...]int32 x;\n", "func f() -> [...]int32 { }\n"}) {
+		cleanTestEnv();
+		ofstream("out/m.pa") << source;
+		string out = execTestCommand("palan-gen-ast out/m.pa");
+		ASSERT_NE(out.find("syntax error"), string::npos) << source << out;
+	}
+}
+
 TEST(gen_ast_error, interface_version) {
 	cleanTestEnv();
 	ofstream("out/old.pai") << "built \"0.0.0\";\ntarget \"" PALAN_TARGET "\";\nexport func f();\n";

@@ -202,6 +202,11 @@ enum PlnSaMessageCode {
 	E_ParamDefaultNotConst,	// arg1: parameter name
 	E_ParamDefaultNotLast,	// arg1: parameter name
 	E_OperatorFuncDefault,	// arg1: operator, arg2: parameter name
+	E_VariadicElemType,
+	E_VariadicWithDefault,	// arg1: function name
+	E_OperatorFuncVariadic,	// arg1: operator
+	E_SyscallVariadic,	// arg1: syscall name
+	E_VariadicArgTempBorrow,	// arg1: function name
 };
 
 class PlnSaMessage

@@ -876,6 +876,28 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			return "parameter '" + arg2 + "' of operator function '" + arg1
 			       + "' cannot have a default value: an operator is always given its operands.";
 
+		case E_VariadicElemType:
+			return "a variadic parameter's elements cannot be an array by value ('[n]T', '[]T', '[+]T') or "
+			       "'$T': each argument is given as a parameter is, so an array must be borrowed ('@[]T').";
+
+		case E_VariadicWithDefault:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "function '" + arg1 + "' cannot have both default values and a variadic parameter: "
+			       "an argument could be taken for either.";
+
+		case E_OperatorFuncVariadic:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "operator function '" + arg1 + "' cannot take a variadic parameter: an operator has fixed operands.";
+
+		case E_SyscallVariadic:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "syscall '" + arg1 + "' cannot take a variadic parameter.";
+
+		case E_VariadicArgTempBorrow:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "a variadic argument of '" + arg1 + "' borrows a temporary value a call holds, which would be "
+			       "released before '" + arg1 + "' is called; keep the value in a variable first.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

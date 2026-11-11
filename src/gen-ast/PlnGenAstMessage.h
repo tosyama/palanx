@@ -37,6 +37,7 @@ enum PlnMessageCode {
 	E_CharLitSeveralCodePoints,	// literal text
 	E_CharLitInvalidUtf8,
 	E_InvalidCodePointEscape,	// the escape as written
+	E_VariadicNotLast,
 };
 
 class PlnGenAstMessage

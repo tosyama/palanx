@@ -1,0 +1,19 @@
+cinclude <stdio.h>;
+func sum(int32 base, [...]int64 xs) -> int64 {
+	int64 t = base;
+	for copy x in xs { t + x -> t; }
+	printf("n=%ld ", len(@xs));
+	return t;
+}
+func show([...]@[]uint8 ss) { for copy s, i in ss { printf("%ld:%s ", i, s); } printf("\n"); }
+int32 v = 5;
+printf("%ld\n", sum(1, 2, 3, v));
+printf("%ld\n", sum(10));
+show("a", "bc", "def");
+show();
+@func(int32, [...]int64) -> int64 fp = sum;
+printf("%ld\n", fp(100, 1, 1));
+printf("%ld\n", 7 -> sum(8));
+func pick(int32 a) -> int32 { return 1; }
+func pick(@[]uint8 s, [...]int32 xs) -> int32 { return 2; }
+printf("%d %d\n", pick(5), pick("x", 1));

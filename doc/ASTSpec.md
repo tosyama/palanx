@@ -301,6 +301,9 @@ Variable type
       - "raw"      — `[expr]type` or `[]type`    raw heap array (C-array equivalent, no count stored)
       - "fixed"    — `[#expr]type` or `[#]type`  heap array with element count in memory header
       - "variable" — `[+expr]type` or `[+]type`  variable-size array (size-expr = initial capacity)
+      - "variadic" — `[...]type`  a variadic parameter, only as the outermost type of the last
+        parameter of a function or a function pointer type (size-expr is always null); gen-ast
+        rejects one followed by another parameter
     - size-expr - Array size expression model
       - non-null: size/capacity determined by this expression
       - null semantics differ by specifier:

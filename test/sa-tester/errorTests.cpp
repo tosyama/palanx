@@ -1464,6 +1464,21 @@ TEST(sa_error, give_and_take)
 		// A function pointer's type has no defaults.
 		{"error_972_default_func_ptr.pa", ":3:1: error: function 'fp' takes 2 argument(s), but 1 given."},
 		{"error_973_default_narrowing.pa", ":1:18: error: Implicit conversion from 'flo64' to 'int32' is not allowed"},
+		{"error_974_variadic_elem_arr.pa", ":1:1: error: a variadic parameter's elements cannot be an array by value ('[n]T', '[]T', '[+]T') or '$T': each argument is given as a parameter is, so an array must be borrowed ('@[]T')."},
+		{"error_975_variadic_elem_embed.pa", ":1:1: error: a variadic parameter's elements cannot be an array by value ('[n]T', '[]T', '[+]T') or '$T': each argument is given as a parameter is, so an array must be borrowed ('@[]T')."},
+		{"error_976_variadic_with_default.pa", ":1:1: error: function 'f' cannot have both default values and a variadic parameter: an argument could be taken for either."},
+		{"error_977_operator_func_variadic.pa", ":2:1: error: operator function '+' cannot take a variadic parameter: an operator has fixed operands."},
+		{"error_978_syscall_variadic.pa", ":1:1: error: syscall 's' cannot take a variadic parameter."},
+		// A candidate fitting through its variadic parameter is never ranked above another.
+		{"error_979_variadic_ambiguous.pa", ":3:1: error: Ambiguous function call 'f': it can mean f(int32), f(int32, [...]int32)."},
+		{"error_980_variadic_too_few.pa", ":2:1: error: function 'f' takes at least 1 argument(s), but 0 given."},
+		{"error_981_variadic_elem_mismatch.pa", ":2:1: error: Implicit conversion from 'flo64' to 'int32' is not allowed"},
+		// The array is the caller's; only its elements are the function's.
+		{"error_982_variadic_move_array.pa", ":3:2: error: '->>' needs a source that owns its value: an owning variable, an owned field or element, a call result, or a pointer viewed as an owner ('p as T')."},
+		{"error_983_variadic_func_ptr.pa", ":2:1: error: cannot convert '@func([...]int64)' to '@func(@int64)'."},
+		{"error_984_variadic_c_callback.pa", ":4:1: error: cannot convert '@func(@void, [...]@void) -> int32' to '@func(@void, @void) -> int32'."},
+		{"error_985_variadic_temp_borrow.pa", ":5:1: error: a variadic argument of 'f' borrows a temporary value a call holds, which would be released before 'f' is called; keep the value in a variable first."},
+		{"error_986_variadic_take_array.pa", ":2:2: error: '<<=' needs a source that owns its value: an owning variable, an owned field or element, a call result, or a pointer viewed as an owner ('p as T')."},
 		{"error_924_keep_param_count_nested.pa",
 		 ":3:2: error: the cast's function type has 2 parameters, but '@func(int32)' has 1."},
 		{"error_925_given_twice.pa",

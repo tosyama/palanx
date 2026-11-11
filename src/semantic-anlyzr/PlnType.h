@@ -7,6 +7,7 @@
 
 #include <map>
 #include <memory>
+#include <tuple>
 #include <vector>
 #include "../../lib/json/single_include/nlohmann/json.hpp"
 
@@ -65,8 +66,9 @@ struct EnumType : PlnType {
 struct FuncType : PlnType {
     std::vector<const PlnType*> params;
     const PlnType* ret;  // Void prim when nothing is returned
-    FuncType(std::vector<const PlnType*> p, const PlnType* r)
-        : PlnType(Kind::Func), params(std::move(p)), ret(r) {}
+    bool variadic;       // the last parameter is `[...]E`, passed as its elements' address and count
+    FuncType(std::vector<const PlnType*> p, const PlnType* r, bool v)
+        : PlnType(Kind::Func), params(std::move(p)), ret(r), variadic(v) {}
 };
 
 // A `[+]T` header {len, cap, data}: only ever a pointer's base, since a
@@ -84,14 +86,14 @@ class PlnTypeRegistry {
     std::map<std::pair<const PlnType*, bool>, std::unique_ptr<VarrType>> varrCache_;
     std::map<std::string, std::unique_ptr<StructType>>   structCache_;
     std::map<std::string, std::unique_ptr<EnumType>>     enumCache_;
-    std::map<std::pair<std::vector<const PlnType*>, const PlnType*>, std::unique_ptr<FuncType>> funcCache_;
+    std::map<std::tuple<std::vector<const PlnType*>, const PlnType*, bool>, std::unique_ptr<FuncType>> funcCache_;
 public:
     const PrimType*  prim(PrimType::Name name);
     const PtrType*   ptr(const PlnType* base);
     const VarrType*  varr(const PlnType* elem, bool embedded);
     const StructType* structType(const std::string& name);
     const EnumType*  enumType(const std::string& name, const PrimType* base);
-    const FuncType*  funcType(const std::vector<const PlnType*>& params, const PlnType* ret);
+    const FuncType*  funcType(const std::vector<const PlnType*>& params, const PlnType* ret, bool variadic = false);
     const PlnType*   fromJson(const json& j);
     json             toJson(const PlnType* t);
 };

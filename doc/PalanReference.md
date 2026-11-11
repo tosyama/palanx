@@ -874,6 +874,53 @@ pad(42, 4);                // pad(42, 4, Align.Right, "|")
 - A function pointer type has no defaults: a call through a pointer gives every argument.
 - With [overloading](#overloading), see there for how a call that could use a default is chosen.
 
+### Variadic Arguments
+
+`[...]T` as the last parameter takes any number of arguments of type `T`, none included. In the
+function the parameter is an array whose length is the number of arguments:
+
+```palan
+cinclude <stdio.h>;
+
+func sum(int32 base, [...]int64 xs) -> int64 t {
+    base -> t;
+    for copy x in xs { t + x -> t; }
+}
+
+func say(@[]uint8 sep, [...]@[]uint8 words) {
+    for copy w, i in words {
+        if i > 0 { printf("%s", sep); }
+        printf("%s", w);
+    }
+    printf(" (%ld)\n", len(@words));
+}
+
+printf("%ld\n", sum(1, 2, 3));   // 6
+printf("%ld\n", sum(1));         // 1
+say(", ", "a", "b", "c");         // a, b, c (3)
+say(", ");                        //  (0)
+```
+
+- Each argument is given as it would be to a parameter of type `T`: converted the same way, a
+  struct `T` copied (or taken over from a call returning it), a borrow written `@x`. `T` may be a
+  primitive, an enum, a struct, a borrow (`@T`, `@!T`, `@[]uint8`), but not an array by value
+  (`[n]T`, `[]T`, `[+]T`) or `$T`.
+- In the function the parameter works as a local array sized at run time
+  (see [Sizes Known Only at Run Time](#sizes-known-only-at-run-time)): `len(@xs)`, `xs[i]`,
+  `for`, and `->` copying it to or from another array. Its elements may be written. The array
+  itself belongs to the call, so it cannot be moved out (`->>`, `<<=`) or given away.
+- Struct elements are the function's: those still there when it returns are freed, and one can
+  be taken out with `xs[i] ->> v`, which leaves NULL in its place.
+- A function cannot have both [default arguments](#default-arguments) and a variadic parameter.
+  An operator function and a `syscall` cannot be variadic.
+- A function pointer type can end with `[...]T` (`@func(int32, [...]int64) -> int64`) and is
+  called the same way. It is a different type from one taking `@[]T`, and a variadic function
+  cannot be given to a C function as a callback.
+- An existing array cannot be passed as the arguments: `sum(1, a)` for an array `a` is an
+  error.
+- An argument borrowing a temporary value held inside another call, such as `f(id(@mk()))` where
+  `id` returns the borrow it is given, is a compile error: keep the value in a variable first.
+
 ### Method-Form Calls
 
 A function whose first parameter is a writable borrow (`@!T`, `@![n]T`, or a C function's
@@ -983,7 +1030,8 @@ printf("%d\n", o.op(4));           // 8
 - A parameter or return type is a primitive, a borrowed pointer (`@T`/`@!T`, including another
   function pointer), or an owned struct or array (`T`, `[n]T` with a constant `n`, `[+]T`), which
   is passed and returned as a function passes it: the called function owns an owned argument and
-  frees it, and the caller owns an owned return value. A `$T` or `[]T` is not allowed.
+  frees it, and the caller owns an owned return value. A `$T` or `[]T` is not allowed. The last
+  parameter can be [variadic](#variadic-arguments) (`[...]T`).
 - A function becomes a function pointer by writing its name where a value is expected. This works
   for a Palan function returning nothing or one value (a single named return counts as one), an
   imported function, and a C function that is not variadic. A function with several return
@@ -1041,9 +1089,10 @@ show(2.5);          // float 2.5
 - Receiving several return values (`(a, b) = f(x)`) needs the functions returning that many to
   return the same types.
 - If one of several functions fitting the arguments fits only by using its
-  [defaults](#default-arguments), the call is ambiguous: with `f(int32)` and
+  [defaults](#default-arguments) or its [variadic parameter](#variadic-arguments), the call is
+  ambiguous: with `f(int32)` and
   `f(int32, int32 = 0)`, `f(1)` is a compile error, and `f(1, 0)` calls the second. A function
-  using defaults is called when it is the only one that fits.
+  using defaults or a variadic parameter is called when it is the only one that fits.
 
 ### Operator Functions
 

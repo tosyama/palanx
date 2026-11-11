@@ -1,0 +1,4 @@
+cinclude <stdlib.h>;
+func c(@void a, [...]@void b) -> int32 { return 0; }
+[3]int32 v;
+qsort(@!v, 3, 4, c);

@@ -459,6 +459,7 @@ class PlnSemanticAnalyzer {
 	                                 size_t argIdx, bool isCFunc, const string& funcName);
 	json ownedBlockArg(const json& locNode, const json& arg, CallArg& ca, const json& param,
 	                   size_t argIdx, const string& funcName);
+	json variadicArrayArg(const json& locNode, const json& elemVT, json elems, const string& funcName);
 	json bindCallArgs(const json& locNode, vector<CallArg>& args, const json& funcParams,
 	                  bool isCFunc, const string& funcName);
 	[[noreturn]] void reportDiag(const json& locNode, const SaDiag& diag) const;
@@ -619,6 +620,7 @@ class PlnSemanticAnalyzer {
 	// that runs and would be misclassified as unsupported.
 	void  validateNativeSig(const json& funcDef);
 	void  validateOperatorSig(const json& funcDef);
+	void  validateVariadicSig(const json& funcDef);
 	json  normalizeArrBorrowType(const json& locNode, const json& type);
 	json  varrBorrowType(const json& locNode, const json& arr, bool isMutable);
 	json  varrStorageType(const json& locNode, const json& arr);
@@ -707,6 +709,7 @@ class PlnSemanticAnalyzer {
 	json sa_transfer_to_owner_view(const json& stmt, const json& target);
 	// `src -> dst` for a dst that isCopiedByValue: a statement copying src's
 	// contents into dst's storage. Diagnoses E_CopyShapeMismatch.
+	json elemsFiniStmt(const string& name, const json& arrType);
 	json makeCopyStmt(const json& locNode, const json& dst, const json& src);
 	json sa_arr_assign_stmt(const json& stmt, json* litAddr = nullptr);  // returns json::array()
 	// `[...] -> target` / `{...} -> target` for a struct or array target; returns a block.

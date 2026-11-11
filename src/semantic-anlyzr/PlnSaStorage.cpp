@@ -387,6 +387,17 @@ json PlnSemanticAnalyzer::ownedTypeOf(const json& locNode, const json& varType)
 // A parameter's or return value's type as the function and its callers see it.
 json PlnSemanticAnalyzer::sigType(const json& locNode, const json& type)
 {
+	// Each argument is given as a parameter of the element type is, so the
+	// element is that parameter's type.
+	if (isVariadicAstType(type)) {
+		const json& elem = type["base-type"];
+		string tk = elem.value("type-kind", "");
+		if (tk == "arr" || tk == "embed" || tk == "keep" || elem.value("type-name", "") == "void") {
+			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_VariadicElemType) << endl;
+			exit(1);
+		}
+		return {{"type-kind","pntr"},{"variadic",true},{"base-type",sigType(locNode, elem)}}; // LCOV_EXCL_BR_LINE
+	}
 	json t = normalizeArrBorrowType(locNode, unsizedArrToPntr(locNode, type));
 	if (isVarrAstType(t)) {
 		t = varrStorageType(locNode, t);
@@ -937,6 +948,21 @@ json PlnSemanticAnalyzer::makeOwnedValueFreeStmt(json value, json lens)
 	recordArrShape(elem);
 	for (auto& len : lenArgs) args.push_back(len);
 	return {{"stmt-type","expr"},{"body",allocHelperCall(arrShape(elem), "free", move(args))}};
+	// LCOV_EXCL_BR_STOP
+} // LCOV_EXCL_BR_LINE
+
+// What the elements of the array `name` own, released as a frame array's
+// are: the block itself is left alone. Null when they own nothing.
+json PlnSemanticAnalyzer::elemsFiniStmt(const string& name, const json& arrType)
+{
+	// LCOV_EXCL_BR_START
+	if (!ownsElems(arrType)) return json();
+	json self = {{"expr-type","id"},{"name",name},{"var-type",arrType},{"value-type",arrType}};
+	auto [elem, lenArgs] = ownedRun(arrType, locationLens(self));
+	recordArrShape(elem);
+	json args = json::array({move(self)});
+	for (auto& len : lenArgs) args.push_back(len);
+	return {{"stmt-type","expr"},{"body",allocHelperCall(arrShape(elem), "fini", move(args))}};
 	// LCOV_EXCL_BR_STOP
 } // LCOV_EXCL_BR_LINE
 

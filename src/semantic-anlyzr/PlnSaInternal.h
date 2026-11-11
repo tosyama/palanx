@@ -226,6 +226,7 @@ inline bool isAggregateLit(const json& expr)
 inline bool isFuncSigType(const json& vt)
 {
 	string tk = vt.value("type-kind","");
+	if (vt.value("variadic", false)) return isFuncSigType(vt["base-type"]);
 	return (tk == "prim" && vt.value("type-name","") != "void") || (tk == "pntr" && vt.contains("mutable"))
 	    || isOwnedBlock(vt);
 }
@@ -239,6 +240,16 @@ inline bool isStructStorage(const json& vt) { return isStructPntr(vt) && !vt.con
 inline bool isVarrAstType(const json& t)
 {
 	return t.value("type-kind","") == "arr" && t.value("specifier","") == "variable";
+}
+inline bool isVariadicAstType(const json& t)
+{
+	return t.value("type-kind","") == "arr" && t.value("specifier","") == "variadic";
+}
+// The `[...]E` parameter of a Palan signature, which only the last one can be.
+inline const json* palanVariadicParam(const json& params)
+{
+	if (params.empty() || !params.back().contains("var-type")) return nullptr;
+	return params.back()["var-type"].value("variadic", false) ? &params.back() : nullptr;
 }
 // A `[+]T` value: one word pointing at its {len, cap, data} header.
 inline bool isVarrPntr(const json& vt)
@@ -667,6 +678,8 @@ inline string typeDisplayName(const json& t) {
 		return unrepresentableTypeName(t);
 	if (!t.contains("base-type")) return "malformed type"; // LCOV_EXCL_LINE -- no real producer emits this
 	auto perm = [](const json& p) { return string(isWritableThrough(p) ? "@!" : "@"); };
+	if (t.value("variadic", false))
+		return "[...]" + typeDisplayName(t["base-type"]);
 	if (isVarrPntr(t))
 		return (isVarrStorage(t) ? "" : perm(t)) + "[+]" + (isVarrEmbedded(t) ? "$" : "")
 		     + typeDisplayName(t["base-type"]["base-type"]);

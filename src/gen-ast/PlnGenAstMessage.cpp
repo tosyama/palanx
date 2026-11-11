@@ -95,6 +95,9 @@ string PlnGenAstMessage::getMessage(PlnMessageCode msg_code, string arg1, string
 			BOOST_ASSERT(arg1 != "\x01");
 			return "Invalid number literal '" + arg1 + "'.";
 
+		case E_VariadicNotLast:
+			return "a variadic parameter ('[...]T') must be the last parameter.";
+
 		case E_SyscallNamedReturn:
 			return "a syscall must declare its return with '-> type'; named and multiple "
 			       "return values are not supported.";

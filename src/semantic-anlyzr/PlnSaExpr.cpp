@@ -178,7 +178,8 @@ json PlnSemanticAnalyzer::storageBorrowType(const string& name, const json& varT
 		vt["mutable"] = isMutable;
 		return vt;
 	}
-	if (isOwnedVar(name) || varType.contains("arr-size"))
+	// A variadic parameter is sized at run time but owned by no one in the function.
+	if (isOwnedVar(name) || varType.contains("arr-size") || varType.value("run-size", false))
 		return withArrPermission(varType, isMutable);
 	return nullptr;
 }

@@ -658,17 +658,26 @@ defaults come last.
   type `E` and converts as one would. Zero arguments are allowed.
 - The caller lays the arguments out in a temporary array in its frame, with the temporaries
   literal conversions need, and passes two arguments: the array's address and its element count,
-  an `int64` that is a constant at the call. In the body `len(@xs)` reads that count, and `xs[i]`
-  and `for @x in xs` work as on a borrowed array. A header like a `[+]T`'s was not taken: nothing
-  needs it until arrays can be spread into a call, and the address and count serve that too.
+  a 64-bit count that is a constant at the call (no arguments: NULL and 0). A header like a
+  `[+]T`'s was not taken: nothing needs it until arrays can be spread into a call, and the
+  address and count serve that too.
+- In the body `xs` is an array whose length is known only at run time, as a local `[n]E` is
+  (4): the count is the length it keeps (`__xs_d0`), so `len(@xs)`, `xs[i]`, `for @x in xs` and
+  `->` work as on such a local. Its elements may be written, since the array is the call's own
+  temporary. Like a frame array (`$[n]T`), the array itself cannot be moved, given, returned or
+  replaced with `<<=`.
 - Elements of a struct type `T` are owned by the callee, as a `T` parameter is: it releases those
-  left at exit, and may move one out (`xs[i] ->> x`). The array holding them stays the caller's.
+  left at exit, and may move one out (`xs[i] ->> x`, which leaves NULL there). The array holding
+  them stays the caller's.
 - A function cannot have both defaults and a variadic parameter: in `f(1, 2)` for
   `f(int32 a, int32 b = 0, [...]int32 xs)`, `2` could be either. When more than one candidate
-  fits a call and one of them fits through its variadic parameter, the call is an ambiguity error,
-  as for defaults.
+  fits a call and one of them fits through its variadic parameter (with no argument for it too),
+  the call is an ambiguity error, as for defaults. A syscall cannot be variadic.
+- An element borrowing a temporary that a call returning a borrow holds (`f(g(h()))` with `g`
+  returning a borrow into `h()`'s struct) is an error: that temporary would be released before
+  the call (doc/Issues.md #31).
 - Spreading an existing array into the arguments (Go's `f(xs...)`) is not provided
-  (doc/Issues.md).
+  (doc/Issues.md #30).
 - An operator function cannot be variadic. A function pointer type includes `[...]E`
   (`@func(@utf8, [...]@utf8) -> bool`) and is called the same way. A `.pai` writes it as declared.
   It is unrelated to C's `...`: calling C variadic functions is unchanged, and a Palan variadic

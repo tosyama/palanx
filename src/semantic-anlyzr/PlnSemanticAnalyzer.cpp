@@ -369,7 +369,8 @@ void PlnSemanticAnalyzer::requireKnownTypeNames(const json& locNode, const json&
 // `func` is a function type as written, its names already resolved.
 void PlnSemanticAnalyzer::requireFuncSigTypes(const json& locNode, const json& func) const
 {
-	auto check = [&](const json& t, bool isRet) {
+	auto check = [&](const json& written, bool isRet) {
+		const json& t = isVariadicAstType(written) ? written["base-type"] : written;
 		string tk = t.value("type-kind","");
 		if (tk == "keep") {
 			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_KeepOutsideCast) << endl;
@@ -447,6 +448,21 @@ void PlnSemanticAnalyzer::validateNativeSig(const json& funcDef)
 		     << PlnSaMessage::getMessage(E_UnsupportedParamType, funcDef["name"].get<string>(), bad) << endl;
 		exit(1);
 	}
+}
+
+void PlnSemanticAnalyzer::validateVariadicSig(const json& funcDef)
+{
+	const json& params = funcDef["parameters"];
+	if (!palanVariadicParam(params)) return;
+	const string& name = funcDef["name"].get<string>();
+	auto fail = [&](PlnSaMessageCode code) {
+		cerr << locPrefix(funcDef) << PlnSaMessage::getMessage(code, name) << endl;
+		exit(1);
+	};
+	if (funcDef.value("func-type", "") == "syscall") fail(E_SyscallVariadic);
+	if (operatorFuncNames().count(name)) fail(E_OperatorFuncVariadic);
+	if (any_of(params.begin(), params.end(), [](const json& p) { return p.contains("init"); }))
+		fail(E_VariadicWithDefault);
 }
 
 // An operator function is called only where an operand is a struct, and an
@@ -717,6 +733,7 @@ json PlnSemanticAnalyzer::normalizeFuncSig(const json& f, const string& scope)
 	if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)
 		funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
 	validateNativeSig(funcEntry);
+	validateVariadicSig(funcEntry);
 	validateOperatorSig(funcEntry);
 	normalizeParamDefaults(funcEntry);
 	if (funcEntry.value("func-type", "") == "syscall")

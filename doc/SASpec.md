@@ -1323,6 +1323,32 @@ function has none (E_OperatorFuncDefault). A call omitting arguments is given th
 so its `str-literals` entry is in the calling module's table and only when used. A function
 definition in `functions` keeps no defaults, and a function pointer type has none.
 
+### Variadic arguments
+
+An AST `[...]E` parameter (ASTSpec `specifier: "variadic"`) is normalized where any signature
+type is (`sigType`), to `{"type-kind":"pntr","variadic":true,"base-type":<E as a parameter type>}`;
+E as an array by value, `$T` or `_` is E_VariadicElemType. A variadic function cannot be a
+syscall (E_SyscallVariadic), an operator function (E_OperatorFuncVariadic) or have defaults
+(E_VariadicWithDefault). The key travels with the type: a function pointer type's parameter keeps
+it, the registry's function type compares it (so a C callback type never matches), it is shown as
+`[...]E`, and a symbol encodes the parameter as `X<E>`.
+
+- A call fits a variadic candidate with at least its other parameters' count of arguments, each
+  argument past them fitting E as a parameter of that type. Fitting so (with no argument for it
+  too) leaves the candidate unranked, as a default does: E_AmbiguousCall when another fits.
+- The arguments for it are bound as for a parameter of type E (a struct is copied into a block
+  the callee owns; a literal or a call's result is a `temp`), then laid out in the `temp` of a
+  frame array `__va_<n>` (`frame-alloc` of the arguments' count times the element's slot, then
+  one `arr-assign` each). An argument's own `temp` is opened into the array's, so what it
+  releases outlives the call; one still holding a call's temporary within a borrow is
+  E_VariadicArgTempBorrow. The call passes that array (`lit-int` 0 of type `@void` for none) and
+  the count as a `uint64` `lit-int`: a call has one argument more than the signature's parameters.
+- In `functions` the parameter is two: `xs`, typed as an array sized at run time
+  (`{"type-kind":"pntr","run-size":true,"base-type":E}`), and `__xs_d0` (`uint64`), the length
+  `len`, `for` and copies read as for a local `[n]E`. `xs` is no owner: its elements owning blocks
+  are released at exit by the array helper's `fini`, as a frame array's are, and the array itself
+  cannot be moved or taken (E_TransferFromNonOwner).
+
 ### Chained calls
 
 An AST `chain-call` `v -> f(args)` is rewritten where SA takes it in (an expression, or the value

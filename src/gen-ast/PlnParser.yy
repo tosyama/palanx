@@ -252,6 +252,12 @@ struct BodyList {
 				PlnGenAstMessage::getMessage(E_ExpectedInKeyword, word)));
 	}
 
+	[[noreturn]] static void variadicNotLast(PlnLexer& lexer, const palan::PlnParser::location_type& loc)
+	{
+		throw runtime_error(PlnGenAstMessage::locatedError(lexer.inputFile, loc.begin.line, loc.begin.column,
+			PlnGenAstMessage::getMessage(E_VariadicNotLast)));
+	}
+
 	// A parameter or return the compiler does not implement stays in the
 	// signature as is, so SA can reject the function where it is defined.
 	static json funcDecl(json& ast, bool exported, json fn, const vector<json>& params, const json& ret,
@@ -335,6 +341,7 @@ struct BodyList {
 %token OPE_NE	"!="
 %token OPE_AND	"&&"
 %token OPE_OR	"||"
+%token ELLIPSIS	"..."
 
 %type <PList<NodeRef>>	statements block
 %type <NodeRef>	block_stmt
@@ -351,6 +358,7 @@ struct BodyList {
 %type <PList<json>>	array_rows array_items dict_items
 %type <json>	type_expr fptr_ret
 %type <PList<json>>	fptr_params fptr_param_list
+%type <json>	variadic_type variadic_param
 %type <json>	var_declaration inherit_var_decl
 %type <PList<json>>	var_declarations global_funcs
 %type <json>	global_func
@@ -1357,6 +1365,22 @@ paramaters: /* empty */
 	{ }
 	| var_declarations
 	{ $$ = $1.toVector(); }
+	| variadic_param
+	{ $$ = {move($1)}; }
+	| var_declarations ',' variadic_param
+	{ $$ = $1.push(move($3)).toVector(); }
+	| variadic_param ',' var_declarations
+	{ variadicNotLast(lexer, @1); }
+	| var_declarations ',' variadic_param ',' var_declarations
+	{ variadicNotLast(lexer, @3); }
+	;
+
+variadic_param: variadic_type ID
+	{ $$ = {{"name", move($2)}, {"var-type", move($1)}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
+	;
+
+variadic_type: '[' ELLIPSIS ']' type_expr
+	{ $$ = {{"type-kind","arr"},{"specifier","variadic"},{"size-expr",nullptr},{"base-type",move($4)}}; } // LCOV_EXCL_BR_LINE
 	;
 
 return_def: /* empty */
@@ -1532,6 +1556,14 @@ fptr_params: /* empty */
 	{ }
 	| fptr_param_list
 	{ $$ = $1; }
+	| variadic_type
+	{ $$ = PList<json>().push({{"var-type", move($1)}}); } // LCOV_EXCL_BR_LINE
+	| fptr_param_list ',' variadic_type
+	{ $$ = $1.push({{"var-type", move($3)}}); } // LCOV_EXCL_BR_LINE
+	| variadic_type ',' fptr_param_list
+	{ variadicNotLast(lexer, @1); }
+	| fptr_param_list ',' variadic_type ',' fptr_param_list
+	{ variadicNotLast(lexer, @3); }
 	;
 
 fptr_param_list: type_expr

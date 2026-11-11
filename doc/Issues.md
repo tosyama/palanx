@@ -200,3 +200,15 @@ A variable-length array (v0.2.1) adds a shorter-lived case: `push` and `resize` 
 ## 29. palan Aborts When `HOME` Is Not Set
 
 **Summary:** palan keeps its work files under `$HOME/.palan`, and with `HOME` unset it aborts (constructing a `std::string` from a null `getenv("HOME")` in `src/build-mgr/main.cpp`) instead of reporting it. A package build may run without a home; building `std` is not affected, since CMake passes it `HOME=<build>/std-home`. A clear error, or a work directory that can be given otherwise, would fix it.
+
+---
+
+## 30. An Array Cannot Be Passed as Variadic Arguments
+
+**Summary:** A variadic parameter (`[...]T`, v0.2.5) takes its arguments one by one; an existing array cannot be passed as all of them (Go's `f(xs...)`), so a variadic function cannot pass its own arguments on to another variadic function. The address and count the call already passes would serve it; what is missing is syntax and the rules for struct elements, which the callee owns and an array's owner would keep.
+
+---
+
+## 31. A Variadic Argument Cannot Borrow a Temporary Inside Another Call
+
+**Summary:** A variadic argument that borrows a temporary held inside a call returning a borrow, such as `f(id(@mk()))` for `id(@T p) -> @T`, is rejected (E_VariadicArgTempBorrow). The arguments are laid out in an array by statements before the call, and codegen releases a statement's temporaries at the statement's end, so the temporary would be gone when `f` runs. A statement form keeping its temporaries until the call would lift the restriction.
