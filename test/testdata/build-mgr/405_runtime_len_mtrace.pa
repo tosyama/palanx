@@ -1,0 +1,21 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type P { int32 v; };
+func g(int32 n, int32 m) {
+	[n][m]int64 x;
+	[n]P ps;
+	[2][m]int32 y;
+	[n]$[2]int32 z;
+	for @!row, i in x { for @!e, j in row { i * 10 + j -> e; } }
+	printf("len %ld %ld %ld %ld\n", len(@x), x[0] -> len(), len(@y[1]), len(@z));
+	for @r in x { for copy e in r { printf("%ld ", e); } printf("\n"); }
+	for @!p, i in ps { int32(i) -> p.v; }
+	for @p in ps { printf("%d ", p.v); }
+	printf("\n");
+	for copy e in x[1] { printf("%ld ", e); }
+	printf("\n");
+	for @!r, int32 k in z { k -> r[1]; }
+	printf("%d %d\n", z[2][1], z[2][0]);
+}
+mtrace();
+g(3, 4);

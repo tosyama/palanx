@@ -1,0 +1,5 @@
+int32 k = 3;
+[k][2]int32 a;
+int64 n = len(@a);
+int64 r = a[1] -> len();
+for copy x in a[0] { }

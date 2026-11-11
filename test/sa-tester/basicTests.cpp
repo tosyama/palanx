@@ -1454,6 +1454,22 @@ TEST(sa, param_default)
 	ASSERT_EQ(calls[4]["args"][1]["value-type"]["type-name"], "int32");
 }
 
+// A length known only at run time is read from the variable the array's
+// declaration keeps it in; a row's own length is in its type.
+TEST(sa, runtime_len)
+{
+	cleanTestEnv();
+	json jout = written(run_sa("../test/testdata/sa/340_runtime_len.pa"));
+	ASSERT_TRUE(jout.is_object());
+	map<string, json> init;
+	for (auto& s : jout["statements"])
+		if (s["stmt-type"] == "var-decl") init[s["vars"][0]["name"]] = s["vars"][0]["init"];
+	ASSERT_EQ(init["n"]["expr-type"], "convert");
+	ASSERT_EQ(init["n"]["src"]["name"], "__a_d0");
+	ASSERT_EQ(init["r"]["expr-type"], "lit-int");
+	ASSERT_EQ(init["r"]["value"], "2");
+}
+
 // '==' and '<' are called for struct operands; the other comparisons are
 // derived from them, and a comparison with NULL stays a pointer comparison.
 TEST(sa, compare_func)

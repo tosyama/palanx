@@ -363,8 +363,10 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   reject an invalid one
 - `len(@a)` / `len(@!a)` / `a -> len()` of an array level with `arr-size` (a variable, row, field or
   borrowed array, whose expression has no call) folds to that `arr-size`, so it is no call and
-  no candidate. Of an array level without `arr-size` (`[]T` parameter, run-time size) it is
-  E_ArrLenNotConst; without `@`, E_ArrLenNeedsAddrOf unless a user function named `len` exists
+  no candidate. Of a `run-size` level it is the length kept for it (`__<name>_d<k>` of the
+  location's root variable, converted to int64), which is not folded; of a level with neither
+  (`[]T` parameter) it is E_ArrLenNotConst; without `@`, E_ArrLenNeedsAddrOf unless a user
+  function named `len` exists
 - not-impl statements (ASTSpec.md) are rejected, never emitted: `E_VarTypeInferenceNotImpl` when
   the statement carries `untyped-var`, `E_StmtNotImplemented` otherwise; a not-impl expression in
   value position is rejected as `E_ExprNotImplemented`
@@ -583,7 +585,9 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   including an array field's value-type. It is absent for a size known only at run time, where
   an owned variable's level (and so its rows') has `"run-size": true` instead, the size being
   kept in `__<name>_d<k>`; a `[]T` parameter's level has neither. Both are only used by SA for
-  borrowed-array, ownership and copy checks; codegen ignores them. A copy or a free of an array
+  borrowed-array, ownership, copy and length checks; codegen ignores them. A `for` over a
+  `run-size` array declares the lengths again for the variable it copies the range into, as
+  `__<copy>_d<k>`. A copy or a free of an array
   takes its lengths from the location receiving or releasing it, and a `run-size` level matches
   any size.
 

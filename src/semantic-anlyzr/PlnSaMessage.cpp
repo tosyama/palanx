@@ -472,7 +472,7 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			       "'(a " + arg1 + " b) -> c'.";
 
 		case E_ArrLenNotConst:
-			return "'len' takes a variable-length array or an array of constant size; this array's size is not known at compile time.";
+			return "'len' cannot tell this array's length: an array declared with its size, or a variable-length array, keeps one, but a '[]T' does not.";
 
 		case E_ForRangeNotArray:
 			return "'for' takes an array to iterate over.";

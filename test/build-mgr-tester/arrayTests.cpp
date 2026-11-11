@@ -684,3 +684,10 @@ TEST(build_mgr, arr_borrow_return) {
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/402_arr_borrow_return.pa");
 	ASSERT_EQ(output, "hi hi\nhi 105\n7 4\n4\nok\nhi\n");
 }
+
+// `len` and `for` read the lengths an array sized at run time keeps: its
+// own, a row's, and those of the copy a `for` iterates over.
+TEST(build_mgr, runtime_len_mtrace) {
+	expectMtraceRun("405_runtime_len_mtrace",
+		"len 3 4 4 3\n0 1 2 3 \n10 11 12 13 \n20 21 22 23 \n0 1 2 \n10 11 12 13 \n2 0\n", 12);
+}

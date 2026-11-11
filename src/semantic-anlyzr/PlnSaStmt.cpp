@@ -315,6 +315,9 @@ json PlnSemanticAnalyzer::sa_for_stmt(const json& stmt)
 		exit(1);
 	}
 	string arr = "__for_" + to_string(tempVarCounter_++);
+	// The range is moved into `arr` below; a length known only at run time is
+	// kept by the location it names, which the copy's rows then index by.
+	json runLens = bindRunLens(arr, range);
 	if (isExpiringOwned(range)) {
 		declareVar(arr, arrType);
 		addOwnedScopeVar(arr, makeOwnedFreeStmt(arr, arrType));
@@ -330,6 +333,7 @@ json PlnSemanticAnalyzer::sa_for_stmt(const json& stmt)
 	}
 	block.push_back({{"stmt-type","var-decl"},
 	                 {"vars",json::array({{{"name",arr},{"var-type",arrType},{"init",move(range)}}})}});
+	for (auto& s : runLens) block.push_back(s);
 
 	// A typed index is a conversion of a hidden int64 counter, so an index type
 	// too narrow for a run-time length wraps like `int32(i)` instead of
@@ -361,7 +365,7 @@ json PlnSemanticAnalyzer::sa_for_stmt(const json& stmt)
 			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ForIndexNotInteger, typeDisplayName(idxType)) << endl;
 			exit(1);
 		}
-		if (!isVarrPntr(arrType)) {
+		if (!isVarrPntr(arrType) && !arrType.value("run-size", false)) {
 			int64_t n = constArrSizeOrExit(arrType, stmt["range"]);
 			if (n > 0 && !intLiteralFits(to_string(n - 1), static_cast<const PrimType*>(t)->name)) {
 				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ForIndexTooNarrow,
@@ -389,6 +393,7 @@ json PlnSemanticAnalyzer::sa_for_stmt(const json& stmt)
 			declareVar(view, roType);
 			block.push_back({{"stmt-type","var-decl"},
 			                 {"vars",json::array({{{"name",view},{"var-type",roType},{"init",saArr}}})}});
+			for (auto& s : bindRunLens(view, saArr)) block.push_back(move(s));
 		}
 		// The name stays declared so the body can't declare it again.
 		declareVar(elem["name"], {{"type-kind","pntr"},{"mutable",mut},{"base-type",move(declType)}});
@@ -415,6 +420,25 @@ json PlnSemanticAnalyzer::sa_for_stmt(const json& stmt)
 	leaveScope();
 	return {{"stmt-type","block"},{"body",move(block)}};
 	// LCOV_EXCL_BR_STOP
+} // LCOV_EXCL_BR_LINE
+
+// `name`, another name for the array at `location`, keeps the lengths that
+// location keeps for its levels sized at run time, as a declaration would.
+json PlnSemanticAnalyzer::bindRunLens(const string& name, const json& location)
+{
+	json decls = json::array();
+	const json& at = location["expr-type"] == "addr-of" ? location["object"] : location;
+	const json u64 = {{"type-kind","prim"},{"type-name","uint64"}};
+	size_t k = 0;
+	for (const json* t = &at["value-type"]; isArrLevel(*t); t = &(*t)["base-type"], k++) {
+		if (!t->value("run-size", false)) continue;
+		auto [root, depth] = arrRoot(at);
+		string lenName = "__" + name + "_d" + to_string(k);
+		declareVar(lenName, u64);
+		decls.push_back({{"stmt-type","var-decl"},
+		                 {"vars",json::array({{{"name",lenName},{"var-type",u64},{"init",runtimeLen(*root, depth + k)}}})}});
+	}
+	return decls;
 } // LCOV_EXCL_BR_LINE
 
 json PlnSemanticAnalyzer::sa_break_stmt(const json& stmt)

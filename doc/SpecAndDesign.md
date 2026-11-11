@@ -15,7 +15,8 @@ features any library type can use, not as special cases for `utf8` (3.8):
 
 - A string literal converts to a struct through the function named like the type.
 - A type defines comparison (`==`, `<`), appending (`<<`) and copying into an existing value (`->`).
-- Functions take default arguments and variadic arguments.
+- Functions take default arguments and variadic arguments; `len` and `for` read the length of an
+  array sized at run time.
 - A type defines how `for` iterates over it.
 - A character literal may be any Unicode code point, written as is or as `\u{...}`.
 - A type's fields can be hidden or read-only outside its module, and exported types of different
@@ -857,7 +858,9 @@ palan-sa marks an expression whose value has, or needs, an owner with a `categor
   free or a copy uses the lengths of the owner receiving or releasing the value, and a size
   known only at run time on either side matches any size; that the sizes agree is the
   programmer's responsibility. A borrowed `[]T` has no lengths to copy by, and a signature's
-  sizes stay constant.
+  sizes stay constant. Until 0.2.4 `len` and `for` rejected such an array; from 0.2.5 they read
+  the same lengths (`len(@a)` of a local `[n]int32 a`, `for copy x in m[i]`), which a variadic
+  parameter (3.8) also keeps.
 - `T b <<= v;` initializes `b` with what `v` owns: an owned `v` (set to NULL) or an
   `owner-view` moves into it, and a call result is taken over as with `=`.
 - `v -> target` with an owned array or struct `target` and a non-expiring `v` copies the contents

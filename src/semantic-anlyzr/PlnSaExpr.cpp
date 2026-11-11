@@ -395,10 +395,9 @@ json PlnSemanticAnalyzer::foldConstExpr(const json& expr)
 	return lit;
 } // LCOV_EXCL_BR_LINE
 
-// `len(@a)`, `len(h)` of a borrow h, or `a -> len()` of an array whose size
-// is a constant: like sizeof, it needs only a's type, so an `a` with a call to
-// evaluate is left to the call's analysis.
-optional<int64_t> PlnSemanticAnalyzer::constArrLen(const json& expr)
+// The array of `len(@a)`, `len(h)` of a borrow h, or `a -> len()`, when it is a
+// location: an `a` with a call to evaluate is left to the call's analysis.
+const json* PlnSemanticAnalyzer::lenOperand(const json& expr)
 {
 	auto lenCall = [&](const json& call, size_t argc) {
 		return call.value("expr-type", "") == "call" && call["name"] == "len"
@@ -413,11 +412,11 @@ optional<int64_t> PlnSemanticAnalyzer::constArrLen(const json& expr)
 	const json* arr;
 	bool borrowed = true;
 	if (expr["expr-type"] == "call") {
-		if (!lenCall(expr, 1)) return nullopt;
+		if (!lenCall(expr, 1)) return nullptr;
 		arr = &expr["args"][0];
 		borrowed = arr->value("expr-type", "") == "addr-of" || namesArrBorrow(*arr);
 	} else {
-		if (!lenCall(expr["call"], 0)) return nullopt;
+		if (!lenCall(expr["call"], 0)) return nullptr;
 		arr = &expr["value"];
 	}
 	if (arr->value("expr-type", "") == "addr-of") {
@@ -428,18 +427,35 @@ optional<int64_t> PlnSemanticAnalyzer::constArrLen(const json& expr)
 			exit(1);
 		}
 	}
-	if (!isLocationExpr(*arr) || hasCall(*arr)) return nullopt;
-	json vt = operandValueType(*arr);
-	if (!isArrLevel(vt)) return nullopt;
+	if (!isLocationExpr(*arr) || hasCall(*arr)) return nullptr;
+	if (!isArrLevel(operandValueType(*arr))) return nullptr;
 	// Without '@' it is a call; one of the user's functions may take the array.
 	if (!borrowed) {
 		vector<Callee> cands = findCallees("len");
 		if (any_of(cands.begin(), cands.end(), [](const Callee& c) { return !(*c.def).value("inline", false); }))
-			return nullopt;
+			return nullptr;
 		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_ArrLenNeedsAddrOf) << endl;
 		exit(1);
 	}
+	return arr;
+}
+
+// Like sizeof, a constant length needs only the array's type.
+optional<int64_t> PlnSemanticAnalyzer::constArrLen(const json& expr)
+{
+	const json* arr = lenOperand(expr);
+	if (!arr) return nullopt;
+	json vt = operandValueType(*arr);
+	if (vt.value("run-size", false)) return nullopt;
 	return constArrSizeOrExit(vt, expr);
+}
+
+// A length known only at run time is read where the array keeps it.
+json PlnSemanticAnalyzer::runtimeArrLen(const json& expr)
+{
+	const json* arr = lenOperand(expr);
+	if (!arr || !operandValueType(*arr).value("run-size", false)) return json();
+	return arrLenOf(sa_expression(*arr), expr);
 }
 
 int64_t PlnSemanticAnalyzer::constArrSizeOrExit(const json& arrType, const json& locNode)
@@ -456,6 +472,11 @@ json PlnSemanticAnalyzer::arrLenOf(const json& saArr, const json& locNode)
 {
 	const json& vt = saArr["value-type"];
 	if (isVarrPntr(vt)) return varrLen(saArr);
+	if (vt.value("run-size", false)) {
+		const json& location = saArr["expr-type"] == "addr-of" ? saArr["object"] : saArr;
+		auto [root, depth] = arrRoot(location);
+		return wrapConvert(runtimeLen(*root, depth), {{"type-kind","prim"},{"type-name","int64"}}); // LCOV_EXCL_BR_LINE
+	}
 	return lenLit(constArrSizeOrExit(vt, locNode));
 }
 
@@ -778,6 +799,8 @@ json PlnSemanticAnalyzer::sa_expr_maybe_void(const json &rawExpr, const PlnType*
 		return sa_expr_cast(expr);
 
 	} else if (expr_type == "call") {
+		json len = runtimeArrLen(expr);
+		if (!len.is_null()) return len;
 		const string& callName = expr["name"].get<string>();
 		if (findCallees(callName).empty()) {
 			json cast = aliasCast(expr, callName);
@@ -810,6 +833,8 @@ json PlnSemanticAnalyzer::sa_expr_maybe_void(const json &rawExpr, const PlnType*
 		return sa_expr_call_ptr(expr, move(callee), funcName);
 
 	} else if (expr_type == "chain-call") {
+		json len = runtimeArrLen(expr);
+		if (!len.is_null()) return len;
 		return sa_expr_chain_call(expr);
 
 	} else if (expr_type == "transfer") {

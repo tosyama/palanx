@@ -1149,8 +1149,12 @@ int64 n = 100;
 [n]int32 b <<= a;        // a is now NULL
 [n]int32 c;
 b -> c;                  // copies n elements
+int64 len_a = len(@a);   // n
+for copy x in c { }      // n times
 ```
 
+- `len` and `for` read the size kept, as for a row of the variable (`len(@m[0])`,
+  `for copy x in m[0]`).
 - A `[]T` parameter keeps no size, so it cannot be copied from into an array, and a `[+]T`
   cannot copy from an array whose size is known only at run time.
 - A parameter's or return value's sizes are known at compile time.
@@ -1661,8 +1665,9 @@ printf("\n");                // 1 2 3
   a constant no less than the literal's length.
 - `$[+]T v` keeps the array's header in the stack frame; its elements are on the heap either way.
 - `len` also takes an array of constant size (`len(@a)` for `[4]int32 a` is 4), and is then a
-  constant: `const N = len(@a);`. An array whose size is known only at run time, or a `[]T`, has
-  no length to give and is a compile error.
+  constant: `const N = len(@a);`. For an array whose size is known only at run time it reads the
+  size the variable keeps (see [Sizes Known Only at Run Time](#sizes-known-only-at-run-time)),
+  which is not a constant. A `[]T` has no length to give and is a compile error.
 - A function with the same parameter types as a built-in one is a compile error.
 
 **Borrowing and passing.** `@[+]T` and `@![+]T` borrow the array, as for other arrays (see
