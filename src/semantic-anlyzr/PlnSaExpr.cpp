@@ -314,10 +314,28 @@ void PlnSemanticAnalyzer::checkIntLiteralRange(const json& lit)
 {
 	const PlnType* t = registry_.fromJson(lit["value-type"]);
 	if (!isIntegerPrim(t)) return;
+	rejectWideCharLit(lit, lit["value-type"]);
 	string value = lit["value"];
 	if (intLiteralFits(value, static_cast<const PrimType*>(t)->name)) return;
 	cerr << locPrefix(lit) << PlnSaMessage::getMessage(E_IntLiteralOutOfRange,
 		value, typeDisplayName(lit["value-type"])) << endl;
+	exit(1);
+}
+
+// A character of 128 or more is never a byte of UTF-8 text, so a narrower
+// type would silently hold, or compare against, something no text has.
+void PlnSemanticAnalyzer::rejectWideCharLit(const json& lit, const json& type)
+{
+	if (!lit.value("char", false) || stol(lit["value"].get<string>()) < 128) return;
+	const PlnType* t = registry_.fromJson(type);
+	if (!isIntegerPrim(t)) return;
+	auto pn = static_cast<const PrimType*>(t)->name;
+	if (pn != PrimType::Name::Int8 && pn != PrimType::Name::Int16 && pn != PrimType::Name::Uint8
+	    && pn != PrimType::Name::Uint16 && pn != PrimType::Name::Bool)
+		return;
+	char cp[16];
+	snprintf(cp, sizeof(cp), "U+%04lX", stol(lit["value"].get<string>()));
+	cerr << locPrefix(lit) << PlnSaMessage::getMessage(E_WideCharLitNarrowType, cp, typeDisplayName(type)) << endl;
 	exit(1);
 }
 
@@ -636,10 +654,12 @@ json PlnSemanticAnalyzer::sa_expr_maybe_void(const json &rawExpr, const PlnType*
 		if (expr.contains("value-type")) {
 			resolveCTypeRefs(sa_expr["value-type"]);
 		} else {
+			// A character literal without a type to take is an int, as in C.
 			if (expectedType && expectedType->kind == PlnType::Kind::Prim)
 				sa_expr["value-type"] = registry_.toJson(expectedType);
 			else
-				sa_expr["value-type"] = registry_.toJson(registry_.prim(PrimType::Name::Int64));
+				sa_expr["value-type"] = registry_.toJson(registry_.prim(
+					expr.value("char", false) ? PrimType::Name::Int32 : PrimType::Name::Int64));
 			// A float constant has exactly one form, lit-flo, so codegen never
 			// sees an integer literal that must be materialized as a float.
 			if (isFloatPrim(expectedType))
@@ -935,8 +955,14 @@ json PlnSemanticAnalyzer::sa_expr_cmp(const json& expr)
 	if (structOperand && !nullOperand)
 		return sa_compare_call(expr, probes);
 
-	json left  = promoteOperand(probes[0].is_null() ? sa_expression(expr["left"]) : move(probes[0]));
-	json right = promoteOperand(probes[1].is_null() ? sa_expression(expr["right"]) : move(probes[1]));
+	json left  = probes[0].is_null() ? sa_expression(expr["left"]) : move(probes[0]);
+	json right = probes[1].is_null() ? sa_expression(expr["right"]) : move(probes[1]);
+	// A literal here takes no type from the other operand, so a narrow one
+	// is checked against the literal directly.
+	rejectWideCharLit(left, right["value-type"]);
+	rejectWideCharLit(right, left["value-type"]);
+	left  = promoteOperand(move(left));
+	right = promoteOperand(move(right));
 	const PlnType* leftType  = registry_.fromJson(left["value-type"]);
 	const PlnType* rightType = registry_.fromJson(right["value-type"]);
 	// A pointer pair (usualArithConv returns nullptr) is left unconverted --

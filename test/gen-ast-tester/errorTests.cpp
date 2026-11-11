@@ -248,14 +248,36 @@ TEST(gen_ast_error, invalid_char_literal) {
 	cleanTestEnv();
 	const char* cases[][2] = {
 		{"error_009_char_literal_empty.pa", ":2:11: error: Invalid character literal ''."},
-		{"error_010_char_literal_multi.pa", ":2:11: error: Invalid character literal 'ab'."},
+		{"error_010_char_literal_multi.pa",
+		 ":2:11: error: Character literal 'ab' holds more than one code point; write it as a string literal."},
 		{"error_011_char_literal_escape.pa", ":2:11: error: Invalid character literal '\\q'."},
-		{"error_012_char_literal_nonascii.pa", ":2:11: error: Invalid character literal '\xC3\xA9'."},
+		{"error_012_char_literal_invalid_utf8.pa",
+		 ":2:11: error: Character literal is not valid UTF-8; write bytes in a string literal with '\\xHH'."},
+		{"error_028_char_literal_combining.pa",
+		 ":2:11: error: Character literal 'e\xCC\x81' holds more than one code point; write it as a string literal."},
 	};
 	for (auto& c : cases) {
 		string out = execTestCommand(string("palan-gen-ast ../test/testdata/gen-ast/") + c[0]);
 		EXPECT_EQ(out.rfind("return1::", 0), 0u) << out;
 		EXPECT_NE(out.find(c[1]), string::npos) << out;
+	}
+}
+
+TEST(gen_ast_error, invalid_code_point_escape) {
+	const string rule = "': '\\u{X}' takes 1 to 6 hex digits, up to 10FFFF and not a surrogate (D800 to DFFF).";
+	const pair<string, string> cases[] = {
+		{"error_029_code_point_surrogate.pa", ":1:11: error: Invalid code point escape '\\u{D800}" + rule},
+		{"error_030_code_point_too_large.pa", ":1:11: error: Invalid code point escape '\\u{110000}" + rule},
+		{"error_031_code_point_no_digits.pa", ":1:11: error: Invalid code point escape '\\u{}" + rule},
+		{"error_032_code_point_seven_digits.pa", ":1:11: error: Invalid code point escape '\\u{0000041}" + rule},
+		{"error_033_code_point_unclosed.pa", ":1:11: error: Invalid code point escape '\\u{41" + rule},
+		{"error_034_code_point_no_brace.pa", ":1:11: error: Invalid code point escape '\\u" + rule},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string out = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/" + file);
+		EXPECT_EQ(out.rfind("return1::", 0), 0u) << out;
+		EXPECT_NE(out.find(expected), string::npos) << out;
 	}
 }
 

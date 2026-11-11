@@ -4,6 +4,7 @@
 /// @copyright 2026 YAMAGUCHI Toshinobu
 
 #include <algorithm>
+#include <cstdio>
 #include <map>
 #include <optional>
 #include <set>
@@ -106,6 +107,12 @@ string Writer::expr(const json& e) const
 	if (kind == "lit-int") {
 		bool isBool = e.contains("value-type") && e["value-type"].value("type-name", "") == "bool";
 		if (isBool) return e["value"] == "1" ? "true" : "false";
+		// Written as a character, it keeps the type restriction a character literal has.
+		if (e.value("char", false)) {
+			char esc[16];
+			snprintf(esc, sizeof(esc), "'\\u{%lX}'", stol(e["value"].get<string>()));
+			return string(esc);
+		}
 		return e["value"];
 	}
 	if (kind == "lit-uint") return e["value"].get<string>() + "u";

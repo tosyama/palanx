@@ -112,6 +112,18 @@ string PlnGenAstMessage::getMessage(PlnMessageCode msg_code, string arg1, string
 			BOOST_ASSERT(arg1 != "\x01");
 			return "Expected 'copy', '@' or '@!' before the loop variable, but found '" + arg1 + "'.";
 
+		case E_CharLitSeveralCodePoints:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "Character literal " + arg1 + " holds more than one code point; write it as a string literal.";
+
+		case E_CharLitInvalidUtf8:
+			return "Character literal is not valid UTF-8; write bytes in a string literal with '\\xHH'.";
+
+		case E_InvalidCodePointEscape:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "Invalid code point escape '" + arg1 + "': '\\u{X}' takes 1 to 6 hex digits, "
+			       "up to 10FFFF and not a surrogate (D800 to DFFF).";
+
 		case E_DerivedCompareFunc:
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");

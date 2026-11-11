@@ -88,10 +88,17 @@ rejected. A minus sign directly on an integer literal is part of the value, so `
 is accepted. A constant expression (see [Constant Declarations](#constant-declarations)) is
 folded first, so its result is what must fit: `int8 x = 100 + 100;` is rejected.
 
-**Character literals:** `'a'` is an integer literal whose value is the character's ASCII code, so
-it follows the same rules as any other integer literal (`int8 c = 'a';` is accepted). Only
-printable ASCII characters and the escapes `\n` `\t` `\r` `\0` `\\` `\'` are allowed; an empty,
-multi-character, or non-ASCII literal is a compile error.
+**Character literals:** `'a'` is an integer literal whose value is the character's Unicode code
+point (`'a'` is 97, `'é'` is 233, `'😀'` is 128512), written as is or as `\u{X}` (`'\u{20AC}'` is
+`'€'`). The escapes `\n` `\t` `\r` `\0` `\\` `\'` are also allowed.
+
+- An ASCII character literal follows the rules of any other integer literal (`int8 c = 'a';`).
+- One of 128 or more takes only an integer type of 32 bits or more: `uint8 b = 'é';` and
+  `buf[i] == 'é'` for a `[]uint8 buf` are compile errors, since no byte of UTF-8 text holds it.
+- With no type to take (a C variadic argument, a comparison of two literals), it is an `int32`.
+- A literal holds one code point. An empty one, one of several code points (`e` followed by a
+  combining accent, a flag), or one that is not valid UTF-8 is a compile error; write a string
+  literal instead.
 
 **String literals:** `"..."` with the following escape sequences:
 
@@ -104,9 +111,11 @@ multi-character, or non-ASCII literal is a compile error.
 | `\\`   | backslash |
 | `\"`   | double quote |
 | `\xHH` | hex byte |
+| `\u{X}` | the UTF-8 bytes of code point `X` (1 to 6 hex digits; `"\u{20AC}"` is `E2 82 AC`) |
 
 A string literal holds bytes, not checked as UTF-8: `\xHH` may give any byte, and a byte written
-in the source is taken as it is.
+in the source is taken as it is. `\u{X}` (in a character literal too) must name a code point up to
+`10FFFF` that is not a surrogate (`D800` to `DFFF`).
 
 **Comments:** `// line comment`
 

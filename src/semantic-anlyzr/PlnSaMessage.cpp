@@ -392,6 +392,12 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			BOOST_ASSERT(arg2 != "\x01");
 			return "Integer literal '" + arg1 + "' is out of range for type '" + arg2 + "'.";
 
+		case E_WideCharLitNarrowType:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "character literal " + arg1 + " needs an integer type of 32 bits or more, not '" + arg2
+			       + "': no byte of UTF-8 text holds it.";
+
 		case E_ArrLitContext:
 			return "an array literal can only be used as an array or struct variable's initializer, "
 			       "the source of '->' to a struct or an array, the value returned from a function returning a struct, "

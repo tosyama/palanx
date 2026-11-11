@@ -772,7 +772,8 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
 - value-type - Resolved Variable type object (same structure as var-type in ASTSpec.md).
   Present on all expression kinds except bare call with no return type.
   - lit-int: the expected type when used in a typed context (e.g. `int32 x = 10;` → int32);
-    defaults to int64 when no expected type is available. Exception: an AST `lit-int` that
+    defaults to int64 when no expected type is available (int32 for a character literal, one with
+    `char`). Exception: an AST `lit-int` that
     already carries a `value-type` (ASTSpec.md's `lit-int` entry — `true`/`false`, or gen-ast's
     in-place substitute for a cinclude'd macro-constant reference) keeps that type as-is; the
     context's expected type never overrides it, since it was fixed by the literal or the C
@@ -789,6 +790,10 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
     is rejected with `E_IntLiteralOutOfRange`. A literal operand of a binary operator is typed only
     once -- from the other operand's type when that has one, else from the expected type -- so the
     check never runs against a provisional type. For `bool` the range is 0..1.
+  - Character literal of 128 or more (`char`): an integer type under 32 bits (`int8` `int16`
+    `uint8` `uint16` `bool`) is rejected with `E_WideCharLitNarrowType`, both where the literal
+    takes the type and where it is compared with an operand of that type (a comparison types no
+    literal by the other operand). `char` stays on the node in sa.json; codegen ignores it.
   - lit-flo: adopts flo32 or flo64 when used in a float-typed context (e.g. `flo32 y = 1.5;` → flo32);
     defaults to flo64 when no expected float type is available
   - lit-str: {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}

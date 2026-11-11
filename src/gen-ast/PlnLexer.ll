@@ -11,6 +11,7 @@
 #include "PlnParser.h"
 #include "PlnLexer.h"
 #include "PlnGenAstMessage.h"
+#include "../common/PlnStrLit.h"
 
 #include <boost/assert.hpp>
 
@@ -23,6 +24,7 @@ using namespace palan;
 
 enum {
 	INT =	PlnParser::token::INT,
+	CHAR_LIT =	PlnParser::token::CHAR_LIT,
 	UINT =	PlnParser::token::UINT,
 	ID =	PlnParser::token::ID,
 	STRING =	PlnParser::token::STRING,
@@ -70,8 +72,9 @@ enum {
 	OPE_OR =	PlnParser::token::OPE_OR
 };
 
-static string& unescape(string& str);
-static int charLiteralCode(const char* text, int len);
+struct LitError { PlnMessageCode code; string arg; };
+static bool unescape(string& str, LitError& err);
+static long charLiteralCode(const string& text, LitError& err);
 
 PlnLexer::PlnLexer(const string& input_file)
 	: inputFile(input_file), inStream(input_file), yyFlexLexer()
@@ -173,17 +176,21 @@ COMMENT1	\/\/[^\n]*\n
 	}
 <INITIAL>{STRING}	{
 		string str(yytext+1, yyleng-2);
-		lval.build<string>() = move(unescape(str));
+		LitError err;
+		if (!unescape(str, err))
+			throw runtime_error(PlnGenAstMessage::locatedError(inputFile,
+				loc.begin.line, loc.begin.column, PlnGenAstMessage::getMessage(err.code, err.arg)));
+		lval.build<string>() = move(str);
 		return STRING;
 	}
 <INITIAL>{CHAR}	{
-		int code = charLiteralCode(yytext, yyleng);
+		LitError err;
+		long code = charLiteralCode(string(yytext, yyleng), err);
 		if (code < 0)
 			throw runtime_error(PlnGenAstMessage::locatedError(inputFile,
-				loc.begin.line, loc.begin.column,
-				PlnGenAstMessage::getMessage(E_InvalidCharLiteral, yytext)));
+				loc.begin.line, loc.begin.column, PlnGenAstMessage::getMessage(err.code, err.arg)));
 		lval.build<string>() = to_string(code);
-		return INT;
+		return CHAR_LIT;
 	}
 <*>{COMMENT1}	{ loc.lines(); loc.step(); }
 <*>{DEMILITER} { return yytext[0]; }
@@ -230,53 +237,100 @@ static int hexc(int c)
 	return -1;
 }
 
-static string& unescape(string& str)
+// `\u{X}` at s[i] (the backslash): its code point, with i moved to its last
+// character; -1 when it is malformed or names no Unicode scalar value.
+static long codePointEscape(const string& s, size_t& i, LitError& err)
 {
-	int sz = str.size();
-	int d=0;
-	for (int s=0; s<sz; ++s,++d) {
-		if (str[s] != '\\') {
-			str[d] = str[s];
-			continue;
-		}
-
-		++s;
-
-		switch(str[s]) {
-			case 'a': str[d] = '\a'; break;
-			case 'b': str[d] = '\b'; break;
-			case 'n': str[d] = '\n'; break;
-			case 'r': str[d] = '\r'; break;
-			case 't': str[d] = '\t'; break;
-			case 'v': str[d] = '\v'; break;
-			case '0': str[d] = '\0'; break;
-
-			case 'x': {
-						  int h1 = hexc(str[s+1]), h2 = hexc(str[s+2]);
-						  if (h1 >= 0 && h2 >= 0) {
-							  str[d] = 16*h1 + h2; s+=2;
-						  } else {
-							  str[d] = 'x';
-						  }
-					  } break;
-
-			default: str[d] = str[s];
-		} /* switch */
+	size_t start = i;
+	size_t k = i + 2;
+	long cp = 0;
+	int digits = 0;
+	bool open = k - 1 < s.size() && s[k - 1] == 'u' && k < s.size() && s[k] == '{';
+	if (open) {
+		for (++k; k < s.size() && hexc(s[k]) >= 0; ++k, ++digits)
+			if (digits < 7) cp = cp * 16 + hexc(s[k]);
 	}
-	str.resize(d);
-	return str;
+	bool closed = open && k < s.size() && s[k] == '}';
+	if (!closed || digits < 1 || digits > 6 || cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) {
+		size_t end = closed ? k + 1 : min(k, s.size());
+		err = {E_InvalidCodePointEscape, s.substr(start, max(end, start + 2) - start)};
+		return -1;
+	}
+	i = k;
+	return cp;
 }
 
-static int charLiteralCode(const char* text, int len)
+static void appendUtf8(string& out, long cp)
 {
-	// text includes the surrounding quotes.
-	if (len == 3) {
-		unsigned char c = text[1];
-		if (c < 0x20 || c > 0x7e) return -1;
-		return c;
+	if (cp < 0x80) {
+		out += char(cp);
+	} else if (cp < 0x800) {
+		out += char(0xC0 | (cp >> 6));
+		out += char(0x80 | (cp & 0x3F));
+	} else if (cp < 0x10000) {
+		out += char(0xE0 | (cp >> 12));
+		out += char(0x80 | ((cp >> 6) & 0x3F));
+		out += char(0x80 | (cp & 0x3F));
+	} else {
+		out += char(0xF0 | (cp >> 18));
+		out += char(0x80 | ((cp >> 12) & 0x3F));
+		out += char(0x80 | ((cp >> 6) & 0x3F));
+		out += char(0x80 | (cp & 0x3F));
 	}
-	if (len == 4 && text[1] == '\\') {
-		switch (text[2]) {
+}
+
+static bool unescape(string& str, LitError& err)
+{
+	string out;
+	for (size_t s = 0; s < str.size(); ++s) {
+		if (str[s] != '\\') {
+			out += str[s];
+			continue;
+		}
+		if (str[s + 1] == 'u') {
+			long cp = codePointEscape(str, s, err);
+			if (cp < 0) return false;
+			appendUtf8(out, cp);
+			continue;
+		}
+		++s;
+		switch (str[s]) {
+			case 'a': out += '\a'; break;
+			case 'b': out += '\b'; break;
+			case 'n': out += '\n'; break;
+			case 'r': out += '\r'; break;
+			case 't': out += '\t'; break;
+			case 'v': out += '\v'; break;
+			case '0': out += '\0'; break;
+
+			case 'x': {
+				int h1 = hexc(str[s+1]), h2 = hexc(str[s+2]);
+				if (h1 >= 0 && h2 >= 0) {
+					out += char(16*h1 + h2); s+=2;
+				} else {
+					out += 'x';
+				}
+			} break;
+
+			default: out += str[s];
+		}
+	}
+	str = move(out);
+	return true;
+}
+
+// One character of a character literal's text at text[i], moving i past it.
+static long charLiteralUnit(const string& text, size_t& i, LitError& err)
+{
+	unsigned char c = text[i];
+	if (c == '\\') {
+		if (text[i + 1] == 'u') {
+			long cp = codePointEscape(text, i, err);
+			++i;
+			return cp;
+		}
+		i += 2;
+		switch (text[i - 1]) {
 			case 'n': return '\n';
 			case 't': return '\t';
 			case 'r': return '\r';
@@ -284,6 +338,47 @@ static int charLiteralCode(const char* text, int len)
 			case '\\': return '\\';
 			case '\'': return '\'';
 		}
+		err = {E_InvalidCharLiteral, ""};
+		return -1;
 	}
-	return -1;
+	if (c < 0x80) {
+		++i;
+		if (c < 0x20 || c > 0x7e) {
+			err = {E_InvalidCharLiteral, ""};
+			return -1;
+		}
+		return c;
+	}
+	size_t n = utf8SeqAt(text, i);
+	if (n == 0) {
+		err = {E_CharLitInvalidUtf8, ""};
+		return -1;
+	}
+	long cp = c & (0x7F >> n);
+	for (size_t k = 1; k < n; ++k)
+		cp = cp << 6 | (text[i + k] & 0x3F);
+	i += n;
+	return cp;
+}
+
+// text includes the surrounding quotes.
+static long charLiteralCode(const string& text, LitError& err)
+{
+	string body = text.substr(1, text.size() - 2);
+	size_t i = 0;
+	long code = -1;
+	if (body.empty()) err = {E_InvalidCharLiteral, ""};
+	else code = charLiteralUnit(body, i, err);
+	// The rest is read only to tell bytes that are no text from several characters.
+	bool several = false;
+	while (code >= 0 && i < body.size()) {
+		if (charLiteralUnit(body, i, err) < 0) code = -1;
+		several = true;
+	}
+	if (code >= 0 && several) {
+		err = {E_CharLitSeveralCodePoints, text};
+		code = -1;
+	}
+	if (code < 0 && err.code == E_InvalidCharLiteral) err.arg = text;
+	return code;
 }

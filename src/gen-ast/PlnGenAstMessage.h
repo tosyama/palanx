@@ -34,6 +34,9 @@ enum PlnMessageCode {
 	E_LibpathInInterface,
 	E_BadLibraryImport,		// the path as written
 	E_DerivedCompareFunc,	// operator, the operator it is derived from
+	E_CharLitSeveralCodePoints,	// literal text
+	E_CharLitInvalidUtf8,
+	E_InvalidCodePointEscape,	// the escape as written
 };
 
 class PlnGenAstMessage

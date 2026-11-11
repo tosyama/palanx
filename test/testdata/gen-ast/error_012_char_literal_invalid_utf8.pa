@@ -1,0 +1,2 @@
+// Bytes that are not UTF-8 text are rejected.
+int32 c = 'Ã';

@@ -21,6 +21,12 @@ TEST(build_mgr, str_lit_bytes) {
 	ASSERT_EQ(output, "78 ff 79 00 7a 3\n5c 22 09 0d 01 e2 82 ac ff c3 a9 11\n");
 }
 
+TEST(build_mgr, code_point_literal) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/404_code_point_literal.pa");
+	ASSERT_EQ(output, "233 128512 8364\n\xE2\x82\xAC\xC3\xA9 3\n");
+}
+
 TEST(build_mgr, explicit_target) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan --target x86_64-linux-gnu ../test/testdata/build-mgr/001_helloworld.pa");

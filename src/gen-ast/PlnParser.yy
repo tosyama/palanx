@@ -289,6 +289,7 @@ struct BodyList {
 %define parse.error	verbose
 
 %token <string>	INT	"integer"
+%token <string>	CHAR_LIT	"character literal"
 %token <string>	UINT	"unsigned integer"
 %token <string>	FLO	"float"
 %token <string>	STRING	"string"
@@ -1086,6 +1087,8 @@ expression: term
 
 term: INT
 	{ $$ = {{"expr-type", "lit-int"}, {"value", move($1)}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
+	| CHAR_LIT
+	{ $$ = {{"expr-type", "lit-int"}, {"value", move($1)}, {"char", true}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| UINT
 	{ $$ = {{"expr-type", "lit-uint"}, {"value", move($1)}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| FLO

@@ -1,0 +1,6 @@
+cinclude <stdio.h>;
+cinclude <string.h>;
+int32 e = 'é';
+uint32 smile = '\u{1F600}';
+printf("%d %u %d\n", e, smile, '€');
+printf("%s %ld\n", "\u{20AC}\u{e9}", strlen("\u{20AC}"));

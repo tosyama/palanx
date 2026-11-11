@@ -420,6 +420,7 @@ class PlnSemanticAnalyzer {
 	json sa_expr_cmp(const json& expr);
 	json sa_compare_call(const json& expr, json probes[2]);
 	void checkIntLiteralRange(const json& lit);
+	void rejectWideCharLit(const json& lit, const json& type);
 	json sa_expr_call(const json& expr);
 	json sa_func_ref(const json& expr, const PlnType* expectedType);
 	string funcRefType(const Callee& callee, json& funcPtr) const;

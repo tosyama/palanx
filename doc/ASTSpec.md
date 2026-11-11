@@ -556,8 +556,10 @@ Expression model
       are, `\"`, `\\`, `\n`, `\t`, `\r`, and every other byte as `\xHH` (upper-case hex), so
       `"x\xffy"` and the same bytes written raw are both `x\xFFy`
   2. lit-int - Signed integer literal (corresponds to INT token). A character literal (`'a'`)
-    is also emitted as a `lit-int` holding its ASCII code, with no `value-type`; `true`/`false`
-    are emitted as a `bool`-typed `lit-int`
+    is also emitted as a `lit-int` holding its Unicode code point, with no `value-type`;
+    `true`/`false` are emitted as a `bool`-typed `lit-int`
+    - char - `true` for a character literal (omitted otherwise): one of 128 or more takes only
+      an integer type of 32 bits or more, and one with no type to take is an `int32`
     - value\* - Decimal string, optionally with a leading `-` (e.g. "10", "-128"); a macro
       substitute's value may exceed int64 when its `value-type` is `uint64`
     - value-type - Variable type; present only for `true`/`false` (value `"1"`/`"0"`, value-type

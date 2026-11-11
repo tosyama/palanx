@@ -1405,6 +1405,22 @@ TEST(sa, operator_func_overload_arg)
 	ASSERT_EQ(names, vector<string>({gVec2, gVec2, "_331_operator_func_overload_arg..g.int32"}));
 }
 
+// A character literal of 128 or more takes an integer type of 32 bits or
+// more; an ASCII one also a byte, and one with no type to take is an int.
+TEST(sa, code_point_literal)
+{
+	cleanTestEnv();
+	json jout = written(run_sa("../test/testdata/sa/338_code_point_literal.pa"));
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	const char* types[] = {"int32", "uint32", "uint8", "int64"};
+	for (int i = 0; i < 4; i++)
+		ASSERT_EQ(stmts[i]["vars"][0]["init"]["value-type"]["type-name"], types[i]) << i;
+	const auto& args = stmts[4]["body"]["args"];
+	ASSERT_EQ(args[1]["value-type"]["type-name"], "int32");
+	ASSERT_EQ(args[2]["value-type"]["type-name"], "int32");
+}
+
 // '==' and '<' are called for struct operands; the other comparisons are
 // derived from them, and a comparison with NULL stays a pointer comparison.
 TEST(sa, compare_func)

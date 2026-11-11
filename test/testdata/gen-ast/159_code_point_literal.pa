@@ -1,0 +1,5 @@
+int32 e = 'é';
+int32 smile = '😀';
+int32 euro = '\u{20AC}';
+int32 a = '\u{41}';
+const S = "x\u{20AC}y\u{1F600}\u{0}";

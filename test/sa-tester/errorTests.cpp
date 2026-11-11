@@ -1448,6 +1448,10 @@ TEST(sa_error, give_and_take)
 		{"error_956_derived_compare_no_func.pa", ":4:14: error: No operator function '<' takes (ver, int64)."},
 		{"error_957_c_struct_ptr_compare.pa",
 		 ":2:13: error: No operator function '==' takes (@!_IO_FILE, @!_IO_FILE)."},
+		{"error_958_wide_char_uint8.pa", ":1:11: error: character literal U+00E9 needs an integer type of 32 bits or more, not 'uint8': no byte of UTF-8 text holds it."},
+		// A comparison types no literal by the other operand, so it is checked there.
+		{"error_959_wide_char_compare_byte.pa", ":1:48: error: character literal U+00E9 needs an integer type of 32 bits or more, not 'uint8': no byte of UTF-8 text holds it."},
+		{"error_960_wide_char_int16_arg.pa", ":2:3: error: character literal U+20AC needs an integer type of 32 bits or more, not 'int16': no byte of UTF-8 text holds it."},
 		{"error_924_keep_param_count_nested.pa",
 		 ":3:2: error: the cast's function type has 2 parameters, but '@func(int32)' has 1."},
 		{"error_925_given_twice.pa",

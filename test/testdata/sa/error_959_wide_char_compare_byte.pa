@@ -1,0 +1,1 @@
+func f([]uint8 buf) -> bool { return buf[0] == 'é'; }

@@ -1024,6 +1024,24 @@ TEST(gen_ast, char_literal) {
 		EXPECT_EQ(init["value"], expected[i]) << i;
 	}
 	ASSERT_EQ(stmts[0]["vars"][0]["init"]["loc"], json::parse("[1, 11, 1, 14]"));
+	ASSERT_EQ(stmts[0]["vars"][0]["init"]["char"], true);
+}
+
+// A character literal is the code point it holds, written as is or as '\u{X}';
+// in a string literal '\u{X}' writes the code point's UTF-8 bytes.
+TEST(gen_ast, code_point_literal) {
+	cleanTestEnv();
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/159_code_point_literal.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	auto& stmts = jout["ast"]["statements"];
+	const char* expected[] = {"233", "128512", "8364", "65"};
+	for (int i = 0; i < 4; i++) {
+		auto& init = stmts[i]["vars"][0]["init"];
+		EXPECT_EQ(init["value"], expected[i]) << i;
+		EXPECT_EQ(init["char"], true) << i;
+	}
+	ASSERT_EQ(stmts[4]["value"]["value"], "x€y😀\\x00");
 }
 
 TEST(gen_ast, bool_literal) {
