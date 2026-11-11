@@ -553,6 +553,10 @@ such a function can be declared and called (`utf8(x)`) today.
   was not meant to become text.
 - It is used only where it can be called with the literal alone: its other parameters have
   defaults or are variadic.
+- The functions are those visible by `T`'s name where the literal is, including under any alias:
+  as for an operator function, an alias does not hide them, since a conversion is never written
+  qualified. Being visible is what decides it, so a module may add one for a type it imports, and
+  more than one fitting is an ambiguity error.
 - A literal converts wherever the type it must have is a struct `T` or a borrow `@T` of one: a
   variable's initializer, the source of `->`, an argument, `return`, an element of an array
   literal, a field of a struct literal, and an operand of an operator function. Not for `@!T`:

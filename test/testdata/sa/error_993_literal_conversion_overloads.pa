@@ -1,0 +1,7 @@
+type text { [+]uint8 b; };
+func text(@[]uint8 cs) -> text t { }
+type other { int32 x; };
+func other(@[]uint8 cs) -> other o { }
+func f(@other o) { }
+func f(@text t) { }
+f("abc");

@@ -115,6 +115,13 @@ TEST(build_mgr, alias_import) {
 	ASSERT_EQ(output, "9\n8\n");
 }
 
+// An alias does not hide a conversion, which is never written qualified.
+TEST(build_mgr, literal_conversion_alias) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/409_literal_conversion_alias.pa");
+	ASSERT_EQ(output, "alias\narg\n");
+}
+
 // An operator cannot be written qualified, so an alias import brings it
 // unqualified; a selective import names it.
 TEST(build_mgr, operator_func_import) {

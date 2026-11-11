@@ -1349,6 +1349,20 @@ it, the registry's function type compares it (so a C callback type never matches
   are released at exit by the array helper's `fini`, as a frame array's are, and the array itself
   cannot be moved or taken (E_TransferFromNonOwner).
 
+### String literal conversion
+
+A `lit-str` where the expected type is a struct `T` or `@T` (not `@!T`) is analyzed as the call
+`T(lit)` or `@T(lit)` written there, when a conversion function exists: one visible by `T`'s
+written name, unqualified or under any alias, returning `T` and fitting a call with the literal as
+its only argument (its first parameter not a struct). The output has no node of its own: the call
+is placed as any call returning a struct is at that position (`ret-dest` into the variable, a
+`__cpy_<n>` copied from, a `__tmp_<n>` or `__arg_<n>` `temp`). With no such function the literal
+is checked as before. Several such functions make the call E_AmbiguousCall. Borrowing it anywhere
+but as an argument or operand (`@T` variable, field, return) is E_ConvertedLiteralToBorrow. In overload
+resolution a literal fits a parameter it would convert for only as a last resort: such candidates
+are ranked, by the same rules and with the converted argument exact, only when no candidate fits
+without a conversion.
+
 ### Chained calls
 
 An AST `chain-call` `v -> f(args)` is rewritten where SA takes it in (an expression, or the value

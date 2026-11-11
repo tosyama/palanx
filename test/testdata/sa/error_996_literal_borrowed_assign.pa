@@ -1,0 +1,5 @@
+type text { [+]uint8 b; };
+func text(@[]uint8 cs) -> text t { }
+text s;
+@text b = @s;
+"abc" -> b;

@@ -120,6 +120,7 @@ enum PlnSaMessageCode {
 	E_NamedRetInitOnStruct,	// arg1: return name
 	E_TransferToNonOwnedField,	// arg1: field name
 	E_ExpiringStructToBorrow,
+	E_ConvertedLiteralToBorrow,	// arg1: type
 	E_TransferFromNonOwner,	// arg1: operator
 	E_TransferNotArg,
 	E_TransferToParam,	// arg1: parameter, arg2: function
@@ -218,6 +219,7 @@ public:
 	// The program-wide name of an unexported struct/enum, or one declared in
 	// a block. A message shows it as written.
 	static string localTypeName(const string& moduleId, int seq, const string& name);
+	static string writtenTypeName(const string& typeName);
 private:
 	static string format(PlnSaMessageCode msg_code, string arg1, string arg2, string arg3);
 };

@@ -29,10 +29,20 @@ string PlnSaMessage::localTypeName(const string& moduleId, int seq, const string
 	return localTypePrefix + string(hex) + "_" + (seq ? to_string(seq) + "_" : "") + name;
 }
 
+static const regex& localTypePart()
+{
+	static const regex part(string(localTypePrefix) + "[0-9a-f]{16}_([0-9]+_)?");
+	return part;
+}
+
+string PlnSaMessage::writtenTypeName(const string& typeName)
+{
+	return regex_replace(typeName, localTypePart(), "");
+}
+
 string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string arg2, string arg3)
 {
-	static const regex localTypePart(string(localTypePrefix) + "[0-9a-f]{16}_([0-9]+_)?");
-	return regex_replace(format(msg_code, arg1, arg2, arg3), localTypePart, "");
+	return regex_replace(format(msg_code, arg1, arg2, arg3), localTypePart(), "");
 }
 
 string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2, string arg3)
@@ -622,6 +632,12 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			return "a struct or array returned by a call has no owner to borrow from; receive "
 			       "it into a variable with '->' and borrow it with '@name' or '@!name' (only a call "
 			       "argument can borrow it directly, as '@f()' or '@!f()').";
+
+		case E_ConvertedLiteralToBorrow:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "a string literal converted to '" + arg1 + "' is a temporary value with no owner to "
+			       "borrow from; declare a '" + arg1 + "' variable initialized with it and borrow that "
+			       "(only a call argument or an operator's operand can borrow it directly).";
 
 		case E_BorrowOfTempEscapes:
 			return "a borrow returned by a call given a temporary struct may point to that struct, "

@@ -199,6 +199,9 @@ ArgFit PlnSemanticAnalyzer::argFit(const CallArg& arg, const json& param, size_t
                                    bool isCFunc, const string& funcName)
 {
 	const json& paramVT = param["var-type"];
+	// A string literal never fits a struct parameter as it is.
+	if (arg.ast.value("expr-type", "") == "lit-str" && literalConversion(arg.ast, paramVT) != arg.ast)
+		return ArgFit::Converted;
 	auto fitOf = [&](const json& ast, const json& sa0) {
 		json sa = takesVarrData(sa0["value-type"], &paramVT, isCFunc) ? varrData(sa0) : sa0;
 		if (callArgMismatch(ast, sa, param, argIdx, isCFunc, funcName)) return ArgFit::None;
@@ -292,12 +295,16 @@ string PlnSemanticAnalyzer::calleesText(const string& name, const vector<Callee>
 
 // Among several functions of one name, the one every argument fits; when more
 // than one fits, the one every argument matches exactly, or else the one every
-// argument matches but for a writable borrow given as read-only.
+// argument matches but for a writable borrow given as read-only. Those needing
+// a string literal converted are only looked at when no other fits, and are
+// ranked the same way among themselves, a converted argument as exact.
 Callee PlnSemanticAnalyzer::selectCallee(const json& locNode, const string& name,
                                          const vector<Callee>& cands, const vector<CallArg>& args)
 {
-	vector<Callee> viable, exact, narrowed;
-	bool unranked = false;
+	struct Fitting {
+		vector<Callee> viable, exact, narrowed;
+		bool unranked = false;
+	} plain, converting;
 	for (auto& c : cands) {
 		const json& params = (*c.def)["parameters"];
 		const json* palanVariadic = palanVariadicParam(params);
@@ -307,21 +314,26 @@ Callee PlnSemanticAnalyzer::selectCallee(const json& locNode, const string& name
 		if (args.size() < required || (!variadic && args.size() > fixedCount)) continue;
 		json elemParam = palanVariadic ? variadicElemParam(*palanVariadic) : json();
 		size_t checked = palanVariadic ? args.size() : min(fixedCount, args.size());
-		bool fits = true;
+		bool fits = true, converts = false;
 		ArgFit worst = args.size() == fixedCount ? ArgFit::Exact : ArgFit::Viable;
 		for (size_t i = 0; i < checked && fits; i++) {
 			ArgFit f = argFit(args[i], i < fixedCount ? params[i] : elemParam, i, c.isC, name);
 			fits = f != ArgFit::None;
-			worst = min(worst, f);
+			converts = converts || f == ArgFit::Converted;
+			worst = min(worst, f == ArgFit::Converted ? ArgFit::Exact : f);
 		}
 		if (!fits) continue;
-		unranked = unranked || args.size() < fixedCount || palanVariadic;
-		viable.push_back(c);
-		if (worst == ArgFit::Exact) exact.push_back(c);
-		if (worst == ArgFit::Narrowed) narrowed.push_back(c);
+		Fitting& to = converts ? converting : plain;
+		to.unranked = to.unranked || args.size() < fixedCount || palanVariadic;
+		to.viable.push_back(c);
+		if (worst == ArgFit::Exact) to.exact.push_back(c);
+		if (worst == ArgFit::Narrowed) to.narrowed.push_back(c);
 	}
-	if (viable.size() == 1) return viable[0];
-	if (viable.empty()) {
+	// Converting is the last resort, so that adding a conversion function
+	// changes no call that resolves without one.
+	const Fitting& fit = plain.viable.empty() ? converting : plain;
+	if (fit.viable.size() == 1) return fit.viable[0];
+	if (fit.viable.empty()) {
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_NoMatchingFunc,
 			name, argTypesText(args), calleesText(name, cands)) << endl;
 		exit(1);
@@ -329,9 +341,10 @@ Callee PlnSemanticAnalyzer::selectCallee(const json& locNode, const string& name
 	// A candidate fitting through its defaults or its variadic parameter is not
 	// ranked against the others, so that a reader follows no further rule to
 	// tell which one is called.
-	if (!unranked && exact.size() == 1) return exact[0];
-	if (!unranked && exact.empty() && narrowed.size() == 1) return narrowed[0];
-	const vector<Callee>& best = unranked ? viable : !exact.empty() ? exact : !narrowed.empty() ? narrowed : viable;
+	if (!fit.unranked && fit.exact.size() == 1) return fit.exact[0];
+	if (!fit.unranked && fit.exact.empty() && fit.narrowed.size() == 1) return fit.narrowed[0];
+	const vector<Callee>& best = fit.unranked ? fit.viable : !fit.exact.empty() ? fit.exact
+	                           : !fit.narrowed.empty() ? fit.narrowed : fit.viable;
 	cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_AmbiguousCall,
 		name, calleesText(name, best)) << endl;
 	exit(1);
@@ -710,9 +723,71 @@ json PlnSemanticAnalyzer::sa_expr_call_ptr(const json& expr, json callee, const 
 	return sa_expr;
 } // LCOV_EXCL_BR_LINE
 
+// The functions converting a string literal to the struct `structVT` points
+// to: those visible by the type's name, under any alias since a conversion is
+// never written qualified, returning the struct and callable with the literal
+// alone.
+vector<Callee> PlnSemanticAnalyzer::literalConversions(const json& structVT)
+{
+	const json& structType = structVT["base-type"];
+	string name = PlnSaMessage::writtenTypeName(structType["type-name"].get<string>());
+	vector<Callee> found = findCallees(name);
+	for (auto it = importScopes.rbegin(); it != importScopes.rend(); ++it)
+		for (auto& [alias, bucket] : *it)
+			if (!alias.empty())
+				for (auto& c : findCalleesByAlias(alias, name)) found.push_back(c);
+
+	json lit = {{"expr-type", "lit-str"}}; // LCOV_EXCL_BR_LINE
+	vector<CallArg> litArgs{{lit, false, {{"expr-type", "lit-str"}, {"value-type", strLitType()}}}}; // LCOV_EXCL_BR_LINE
+	vector<Callee> convs;
+	set<string> seen;
+	for (auto& c : found) {
+		const json& def = *c.def;
+		const json& ret = def.value("ret-type", json::object());
+		const json& params = def["parameters"];
+		if (!isStructStorage(ret) || ret["base-type"] != structType || params.empty()) continue;
+		// A first parameter taking a struct would ask for a conversion of its own.
+		if (isStructPntr(params[0]["var-type"])) continue;
+		const json* variadic = palanVariadicParam(params);
+		size_t fixedCount = params.size() - (variadic ? 1 : 0);
+		if (requiredArgCount(params, fixedCount) > 1) continue;
+		const json& first = fixedCount ? params[0] : variadicElemParam(*variadic);
+		if (argFit(litArgs[0], first, 0, c.isC, name) == ArgFit::None) continue;
+		if (seen.insert(calleeKey(def, c.isC)).second) convs.push_back(c);
+	}
+	return convs;
+} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+
+// A string literal where a struct `T` or a borrow `@T` is expected, as the
+// call converting it would be written: `T(lit)` or `@T(lit)`. Anything else
+// is returned as it is.
+json PlnSemanticAnalyzer::literalConversion(const json& ast, const json& toVT)
+{
+	if (ast.value("expr-type", "") != "lit-str" || !isStructPntr(toVT) || toVT.value("mutable", false))
+		return ast;
+	json storage = toVT;
+	storage.erase("mutable");
+	if (literalConversions(storage).empty()) return ast;
+	// LCOV_EXCL_BR_START
+	json call = {{"expr-type", "call"},
+	             {"name", PlnSaMessage::writtenTypeName(storage["base-type"]["type-name"].get<string>())},
+	             {"args", json::array({ast})}, {"converts-to", storage}};
+	if (ast.contains("loc")) call["loc"] = ast["loc"];
+	if (isStructStorage(toVT)) return call;
+	json borrow = {{"expr-type", "addr-of"}, {"mutable", false}, {"object", move(call)}};
+	if (ast.contains("loc")) borrow["loc"] = ast["loc"];
+	return borrow;
+	// LCOV_EXCL_BR_STOP
+} // LCOV_EXCL_BR_LINE
+
 json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 {
 	const string& callName = expr["name"].get<string>();
+	if (expr.contains("converts-to")) {
+		json call = expr;
+		call.erase("converts-to");
+		return makeCall(call, literalConversions(expr["converts-to"]), callName);
+	}
 	if (findFuncPtrVar(expr)) {
 		json id = {{"expr-type", "id"}, {"name", expr["name"]}}; // LCOV_EXCL_BR_LINE
 		if (expr.contains("loc")) id["loc"] = expr["loc"];
@@ -995,6 +1070,10 @@ json PlnSemanticAnalyzer::bindCallArgs(const json& locNode, vector<CallArg>& arg
 		CallArg& ca = args[argIdx];
 		const json* param = argIdx < fixedCount ? &funcParams[argIdx] : palanVariadic ? &elemParam : nullptr;
 		const json* paramVT = param ? &(*param)["var-type"] : nullptr;
+		if (paramVT) {
+			json converted = literalConversion(ca.ast, *paramVT);
+			if (converted != ca.ast) ca = CallArg{move(converted), true};
+		}
 		bool probed = ca.chained && ca.probe.contains("expr-type");
 		json arg = ca.chained ? chainArg(ca.ast, paramVT, isCFunc, probed ? &ca.probe["value-type"] : nullptr)
 		                      : ca.ast;

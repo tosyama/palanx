@@ -1054,3 +1054,29 @@ TEST(sa_error, expr_rooted_access)
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }
+
+TEST(sa_error, literal_conversion)
+{
+	const string noCopy = "error: cannot copy '[?]uint8' into 'text'";
+	const string borrowed = "error: a string literal converted to 'text' is a temporary value with no owner to borrow from";
+	const pair<string, string> cases[] = {
+		{"error_987_literal_no_conversion.pa", ":2:1: " + noCopy},
+		{"error_988_literal_conversion_needs_args.pa", ":3:1: " + noCopy},
+		{"error_989_literal_conversion_ambiguous.pa", ":4:10: error: Ambiguous function call 'text': it can mean text(@uint8), text(@uint8, int32 = 0)."},
+		{"error_990_literal_to_writable.pa", ":4:1: error: cannot convert '[?]uint8' to '@!text'."},
+		{"error_991_literal_as_struct.pa", ":3:10: error: cannot cast to 'text'"},
+		{"error_992_literal_borrowed_var.pa", ":3:11: " + borrowed},
+		{"error_995_literal_borrowed_return.pa", ":3:28: " + borrowed},
+		{"error_996_literal_borrowed_assign.pa", ":5:1: " + borrowed},
+		{"error_993_literal_conversion_overloads.pa", ":7:1: error: Ambiguous function call 'f': it can mean f(@other), f(@text)."},
+		{"error_994_literal_no_conversion_arg.pa", ":8:1: error: cannot convert '[?]uint8' to '@text'."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}

@@ -685,7 +685,7 @@ json PlnSemanticAnalyzer::sa_assign_stmt(const json& stmt)
 	const PlnType* toType = registry_.fromJson(*varType);
 	if (stmt.value("ownership-transfer", false))
 		return sa_transfer_to_var(stmt, name, *varType, toType);
-	json value = sa_expression(stmt["value"], toType);
+	json value = sa_expression(literalConversion(stmt["value"], *varType), toType);
 	// A borrowed array variable ("mutable" on its levels) is rebound to what
 	// '@x' names.
 	if (isCopiedByValue(*varType) && !varType->contains("mutable")) {
@@ -1248,7 +1248,8 @@ json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt, json* litAddr)
 	if (isAggregateLit(stmt["value"]) && isVarrStorage(sa_target["value-type"]))
 		return sa_varr_lit_assign(stmt, sa_target["value-type"], litAddr);
 	if (!transfer && isCopiedByValue(sa_target["value-type"]))
-		return json::array({makeCopyStmt(stmt, sa_target, sa_expression(stmt["value"]))}); // LCOV_EXCL_BR_LINE
+		return json::array({makeCopyStmt(stmt, sa_target, // LCOV_EXCL_BR_LINE
+			sa_expression(literalConversion(stmt["value"], sa_target["value-type"])))});
 	if (sa_target.value("addr-only", false)) {
 		// The element itself is an address computation (e.g. a struct array
 		// element), not a storage slot to overwrite -- assign to its fields instead.
@@ -1262,7 +1263,7 @@ json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt, json* litAddr)
 		exit(1);
 	}
 	const PlnType* toType = registry_.fromJson(targetType);
-	json sa_value = sa_expression(stmt["value"], toType);
+	json sa_value = sa_expression(literalConversion(stmt["value"], targetType), toType);
 	sa_value = convertForBinding(stmt, sa_value, toType, registry_.toJson(toType));
 	checkElemShape(stmt, sa_value, targetType);
 	checkBorrowSource(stmt, sa_value, targetType);
@@ -1512,7 +1513,7 @@ json PlnSemanticAnalyzer::sa_return_stmt(const json& stmt)
 		}
 		const json& retType = (*currentFunc_)["ret-type"];
 		const PlnType* toType = registry_.fromJson(retType);
-		json value = sa_expression(stmt["values"][0], toType);
+		json value = sa_expression(literalConversion(stmt["values"][0], retType), toType);
 		// A borrow is returned as a copy (copyReturnBlock), which checks its shape.
 		if (isOwnedBlock(retType) && isPtrBorrow(value["value-type"]))
 			return {{"stmt-type", "return"}, {"values", json::array({value})}}; // LCOV_EXCL_BR_LINE
@@ -1783,7 +1784,7 @@ json PlnSemanticAnalyzer::sa_field_assign(const json& stmt, json* litAddr)
 		return litAddr ? lit : json::array({move(lit)}); // LCOV_EXCL_BR_LINE
 	}
 	const PlnType* toType = registry_.fromJson(fieldType);
-	json value = sa_expression(stmt["value"], toType);
+	json value = sa_expression(literalConversion(stmt["value"], fieldType), toType);
 	if (!transfer && isCopiedByValue(fieldType))
 		return json::array({makeCopyStmt(stmt, makeFieldAccess(chain, *it), value)}); // LCOV_EXCL_BR_LINE
 	value = convertForBinding(stmt, value, toType, fieldType);

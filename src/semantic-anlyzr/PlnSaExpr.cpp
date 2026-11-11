@@ -303,6 +303,10 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 
 	// A call operand is accepted only as a call argument (sa_call_borrow_arg):
 	// elsewhere nothing would release the returned struct.
+	if (obj.contains("converts-to")) {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_ConvertedLiteralToBorrow, obj["name"]) << endl;
+		exit(1);
+	}
 	if (isCallBorrow(expr) && isExpiringOwned(sa_expression(obj))) {
 		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_ExpiringStructToBorrow) << endl;
 		exit(1);
@@ -800,6 +804,7 @@ json PlnSemanticAnalyzer::sa_expr_maybe_void(const json &rawExpr, const PlnType*
 		return sa_expr_cast(expr);
 
 	} else if (expr_type == "call") {
+		if (expr.contains("converts-to")) return sa_expr_call(expr);
 		json len = runtimeArrLen(expr);
 		if (!len.is_null()) return len;
 		const string& callName = expr["name"].get<string>();

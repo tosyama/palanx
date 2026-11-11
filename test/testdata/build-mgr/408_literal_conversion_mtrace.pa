@@ -1,0 +1,44 @@
+cinclude <stdio.h>;
+cinclude <string.h>;
+cinclude <mcheck.h>;
+type text { [+]uint8 b; };
+func text(@[]uint8 cs, int32 pad = 0) -> text t
+{
+	int64 n = int64(strlen(cs));
+	int64 i = 0;
+	while i < n { cs[i] -> t.b.push(); i + 1 -> i; }
+	0 -> t.b.push();
+}
+func ==(@text a, @text b) -> bool { return strcmp(a.b, b.b) == 0; }
+func <(@text a, @text b) -> bool { return strcmp(a.b, b.b) < 0; }
+func +(@text a, @text b) -> text r { a -> r; r.b.pop(); for copy c in b.b { c -> r.b.push(); } }
+func show(@text t) { printf("%s ", t.b); }
+func own(text t) { printf("%s ", t.b); }
+func each([...]@text ts) { for @t in ts { show(t); } }
+func mk() -> text { return "ret"; }
+type pair { text a; int32 n; };
+mtrace();
+{
+	text s = "init";
+	show(@s);
+	"copy" -> s;
+	show(@s);
+	show("borrow");
+	own("owned");
+	each("v1", "v2");
+	text r = mk();
+	show(@r);
+	if "copy" == s && s != "x" { printf("cmp "); }
+	if "z" > mk() { printf("gt "); }
+	"chained" -> show();
+	show(@("op" + mk()));
+	pair p = ["field", 1];
+	show(@p.a);
+	"field2" -> p.a;
+	show(@p.a);
+	[2]text arr = ["e0", "e1"];
+	"e2" -> arr[0];
+	show(@arr[0]);
+	show(@arr[1]);
+}
+printf("\n");

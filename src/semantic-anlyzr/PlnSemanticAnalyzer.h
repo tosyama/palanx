@@ -129,7 +129,8 @@ struct CallArg {
 };
 
 // Narrowed: exact but for a writable outermost pointer given as read-only.
-enum class ArgFit { None, Viable, Narrowed, Exact };
+// Converted: fits only once a string literal is converted to the parameter's struct.
+enum class ArgFit { None, Converted, Viable, Narrowed, Exact };
 
 // A diagnostic decided without exiting, so a check can also just test a fit.
 struct SaDiag {
@@ -357,6 +358,8 @@ class PlnSemanticAnalyzer {
 	string defaultText(const json& d) const;
 	string calleesText(const string& name, const vector<Callee>& cands) const;
 	json   makeCall(const json& expr, const vector<Callee>& cands, const string& writtenName);
+	vector<Callee> literalConversions(const json& structVT);
+	json   literalConversion(const json& ast, const json& toVT);
 	vector<Callee> usableCallees(const json& expr, const vector<Callee>& cands) const;
 
 	json sa_statements(const json& stmts);

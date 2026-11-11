@@ -575,7 +575,7 @@ json PlnSemanticAnalyzer::sa_var_decl_group(const json& stmt2, VarStorage storag
 			// itself is not in scope during its own initializer (e.g. `int32 z = z+1`
 			// should be an error, not silently read uninitialized z).
 			const PlnType* toType = registry_.fromJson(varType);
-			json init = sa_expression(var["init"], toType);
+			json init = sa_expression(literalConversion(var["init"], varType), toType);
 			if (isArrBorrow)
 				checkArrBorrowBinding(stmt2, var["init"], init, varType);
 			init = convertForBinding(stmt2, init, toType, varType);
@@ -741,7 +741,7 @@ json PlnSemanticAnalyzer::sa_arr_lit_values(const json& lit, const ArrLitShape& 
 		} else if (shape.structDef) {
 			values.push_back(sa_struct_lit(item, *shape.structDef));
 		} else {
-			json value = sa_expression(item, elemType);
+			json value = sa_expression(literalConversion(item, shape.leaf), elemType);
 			values.push_back(convertForBinding(item, value, elemType, shape.leaf));
 		}
 	}
@@ -832,16 +832,16 @@ json PlnSemanticAnalyzer::sa_struct_lit(const json& item, const StructDef& def)
 {
 	string et = item.value("expr-type", "");
 	if (et != "arr-lit" && et != "dict-lit") {
-		json value = sa_expression(item);
+		json structVT = {{"type-kind", "pntr"}, {"base-type", {{"type-kind", "struct"}, {"type-name", def.name}}}}; // LCOV_EXCL_BR_LINE
+		json value = sa_expression(literalConversion(item, structVT));
 		if (!value.contains("value-type") || !isStructPntr(value["value-type"])) {
 			cerr << locPrefix(item) << PlnSaMessage::getMessage(E_StructLitExpected, def.name) << endl;
 			exit(1);
 		}
 		const json& vt = value["value-type"];
 		if (vt["base-type"]["type-name"] != def.name) {
-			json dstType = {{"type-kind", "pntr"}, {"base-type", {{"type-kind", "struct"}, {"type-name", def.name}}}}; // LCOV_EXCL_BR_LINE
 			cerr << locPrefix(item) << PlnSaMessage::getMessage(E_CopyShapeMismatch,
-				typeDisplayName(dstType), typeDisplayName(vt)) << endl;
+				typeDisplayName(structVT), typeDisplayName(vt)) << endl;
 			exit(1);
 		} // LCOV_EXCL_LINE -- only cleanup skipped by exit(1) is attributed here
 		return value;
@@ -1528,7 +1528,7 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt, VarStorage storag
 		if (var.contains("init")) {
 			// Evaluate before declareVar: the initializer must not see the
 			// variable it is initializing (same rule as sa_var_decl).
-			json userInit = sa_expression(var["init"]);
+			json userInit = sa_expression(literalConversion(var["init"], pntr_type));
 			bool sameStruct = userInit.contains("value-type")
 				&& userInit["value-type"].value("base-type", json()) == pntr_type["base-type"];
 			if (isStructRetCall(userInit) && sameStruct) {
