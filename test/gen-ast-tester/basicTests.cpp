@@ -1044,6 +1044,25 @@ TEST(gen_ast, code_point_literal) {
 	ASSERT_EQ(stmts[4]["value"]["value"], "x€y😀\\x00");
 }
 
+// '<<' binds as the shifts do: tighter than '->', looser than '+'.
+TEST(gen_ast, append)
+{
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/161_append.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	ASSERT_EQ(jout["ast"]["functions"][0]["name"], "<<");
+	auto& stmts = jout["ast"]["statements"];
+	auto& sum = stmts[0]["body"];
+	ASSERT_EQ(sum["expr-type"], "append");
+	ASSERT_EQ(sum["right"]["expr-type"], "add");
+	ASSERT_EQ(stmts[1]["body"]["expr-type"], "chain-call");
+	ASSERT_EQ(stmts[1]["body"]["value"]["expr-type"], "append");
+	auto& chain = stmts[2]["body"];
+	ASSERT_EQ(chain["left"]["expr-type"], "append");
+	ASSERT_EQ(chain["right"]["name"], "b");
+	ASSERT_EQ(stmts[3]["value"]["expr-type"], "shl");
+}
+
 TEST(gen_ast, bool_literal) {
 	cleanTestEnv();
 	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/124_bool_literal.pa");

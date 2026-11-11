@@ -1,0 +1,44 @@
+cinclude <stdio.h>;
+cinclude <string.h>;
+cinclude <mcheck.h>;
+type text { [+]uint8 b; };
+func text(@[]uint8 cs) -> text t
+{
+	int64 n = int64(strlen(cs));
+	int64 i = 0;
+	while i < n { cs[i] -> t.b.push(); i + 1 -> i; }
+	0 -> t.b.push();
+}
+func <<(@!text t, @text x) -> @!text
+{
+	t.b.pop();
+	for copy c in x.b { c -> t.b.push(); }
+	return t;
+}
+func <<(@!text t, uint8 c) -> @!text
+{
+	t.b.pop();
+	c -> t.b.push();
+	0 -> t.b.push();
+	return t;
+}
+func show(@text t) { printf("%s\n", t.b); }
+func excl(@!text t) -> @!text { return t << '!'; }
+func mk() -> text { return "ret"; }
+type pair { text a; int32 n; };
+mtrace();
+{
+	text s = "ab";
+	s << "cd" << 'e';
+	show(@s);
+	text t = "T";
+	s << mk() << t;
+	show(@s);
+	excl(@!s) << "?";
+	show(@s);
+	s << "x" -> show();
+	pair p = ["f", 1];
+	p.a << "g";
+	show(@p.a);
+}
+muntrace();

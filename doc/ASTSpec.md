@@ -552,7 +552,7 @@ Statement model
 
 Expression model
 ----------------
-- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "mul" "div" "mod" "neg" "cmp" "call" "cast" "arr-index" "field-access" "member-call" "logical-and" "logical-or" "logical-not" "addr-of" "not-impl" "bitand" "bitor" "bitxor" "shl" "shr" "bitnot" "arr-lit" "dict-lit" "sizeof" "chain-call" "transfer" "call-ptr"
+- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "mul" "div" "mod" "neg" "cmp" "call" "cast" "arr-index" "field-access" "member-call" "logical-and" "logical-or" "logical-not" "addr-of" "not-impl" "bitand" "bitor" "bitxor" "shl" "shr" "append" "bitnot" "arr-lit" "dict-lit" "sizeof" "chain-call" "transfer" "call-ptr"
 - loc\* - Location Array
   1. lit-str - String literal
     - value\* - The bytes as escaped text: printable ASCII and valid UTF-8 characters as they
@@ -708,6 +708,10 @@ Expression model
       list of several expressions called this way is `not-impl`
     - callee\* - Expression model of a function pointer
     - args\* - Argument expression list
+  35. append - `a << b`, a call of the operator function `<<` (precedence of the shifts);
+      consumed by SA, which makes it a `call` (see SASpec.md "Usual arithmetic conversions")
+    - left\*  - Expression model appended to
+    - right\* - Expression model appended
 
 Note: Unary minus on a `lit-int` without `value-type` is folded into a single `lit-int` with a negative
 `value` (`-42` → `"value":"-42"`), so SA range-checks it as one value. Any other operand (including a

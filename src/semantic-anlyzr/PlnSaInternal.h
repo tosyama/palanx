@@ -390,7 +390,7 @@ inline bool hasCall(const json& e)
 {
 	if (e.is_object()) {
 		string et = e.value("expr-type", "");
-		if (et == "call" || et == "member-call" || et == "chain-call" || et == "call-ptr") return true;
+		if (et == "call" || et == "member-call" || et == "chain-call" || et == "call-ptr" || et == "append") return true;
 		for (auto& [k, v] : e.items())
 			if (hasCall(v)) return true;
 	} else if (e.is_array()) {

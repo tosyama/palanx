@@ -754,6 +754,9 @@ json PlnSemanticAnalyzer::sa_expr_maybe_void(const json &rawExpr, const PlnType*
 	} else if (expr_type == "shl" || expr_type == "shr") {
 		return sa_expr_shift(expr, expectedType);
 
+	} else if (expr_type == "append") {
+		return sa_expr_append(expr);
+
 	} else if (expr_type == "neg") {
 		json operand = sa_expression(expr["operand"], expectedType);
 		if (isStructPntr(operand["value-type"]))

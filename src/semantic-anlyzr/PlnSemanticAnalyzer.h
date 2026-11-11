@@ -424,6 +424,7 @@ class PlnSemanticAnalyzer {
 	json sa_operator_call(const json& expr, const string& op,
 	                      const vector<const json*>& operands, vector<json> probes);
 	json sa_expr_shift(const json& expr, const PlnType* expectedType);
+	json sa_expr_append(const json& expr);
 	json sa_expr_cmp(const json& expr);
 	json sa_compare_call(const json& expr, json probes[2]);
 	void checkIntLiteralRange(const json& lit);

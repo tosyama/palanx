@@ -1548,3 +1548,31 @@ TEST(sa, compare_func)
 	ASSERT_EQ(ahead["value"]["args"][0]["name"], "b");
 	ASSERT_EQ(ahead["value"]["args"][1]["name"], ahead["body"][0]["vars"][0]["name"]);
 }
+
+// The left operand of '<<' is passed as a method-form receiver is, and a
+// nested '<<' passes on the borrow its call returns.
+TEST(sa, append)
+{
+	cleanTestEnv();
+	json jout = written(run_sa("../test/testdata/sa/338_append.pa"));
+	ASSERT_TRUE(jout.is_object());
+	const auto& fs = jout["functions"];
+	const string appInt = fs[0]["name"], appAcc = fs[1]["name"], get = fs[2]["name"];
+	ASSERT_EQ(appInt.rfind("_338_append..0app.", 0), 0u);
+	const auto& st = jout["statements"];
+	size_t n = st.size();
+	auto call = [&](size_t fromEnd) -> const json& { return st[n - fromEnd]["body"]; };
+	// a << 1
+	ASSERT_EQ(call(5)["name"], appInt);
+	ASSERT_EQ(call(5)["args"][0]["name"], "a");
+	ASSERT_EQ(call(5)["args"][1]["value-type"]["type-name"], "int64");
+	// a << b: the overload taking '@Acc'
+	ASSERT_EQ(call(4)["name"], appAcc);
+	// p << 2 << 3
+	ASSERT_EQ(call(3)["args"][0]["name"], appInt);
+	ASSERT_EQ(call(3)["args"][0]["args"][0]["name"], "p");
+	// bx.acc << 4
+	ASSERT_EQ(call(2)["args"][0]["expr-type"], "field-access");
+	// get(@!a) << 5
+	ASSERT_EQ(call(1)["args"][0]["name"], get);
+}

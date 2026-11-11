@@ -914,6 +914,26 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			return "a variadic argument of '" + arg1 + "' borrows a temporary value a call holds, which would be "
 			       "released before '" + arg1 + "' is called; keep the value in a variable first.";
 
+		case E_AppendFuncFirstParam:
+			return "the first parameter of operator function '<<' must be a writable borrow '@!T' of a struct.";
+
+		case E_AppendFuncRet:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "operator function '<<' must return '" + arg1 + "', the type of its first parameter, "
+			       "so that '<<' chains.";
+
+		case E_AppendNotStruct:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'<<' appends to a struct, not to '" + arg1 + "'; the left shift is '<<<'.";
+
+		case E_AppendReadOnly:
+			return "'<<' cannot append through a read-only borrow '@T'.";
+
+		case E_AppendLeftOperand:
+			return "the left operand of '<<' must be a variable, a field or an element, a '@!' borrow, "
+			       "or a call returning '@!T': a value a call or an operator returns is a temporary, "
+			       "and what is appended to it would be lost.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

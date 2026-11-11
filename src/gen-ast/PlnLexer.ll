@@ -61,6 +61,7 @@ enum {
 	DBL_GRTR =	PlnParser::token::DBL_GRTR,
 	OPE_SHL =	PlnParser::token::OPE_SHL,
 	OPE_SHR =	PlnParser::token::OPE_SHR,
+	OPE_APPEND =	PlnParser::token::OPE_APPEND,
 	ARROW =	PlnParser::token::ARROW,
 	DBL_ARROW =	PlnParser::token::DBL_ARROW,
 	OPE_TAKE =	PlnParser::token::OPE_TAKE,
@@ -200,6 +201,7 @@ COMMENT1	\/\/[^\n]*\n
 <*>">>"	{ return DBL_GRTR; }
 <*>"<<<"	{ return OPE_SHL; }
 <*>">>>"	{ return OPE_SHR; }
+<*>"<<"	{ return OPE_APPEND; }
 <*>"->"	{ return ARROW; }
 <*>"->>"	{ return DBL_ARROW; }
 <*>"<<="	{ return OPE_TAKE; }

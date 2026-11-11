@@ -466,7 +466,8 @@ void PlnSemanticAnalyzer::validateVariadicSig(const json& funcDef)
 }
 
 // An operator function is called only where an operand is a struct, and an
-// operand is never written with '@!' (see sa_operator_call).
+// operand is never written with '@!' (see sa_operator_call), but for the one
+// '<<' appends to.
 void PlnSemanticAnalyzer::validateOperatorSig(const json& funcDef)
 {
 	const string& name = funcDef["name"].get<string>();
@@ -484,12 +485,29 @@ void PlnSemanticAnalyzer::validateOperatorSig(const json& funcDef)
 				E_OperatorFuncDefault, name, p["name"].get<string>()) << endl;
 			exit(1);
 		}
-	for (auto& p : params)
+	// '<<' writes into its left operand, which sa_expr_append gives as '@!'.
+	if (name == "<<") {
+		const json& first = params[0]["var-type"];
+		if (!isStructBorrow(first) || !first.value("mutable", false)) {
+			cerr << locPrefix(params[0].contains("loc") ? params[0] : funcDef)
+			     << PlnSaMessage::getMessage(E_AppendFuncFirstParam) << endl;
+			exit(1);
+		}
+		const json* ret = funcDef.contains("ret-type") ? &funcDef["ret-type"] : nullptr;
+		if (!ret || !isStructBorrow(*ret) || !ret->value("mutable", false)
+		    || registry_.fromJson(*ret) != registry_.fromJson(first)) {
+			cerr << locPrefix(funcDef) << PlnSaMessage::getMessage(E_AppendFuncRet, typeDisplayName(first)) << endl;
+			exit(1);
+		}
+	}
+	for (size_t i = name == "<<" ? 1 : 0; i < n; i++) {
+		const json& p = params[i];
 		if (p["var-type"].value("mutable", false)) {
 			cerr << locPrefix(p.contains("loc") ? p : funcDef) << PlnSaMessage::getMessage(
 				E_OperatorFuncWritableParam, name, p["name"].get<string>()) << endl;
 			exit(1);
 		}
+	}
 	if (none_of(params.begin(), params.end(), [](const json& p) { return isStructPntr(p["var-type"]); })) {
 		cerr << locPrefix(funcDef) << PlnSaMessage::getMessage(E_OperatorFuncNoStruct, name) << endl;
 		exit(1);

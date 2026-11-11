@@ -363,6 +363,13 @@ vector<Callee> PlnSemanticAnalyzer::usableCallees(const json& expr, const vector
 	return usable;
 } // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 
+static json writableBorrow(const json& obj)
+{
+	json b = {{"expr-type", "addr-of"}, {"mutable", true}, {"object", obj}}; // LCOV_EXCL_BR_LINE
+	if (obj.contains("loc")) b["loc"] = obj["loc"];
+	return b;
+} // LCOV_EXCL_BR_LINE
+
 // A chained value given to one of several functions: whether it is borrowed
 // ('@v') depends on the function chosen, so bindCallArgs decides it.
 static json chainedValue(const json& value)
@@ -396,6 +403,46 @@ json PlnSemanticAnalyzer::sa_operator_call(const json& expr, const string& op,
 	}
 	Callee callee = selectCallee(call, op, cands, args);
 	return makeCallNode(call, callee, op, &args);
+} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+
+// `s << x`: a call of the '<<' functions, given the left operand as a
+// method-form receiver is, or a '@!T' a call returns, so that `s << a << b`
+// chains. The left operand is analyzed once here: analyzing a nested '<<'
+// again for each enclosing one would take time exponential in the chain.
+json PlnSemanticAnalyzer::sa_expr_append(const json& expr)
+{
+	const json& left = expr["left"];
+	const json& right = expr["right"];
+	string let = left.value("expr-type", "");
+	bool isLocation = isLocationExpr(left);
+	bool isCall = let == "call" || let == "member-call" || let == "chain-call" || let == "call-ptr" || let == "append";
+	json leftSa = let == "field-access" ? json() : sa_expr_maybe_void(left);
+	json leftVT = leftSa.is_null() ? operandValueType(left) : leftSa.value("value-type", json());
+	auto fail = [&](PlnSaMessageCode code, const string& arg = "\x01") {
+		cerr << locPrefix(left.contains("loc") ? left : expr) << PlnSaMessage::getMessage(code, arg) << endl;
+		exit(1);
+	};
+	if (leftVT.is_null()) fail(E_AppendLeftOperand);
+	if (!isStructPntr(leftVT)) fail(E_AppendNotStruct, typeDisplayName(leftVT));
+	if (isStructBorrow(leftVT) && !leftVT["mutable"].get<bool>()) fail(E_AppendReadOnly);
+
+	json recv, probes[2];
+	if (isStructBorrow(leftVT) && (isLocation || isCall)) {
+		recv = left;
+		probes[0] = move(leftSa);
+	} else if (isStructStorage(leftVT) && isLocation) {
+		recv = writableBorrow(left);
+		probes[0] = sa_expression(recv);
+	} else {
+		fail(E_AppendLeftOperand);
+	}
+	// As an arithmetic operand: one that takes its type from the parameter is
+	// left for the function chosen to type.
+	if (!isAggregateLit(right) && foldConstExpr(right)["expr-type"] != "lit-int") {
+		probes[1] = sa_expression(right);
+		if (!isStructPntr(probes[1]["value-type"]) && takesExpectedType(right)) probes[1] = json();
+	}
+	return sa_operator_call(expr, "<<", {&recv, &right}, {move(probes[0]), move(probes[1])}); // LCOV_EXCL_BR_LINE
 } // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 
 // A comparison a type defines: '!=' '>' '<=' '>=' are derived from '==' and
@@ -1337,8 +1384,7 @@ json PlnSemanticAnalyzer::normalizeMethodCall(const json& expr)
 	// be rejected (or would mean a pointer to the borrow's slot).
 	json recvType = operandValueType(obj);
 	bool isBorrow = isPtrBorrow(recvType) || isArrBorrowVar(recvType);
-	json recv = isBorrow ? obj : json{{"expr-type", "addr-of"}, {"mutable", true}, {"object", obj}};
-	if (!isBorrow && obj.contains("loc")) recv["loc"] = obj["loc"];
+	json recv = isBorrow ? obj : writableBorrow(obj);
 
 	json call = {{"expr-type", "call"}, {"name", method}, {"args", json::array({recv})}}; // LCOV_EXCL_BR_LINE
 	if (cands.size() > 1) call["method-form"] = true;

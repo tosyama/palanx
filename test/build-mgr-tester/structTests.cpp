@@ -1386,6 +1386,12 @@ TEST(build_mgr, operator_func_mtrace) {
 		"1.5 2.5 3.5\n0.5 1.5 2.5\n-1 -2 -3\n-1.5 -2.5 -3.5\n1.5 3 4.5\n0 -1 -2\n3\n2.5 4.5 6.5\n", 4);
 }
 
+// '<<' chains through the borrow each call returns; a returned or converted
+// right operand is released after the statement.
+TEST(build_mgr, append_mtrace) {
+	expectMtraceRun("410_append_mtrace", "abcde\nabcderetT\nabcderetT!?\nabcderetT!?x\nfg\n", 24);
+}
+
 TEST(build_mgr, compare_func_mtrace) {
 	expectMtraceRun("403_compare_func_mtrace",
 		"1 0 0\n1 0 1 0\n0 1 1 1\n1 0\n1 1\n0 1\n1 2 0\n3 4 1\n", 4);

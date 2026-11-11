@@ -332,6 +332,7 @@ struct BodyList {
 %token DBL_GRTR	">>"
 %token OPE_SHL	"<<<"
 %token OPE_SHR	">>>"
+%token OPE_APPEND	"<<"
 %token ARROW	"->"
 %token DBL_ARROW	"->>"
 %token OPE_TAKE	"<<="
@@ -384,7 +385,7 @@ struct BodyList {
 %left OPE_EQ OPE_NE
 %left '<' '>' OPE_LE OPE_GE
 %left ARROW DBL_ARROW
-%left OPE_SHL OPE_SHR
+%left OPE_SHL OPE_SHR OPE_APPEND
 %left '+' '-'
 %left '*' '/' '%' '&' '|' '^'
 %left KW_AS
@@ -997,6 +998,8 @@ expression: term
 	{ $$ = {{"expr-type", "shl"}, {"left", $1}, {"right", $3}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| expression OPE_SHR expression
 	{ $$ = {{"expr-type", "shr"}, {"left", $1}, {"right", $3}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
+	| expression OPE_APPEND expression
+	{ $$ = {{"expr-type", "append"}, {"left", $1}, {"right", $3}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| expression KW_AS type_expr
 	{ $$ = {{"expr-type", "cast"}, {"target-type", move($3)}, {"src", move($1)}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| '~' expression %prec UNARY_MINUS
@@ -1335,6 +1338,7 @@ op_func_name: '+' { $$ = "+"; }
 	| '%' { $$ = "%"; }
 	| OPE_EQ { $$ = "=="; }
 	| '<' { $$ = "<"; }
+	| OPE_APPEND { $$ = "<<"; }
 	| OPE_NE { derivedCompare(lexer, @$, "!=", "=="); }
 	| '>' { derivedCompare(lexer, @$, ">", "<"); }
 	| OPE_LE { derivedCompare(lexer, @$, "<=", "<"); }

@@ -21,6 +21,7 @@ export type Vec { flo64 x; flo64 y; };
 export type Poly { [2]Vec pts; [+]int32 tags; int32 n; };
 export func vec(flo64 x, flo64 y) -> Vec v { x -> v.x; y -> v.y; }
 export func +(@Vec a, @Vec b) -> Vec v { a.x + b.x -> v.x; a.y + b.y -> v.y; }
+export func <<(@!Vec a, @Vec b) -> @!Vec { a.x + b.x -> a.x; a.y + b.y -> a.y; return a; }
 export func norm(@Vec a) -> flo64 { return sqrt(a.x * a.x + a.y * a.y); }
 export func makePoly(int32 n) -> Poly p { n -> p.n; p.tags.resize(3); }
 export func tagCount(@Poly p) -> int64 { return len(@p.tags); }
@@ -73,6 +74,7 @@ cinclude <mcheck.h>;
 	mtrace();
 	Vec a = vec(3.0, 4.0);
 	Vec c = a + vec(1.0, 1.0);
+	c << vec(1.0, 1.0);
 	printf("%.1f %.1f %.1f\n", c.x, c.y, norm(@a));
 	Poly p = makePoly(5);
 	printf("%d %ld\n", p.n, tagCount(@p));
@@ -83,7 +85,7 @@ cinclude <mcheck.h>;
 	ASSERT_EQ(execTestCommand("bin/palan -o out/p out/app/main.pa"), "");
 	string output = execTestCommand(
 		"env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libc_malloc_debug.so MALLOC_TRACE=out/t.log out/p");
-	ASSERT_EQ(output, "4.0 5.0 5.0\n5 3\n0\n");
+	ASSERT_EQ(output, "5.0 6.0 5.0\n5 3\n0\n");
 	// The same program importing the library's source allocates just as many.
 	expectBalancedMtrace("out/t.log", 19);
 }

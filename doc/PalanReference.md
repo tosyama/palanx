@@ -498,6 +498,7 @@ func addOne(MyInt n) -> MyInt result {
 | Bitwise NOT | `~expr` | `~a` |
 | Left shift | `expr <<< expr` | `a <<< 3` |
 | Logical right shift | `expr >>> expr` | `a >>> 3` |
+| Append | `expr << expr` (a struct defines it, see [Operator Functions](#operator-functions)) | `s << "abc" << t` |
 | Grouping | `(expr)` | `-(a + b)` |
 | Comparison | `expr < expr`, `<=`, `>`, `>=`, `==`, `!=` | `x < 10` |
 | Function call | `name(args)` | `add(3, 4)` |
@@ -510,7 +511,7 @@ func addOne(MyInt n) -> MyInt result {
 | Assignment expression | `expr -> var` | `x + 1 -> x` |
 
 Operator precedence (high to low): unary minus / `!` / `~`, `as`, `* / % & | ^`, `+ -`,
-`<<< >>>`, `->` / `->>`, comparisons, `&&`, `||`. All binary operators are left-associative.
+`<<< >>> <<`, `->` / `->>`, comparisons, `&&`, `||`. All binary operators are left-associative.
 
 `->` sits below arithmetic, so `x + 1 -> x` stores the sum, and above comparisons, so a chained
 call can be compared: `i < a -> len()` is `i < (a -> len())`. To store a comparison or a logical
@@ -1163,6 +1164,38 @@ printf("%d %d %d\n", a == b, a != b, a >= b);   // 0 1 0
   a compile error. Two structs are never compared by address.
 - A comparison with `NULL` stays a pointer comparison: `p == NULL` for a borrow `@T p`. Whether
   two borrows point to the same value is written `int64(a) == int64(b)`.
+
+#### Append
+
+A type defines `<<` to append to a value of it in place:
+
+```palan
+cinclude <stdio.h>;
+
+type tally { int64 sum; int32 count; };
+
+func <<(@!tally t, int64 x) -> @!tally {
+    t.sum + x -> t.sum;
+    t.count + 1 -> t.count;
+    return t;
+}
+
+tally t;
+t << 3 << 4 + 5;
+printf("%ld %d\n", t.sum, t.count);   // 12 2
+```
+
+- The function is `<<(@!T s, X x) -> @!T`: two parameters, the first a `@!` borrow of a struct, the
+  second anything but `@!`, and it returns `@!T` of the same `T`. By contract it returns `s`
+  itself, so that `s << a << b` appends both to `s`; the compiler cannot check that.
+- The left operand is what a method-form call's receiver may be (`s.f()`, see
+  [Method-Form Calls](#method-form-calls)), passed as `@!s` without writing `@!`: a variable, a field or an
+  element, or a `@!T` borrow; also a call returning `@!T`, which is how `s << a << b` continues.
+  A `@T` borrow is an error, and so is a struct a call or an operator returns: what is appended to
+  a temporary would be lost.
+- The right operand is passed as an operand of `+` is, and chooses among overloads the same way.
+- `<<` binds as the shifts do: `s << a + b` appends `a + b`, and `s << x -> f()` is `f(s << x)`.
+- `[+]T` has no `<<`; it uses `push`.
 
 ---
 

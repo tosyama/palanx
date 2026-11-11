@@ -1,0 +1,3 @@
+type A { int64 s; };
+type B { int64 s; };
+func <<(@!A a, int64 x) -> @!B { }

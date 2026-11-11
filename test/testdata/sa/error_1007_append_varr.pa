@@ -1,0 +1,4 @@
+type Acc { int64 sum; };
+func <<(@!Acc a, int64 x) -> @!Acc { a.sum + x -> a.sum; return a; }
+[+]int32 v;
+v << 1;

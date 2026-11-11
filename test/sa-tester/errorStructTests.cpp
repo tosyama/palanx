@@ -1080,3 +1080,34 @@ TEST(sa_error, literal_conversion)
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }
+
+TEST(sa, error_append)
+{
+	const string firstParam = "error: the first parameter of operator function '<<' must be a writable borrow '@!T' of a struct.";
+	const string ret = "error: operator function '<<' must return '@!A', the type of its first parameter, so that '<<' chains.";
+	const string temp = "error: the left operand of '<<' must be a variable, a field or an element, a '@!' borrow, "
+	                    "or a call returning '@!T'";
+	const pair<string, string> cases[] = {
+		{"error_997_append_func_read_only.pa", ":2:1: " + firstParam},
+		{"error_998_append_func_no_struct_first.pa", ":2:1: " + firstParam},
+		{"error_999_append_func_no_ret.pa", ":2:1: " + ret},
+		{"error_1000_append_func_ret_value.pa", ":2:1: " + ret},
+		{"error_1001_append_func_ret_other.pa", ":3:1: " + ret},
+		{"error_1002_append_func_writable_operand.pa",
+		 ":2:1: error: parameter 'x' of operator function '<<' cannot be '@!': an operand is never passed for writing."},
+		{"error_1003_append_read_only.pa", ":5:1: error: '<<' cannot append through a read-only borrow '@T'."},
+		{"error_1004_append_to_returned.pa", ":4:1: " + temp},
+		{"error_1005_append_to_operator_result.pa", ":6:1: " + temp},
+		{"error_1006_append_not_struct.pa", ":4:1: error: '<<' appends to a struct, not to 'int32'; the left shift is '<<<'."},
+		{"error_1007_append_varr.pa", ":4:1: error: '<<' appends to a struct, not to '[+]int32'; the left shift is '<<<'."},
+		{"error_1008_append_no_func.pa", ":3:1: error: No operator function '<<' takes (@!A, int64)."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
