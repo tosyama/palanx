@@ -32,7 +32,7 @@ private:
 	string expr(const json& e) const;
 	string operand(const json& e) const;
 	string args(const json& list) const;
-	string vars(const json& node, const json& list) const;
+	string vars(const json& node, const json& list, bool isRets) const;
 	string funcDecl(const json& f) const;
 	string statement(const json& s) const;
 };
@@ -135,13 +135,14 @@ string Writer::expr(const json& e) const
 	fail(e, "this expression");
 }
 
-string Writer::vars(const json& node, const json& list) const
+// A named return's initial value is run by the body, so the caller never sees it.
+string Writer::vars(const json& node, const json& list, bool isRets) const
 {
 	string s;
 	const char* sep = "";
 	for (auto& v : list) {
 		if (!v.contains("var-type")) fail(v.contains("loc") ? v : node, "this parameter or return");
-		if (v.contains("init")) fail(v["init"], "a parameter's default value");
+		if (v.contains("init") && !isRets) fail(v["init"], "a parameter's default value");
 		s += sep + type(v["var-type"]) + " " + v["name"].get<string>();
 		sep = ", ";
 	}
@@ -152,8 +153,8 @@ string Writer::funcDecl(const json& f) const
 {
 	bool isSyscall = f["func-type"] == "syscall";
 	string s = string("export ") + (isSyscall ? "syscall " : "func ") + f["name"].get<string>()
-		+ "(" + vars(f, f["parameters"]) + ")";
-	if (f.contains("rets")) s += " -> " + vars(f, f["rets"]);
+		+ "(" + vars(f, f["parameters"], false) + ")";
+	if (f.contains("rets")) s += " -> " + vars(f, f["rets"], true);
 	else if (f.contains("ret-type")) s += " -> " + type(f["ret-type"]);
 	if (isSyscall) s += " = " + expr(f["syscall-number"]);
 	return s + ";\n";

@@ -1,0 +1,2 @@
+library demo;
+export func count() -> int32 n = 5 { n + 1 -> n; }

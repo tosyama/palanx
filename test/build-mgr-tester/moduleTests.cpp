@@ -824,6 +824,14 @@ TEST(build_mgr, lib_local_header_used_only_in_bodies) {
 		"library demo;\nbuilt \"" PALAN_VERSION "\";\ntarget \"" PALAN_TARGET "\";\nexport func one() -> int32;\n");
 }
 
+// A named return's initial value belongs to the body, not the interface.
+TEST(build_mgr, lib_named_return_initial_value) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(libBuild("named_ret_init.pa")), "");
+	EXPECT_EQ(fileText(string(libOut) + "demo/named_ret_init.pai"),
+		"library demo;\nbuilt \"" PALAN_VERSION "\";\ntarget \"" PALAN_TARGET "\";\nexport func count() -> int32 n;\n");
+}
+
 // The other module's array stays for the const its public type is sized by; the unused one does not.
 TEST(build_mgr, lib_const_from_an_array_through_a_selective_import) {
 	cleanTestEnv();
