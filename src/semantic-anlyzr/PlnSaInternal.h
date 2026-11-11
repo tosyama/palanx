@@ -38,6 +38,10 @@ inline json wrapConvert(const json& expr, const json& to_type) {
 }
 // LCOV_EXCL_BR_STOP
 
+inline json strLitType() {
+	return {{"type-kind", "pntr"}, {"base-type", {{"type-kind", "prim"}, {"type-name", "uint8"}}}}; // LCOV_EXCL_BR_LINE
+}
+
 // True if `t` is a non-float primitive type (int8..uint64). Shared by every
 // operator that requires integer operands (logical &&/||/!, bitwise &/|/^/~)
 // so the "not a float, and not a pointer/struct" check has one definition.

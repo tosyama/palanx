@@ -354,6 +354,7 @@ class PlnSemanticAnalyzer {
 	ArgFit argFit(const CallArg& arg, const json& param, size_t argIdx, bool isCFunc, const string& funcName);
 	ArgFit typeFit(const json& argVT, const json& paramVT);
 	string argTypesText(const vector<CallArg>& args);
+	string defaultText(const json& d) const;
 	string calleesText(const string& name, const vector<Callee>& cands) const;
 	json   makeCall(const json& expr, const vector<Callee>& cands, const string& writtenName);
 	vector<Callee> usableCallees(const json& expr, const vector<Callee>& cands) const;
@@ -653,6 +654,7 @@ class PlnSemanticAnalyzer {
 	// used by top-level, block-local, and function-nested func-defs alike.
 	void  preregisterFunc(const json& f, const string& scope);
 	json  normalizeFuncSig(const json& f, const string& scope);
+	void  normalizeParamDefaults(json& funcEntry);
 	// Diagnose Linux syscall ABI constraints on a syscall declaration
 	// (funcDef must already be normalizeSig'd) and fold its
 	// "syscall-number" expression node into a plain JSON integer.

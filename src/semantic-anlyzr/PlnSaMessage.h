@@ -89,7 +89,6 @@ enum PlnSaMessageCode {
 	E_VarTypeInferenceNotImpl,	// arg1: variable name
 	E_StmtNotImplemented,
 	E_ExprNotImplemented,
-	E_ParamDefaultNotImpl,	// arg1: parameter name
 	E_ParamNotImplemented,
 	E_RetNotImplemented,
 	E_IntLiteralOutOfRange,	// arg1: the literal as written, arg2: adopted type display name
@@ -200,6 +199,9 @@ enum PlnSaMessageCode {
 	E_CompareFuncRet,	// arg1: operator
 	E_FieldInitNotConst,	// arg1: field name
 	E_FieldInitUnsupported,	// arg1: field name
+	E_ParamDefaultNotConst,	// arg1: parameter name
+	E_ParamDefaultNotLast,	// arg1: parameter name
+	E_OperatorFuncDefault,	// arg1: operator, arg2: parameter name
 };
 
 class PlnSaMessage

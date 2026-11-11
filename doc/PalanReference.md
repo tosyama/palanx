@@ -841,6 +841,39 @@ func range(int32 from) -> int32 lo = from, int32 hi = from + 10 { }
 
 A struct-type named return is allocated at function entry and can't have an initializer. Declaring it again in the body is an error.
 
+### Default Arguments
+
+A parameter may have a default value, used when a call leaves the argument out. Parameters
+with defaults come last:
+
+```palan
+cinclude <stdio.h>;
+
+type Align enum { Left, Right };
+const WIDTH = 8;
+
+func pad(int32 n, int32 width = WIDTH, Align a = Align.Right, @[]uint8 mark = "|") {
+    int32 w = width;
+    if a == Align.Left { -width -> w; }
+    printf("%s%*d%s\n", mark, w, n, mark);
+}
+
+pad(42);                   // pad(42, 8, Align.Right, "|")
+pad(42, 4);                // pad(42, 4, Align.Right, "|")
+42 -> pad(3, Align.Left);  // chained and method-form calls use defaults too
+```
+
+- A default is a constant: a number, `true` or `false`, an enum value, a `const` (or an
+  expression of them, such as `WIDTH * 2`), or a string literal for a parameter taking one. A
+  variable, a function call, or a value for a struct parameter is a compile error.
+- The default is filled in where the function is called. When a module or library changes a
+  default, the programs calling the function are compiled again with the new value; the
+  function's own code does not change.
+- Leaving out an argument that has no default is a compile error.
+- An operator function (§7 [Operator Functions](#operator-functions)) cannot have defaults.
+- A function pointer type has no defaults: a call through a pointer gives every argument.
+- With [overloading](#overloading), see there for how a call that could use a default is chosen.
+
 ### Method-Form Calls
 
 A function whose first parameter is a writable borrow (`@!T`, `@![n]T`, or a C function's
@@ -1007,6 +1040,10 @@ show(2.5);          // float 2.5
   written where no function pointer type is expected is a compile error.
 - Receiving several return values (`(a, b) = f(x)`) needs the functions returning that many to
   return the same types.
+- If one of several functions fitting the arguments fits only by using its
+  [defaults](#default-arguments), the call is ambiguous: with `f(int32)` and
+  `f(int32, int32 = 0)`, `f(1)` is a compile error, and `f(1, 0)` calls the second. A function
+  using defaults is called when it is the only one that fits.
 
 ### Operator Functions
 

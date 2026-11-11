@@ -236,8 +236,8 @@ Used in Palan function `parameters` and `rets`.
 
 - name\* - Variable name string
 - var-type\* - Variable type
-- init - Expression node for the initial value (omitted when not written; SA rejects it on a
-  parameter, since default values are not implemented)
+- init - Expression node for a parameter's default value, or a named return's initial value
+  (omitted when not written)
 
 A parameter or return the grammar parses but the compiler does not implement (`T >> name`, an
 untyped `name = expr`, a type with no declarable form such as `[#]T`) stays in the list as

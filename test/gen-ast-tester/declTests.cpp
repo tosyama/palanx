@@ -1146,6 +1146,7 @@ TEST(gen_ast, interface_text) {
 		"export func g() -> int32 a, int32 b;\n"
 		"export func +(@Shown a, @Shown b) -> int32;\n"
 		"export func h();\n"
+		"export func k(int32 a, int32 b = N + 1, Color c = Color.Green, @[]uint8 s = \"a\\tb\", bool on = true, flo64 d = -1.5) -> int32;\n"
 		"export syscall sys(int64 x) -> int64 = 39;\n");
 }
 

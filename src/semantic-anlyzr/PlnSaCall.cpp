@@ -227,6 +227,14 @@ ArgFit PlnSemanticAnalyzer::argFit(const CallArg& arg, const json& param, size_t
 	return match ? ArgFit::Exact : ArgFit::None;
 }
 
+// Parameters with defaults come last, so the first one ends those a call must give.
+static size_t requiredArgCount(const json& params, size_t fixedCount)
+{
+	for (size_t i = 0; i < fixedCount; i++)
+		if (params[i].contains("default")) return i;
+	return fixedCount;
+}
+
 string PlnSemanticAnalyzer::argTypesText(const vector<CallArg>& args)
 {
 	string text;
@@ -242,6 +250,21 @@ string PlnSemanticAnalyzer::argTypesText(const vector<CallArg>& args)
 	return text;
 } // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 
+// A default as its function's reader would write it.
+string PlnSemanticAnalyzer::defaultText(const json& d) const
+{
+	const json& lit = d["expr-type"] == "convert" ? d["src"] : d;
+	if (lit["expr-type"] == "lit-str") return "\"" + lit["value"].get<string>() + "\"";
+	string value = lit["value"];
+	const json& vt = lit.value("value-type", json::object());
+	if (vt.value("type-name", "") == "bool") return value == "0" ? "false" : "true";
+	auto e = vt.contains("enum") ? enumDefs_.find(vt["enum"].get<string>()) : enumDefs_.end();
+	if (e != enumDefs_.end())
+		for (auto& [name, v] : e->second.values)
+			if (to_string(v) == value) return typeDisplayName(vt) + "." + name;
+	return value;
+} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+
 string PlnSemanticAnalyzer::calleesText(const string& name, const vector<Callee>& cands) const
 {
 	string text;
@@ -253,6 +276,7 @@ string PlnSemanticAnalyzer::calleesText(const string& name, const vector<Callee>
 			if (!first) text += ", ";
 			first = false;
 			text += p.value("name", "") == "..." ? string("...") : typeDisplayName(p["var-type"]); // LCOV_EXCL_BR_LINE
+			if (p.contains("default")) text += " = " + defaultText(p["default"]);
 		}
 		text += ")";
 	}
@@ -266,19 +290,22 @@ Callee PlnSemanticAnalyzer::selectCallee(const json& locNode, const string& name
                                          const vector<Callee>& cands, const vector<CallArg>& args)
 {
 	vector<Callee> viable, exact, narrowed;
+	bool defaulted = false;
 	for (auto& c : cands) {
 		const json& params = (*c.def)["parameters"];
 		bool variadic = isVariadicSig(params);
 		size_t fixedCount = params.size() - (variadic ? 1 : 0);
-		if (variadic ? args.size() < fixedCount : args.size() != fixedCount) continue;
+		size_t required = requiredArgCount(params, fixedCount);
+		if (args.size() < required || (!variadic && args.size() > fixedCount)) continue;
 		bool fits = true;
 		ArgFit worst = args.size() == fixedCount ? ArgFit::Exact : ArgFit::Viable;
-		for (size_t i = 0; i < fixedCount && fits; i++) {
+		for (size_t i = 0; i < min(fixedCount, args.size()) && fits; i++) {
 			ArgFit f = argFit(args[i], params[i], i, c.isC, name);
 			fits = f != ArgFit::None;
 			worst = min(worst, f);
 		}
 		if (!fits) continue;
+		defaulted = defaulted || args.size() < fixedCount;
 		viable.push_back(c);
 		if (worst == ArgFit::Exact) exact.push_back(c);
 		if (worst == ArgFit::Narrowed) narrowed.push_back(c);
@@ -289,9 +316,11 @@ Callee PlnSemanticAnalyzer::selectCallee(const json& locNode, const string& name
 			name, argTypesText(args), calleesText(name, cands)) << endl;
 		exit(1);
 	}
-	if (exact.size() == 1) return exact[0];
-	if (exact.empty() && narrowed.size() == 1) return narrowed[0];
-	const vector<Callee>& best = !exact.empty() ? exact : !narrowed.empty() ? narrowed : viable;
+	// A candidate fitting through its defaults is not ranked against the others,
+	// so that a reader follows no further rule to tell which one is called.
+	if (!defaulted && exact.size() == 1) return exact[0];
+	if (!defaulted && exact.empty() && narrowed.size() == 1) return narrowed[0];
+	const vector<Callee>& best = defaulted ? viable : !exact.empty() ? exact : !narrowed.empty() ? narrowed : viable;
 	cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_AmbiguousCall,
 		name, calleesText(name, best)) << endl;
 	exit(1);
@@ -702,8 +731,11 @@ json PlnSemanticAnalyzer::saCallArgs(const json& locNode, const json& args, cons
 	size_t fixedCount = funcParams.size() - (isVariadic ? 1 : 0);
 	// C's `()` arrives as an empty list just like `(void)` and is checked as
 	// `(void)` (as C23 reads it); glibc headers are fully prototyped.
-	if (isVariadic ? args.size() < fixedCount : args.size() != fixedCount) {
-		string expected = (isVariadic ? "at least " : "") + to_string(fixedCount);
+	size_t required = requiredArgCount(funcParams, fixedCount);
+	if (args.size() < required || (!isVariadic && args.size() > fixedCount)) {
+		string expected = isVariadic ? "at least " + to_string(fixedCount)
+		                : required < fixedCount ? to_string(required) + " to " + to_string(fixedCount)
+		                : to_string(fixedCount);
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_ArgCountMismatch,
 			funcName, expected, to_string(args.size())) << endl;
 		exit(1);
@@ -934,6 +966,16 @@ json PlnSemanticAnalyzer::bindCallArgs(const json& locNode, vector<CallArg>& arg
 {
 	bool isVariadic = isVariadicSig(funcParams);
 	size_t fixedCount = funcParams.size() - (isVariadic ? 1 : 0);
+	// A string default is analyzed here, where its label joins this module's table.
+	for (size_t i = args.size(); i < fixedCount; i++) {
+		const json& d = funcParams[i]["default"];
+		if (d["expr-type"] == "lit-str") {
+			args.push_back(analyzeCallArgs(json::array({d}))[0]);
+		} else {
+			CallArg ca{d, false, d};
+			args.push_back(move(ca));
+		}
+	}
 	json saArgs = json::array();
 	vector<json> argAsts;
 	for (size_t argIdx = 0; argIdx < args.size(); argIdx++) {

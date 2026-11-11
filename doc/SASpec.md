@@ -1284,7 +1284,8 @@ A name with one candidate is bound to it directly, with the diagnostics of an ar
 not fit it. With several, each argument is analyzed once without a parameter type, then:
 
 - A candidate fits when the argument count matches (at least the fixed parameters for a C
-  variadic function) and every argument passes the parameter's checks; an argument matches
+  variadic function; from the parameters without defaults to all of them for a function with
+  defaults) and every argument passes the parameter's checks; an argument matches
   exactly when its type is the parameter's, including `mutable` on every pointer level (through
   pointers and a `[+]T`'s elements).
 - An argument whose type comes only from its parameter is matched by what it can become: an
@@ -1296,13 +1297,27 @@ not fit it. With several, each argument is analyzed once without a parameter typ
 - A chained value fits as `@v` where the parameter would take it so, and as `v` otherwise.
 - The one fitting candidate is chosen; of several, the one every argument matches exactly
   (and no variadic argument is passed), or else the one every argument matches exactly but for
-  a writable outermost pointer given to a read-only parameter. Otherwise E_NoMatchingFunc (the argument types and
-  the candidates) or E_AmbiguousCall (the candidates that fit).
+  a writable outermost pointer given to a read-only parameter. When one of several fitting
+  candidates needs a default to fit, none is preferred. Otherwise E_NoMatchingFunc (the argument
+  types and the candidates) or E_AmbiguousCall (the candidates that fit, a default shown as
+  `int32 = 0`).
 - Receiving several values (`(a, b) = f(x)`) considers only the candidates returning that many,
   which must agree on what they return, since the receivers are declared before the arguments
   choose one (E_AmbiguousCall).
 - A function name used as a value takes the function whose `@func` type is the expected one (a
   variable's, field's or parameter's): none is E_FuncNameNeedsType, several E_AmbiguousCall.
+
+### Default arguments
+
+A parameter's default (its AST `init`) is analyzed where the function's signature is taken in, by
+the module declaring it, so a caller needs none of the names it was written with: after
+constants are folded it must be a number, `bool` or enum value typed and converted as an argument
+for that parameter would be, or a string literal (E_ParamDefaultNotConst otherwise, including for
+a struct parameter). Parameters with defaults come last (E_ParamDefaultNotLast); an operator
+function has none (E_OperatorFuncDefault). A call omitting arguments is given the defaults, so a
+`call`'s `args` always has one argument per parameter; a string default is analyzed at the call,
+so its `str-literals` entry is in the calling module's table and only when used. A function
+definition in `functions` keeps no defaults, and a function pointer type has none.
 
 ### Chained calls
 

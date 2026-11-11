@@ -463,6 +463,12 @@ void PlnSemanticAnalyzer::validateOperatorSig(const json& funcDef)
 		exit(1);
 	}
 	for (auto& p : params)
+		if (p.contains("init")) {
+			cerr << locPrefix(p["init"]) << PlnSaMessage::getMessage(
+				E_OperatorFuncDefault, name, p["name"].get<string>()) << endl;
+			exit(1);
+		}
+	for (auto& p : params)
 		if (p["var-type"].value("mutable", false)) {
 			cerr << locPrefix(p.contains("loc") ? p : funcDef) << PlnSaMessage::getMessage(
 				E_OperatorFuncWritableParam, name, p["name"].get<string>()) << endl;
@@ -603,6 +609,67 @@ void PlnSemanticAnalyzer::validateSyscallDecl(json& funcDef)
 	}
 }
 
+// A default is analyzed by the module declaring the function, so a caller
+// needs none of the names it was written with. A string literal stays
+// unanalyzed: its label belongs to the table of the module whose call uses it.
+void PlnSemanticAnalyzer::normalizeParamDefaults(json& funcEntry)
+{
+	if (!funcEntry.contains("parameters")) return;
+	const string& funcName = funcEntry["name"].get<string>();
+	json& params = funcEntry["parameters"];
+	function<bool(const json&)> hasCall = [&](const json& e) {
+		string et = e.is_object() ? e.value("expr-type", "") : "";
+		if (et == "call" || et == "member-call" || et == "chain-call") return true;
+		if (e.is_structured())
+			for (auto& child : e)
+				if (hasCall(child)) return true;
+		return false;
+	};
+	bool defaulted = false;
+	for (size_t i = 0; i < params.size(); i++) {
+		json& p = params[i];
+		const string& name = p["name"].get<string>();
+		if (!p.contains("init")) {
+			if (defaulted) {
+				cerr << locPrefix(p.contains("loc") ? p : funcEntry)
+				     << PlnSaMessage::getMessage(E_ParamDefaultNotLast, name) << endl;
+				exit(1);
+			}
+			continue;
+		}
+		defaulted = true;
+		json init = move(p["init"]);
+		p.erase("init");
+		const json& vt = p["var-type"];
+		auto notConst = [&] {
+			cerr << locPrefix(init) << PlnSaMessage::getMessage(E_ParamDefaultNotConst, name) << endl;
+			exit(1);
+		};
+		ensureTypeRefs(init);
+		rejectDeferredConstRefs(init, init);
+		json folded = foldConstExpr(init);
+		if (firstNonConstName(folded) || hasCall(folded) || isStructStorage(vt) || isStructBorrow(vt))
+			notConst();
+		json value;
+		if (folded.value("expr-type", "") == "lit-str") {
+			value = {{"expr-type", "lit-str"}, {"value", folded["value"]}}; // LCOV_EXCL_BR_LINE
+			json probe = value;
+			probe["value-type"] = strLitType();
+			if (auto d = callArgMismatch(init, probe, p, i, false, funcName)) reportDiag(init, *d);
+		} else {
+			value = sa_expression(folded, registry_.fromJson(vt));
+			if (auto d = callArgMismatch(init, value, p, i, false, funcName)) reportDiag(init, *d);
+			value = convertCallArg(move(value), vt);
+			const json& lit = value.value("expr-type", "") == "convert" ? value["src"] : value;
+			string et = lit.value("expr-type", "");
+			if (et != "lit-int" && et != "lit-uint" && et != "lit-flo") notConst();
+		}
+		value.erase("loc");
+		if (value.contains("src")) value["src"].erase("loc");
+		p["default"] = move(value);
+	}
+} // LCOV_EXCL_BR_LINE
+
 // gen-ast keeps a parameter or return it parses but does not implement in the
 // signature (see ASTSpec.md); every Palan signature, local or imported, is
 // checked here before anything reads its types.
@@ -610,13 +677,11 @@ void PlnSemanticAnalyzer::rejectNotImplSig(const json& f)
 {
 	for (auto& p : f["parameters"]) {
 		const json& at = p.contains("loc") ? p : f;
-		if (p.contains("init") || p.contains("untyped-var")) {
-			string name = p.contains("untyped-var") ? p["untyped-var"] : p["name"];
-			cerr << locPrefix(p.contains("init") ? p["init"] : at)
-			     << PlnSaMessage::getMessage(E_ParamDefaultNotImpl, name) << endl;
+		if (p.contains("untyped-var")) {
+			cerr << locPrefix(at) << PlnSaMessage::getMessage(E_VarTypeInferenceNotImpl, p["untyped-var"].get<string>()) << endl;
 			exit(1);
 		}
-		if (!p.contains("var-type")) {
+		if (!p.contains("var-type") || p.value("ownership-transfer", false)) {
 			cerr << locPrefix(at) << PlnSaMessage::getMessage(E_ParamNotImplemented) << endl;
 			exit(1);
 		}
@@ -653,6 +718,7 @@ json PlnSemanticAnalyzer::normalizeFuncSig(const json& f, const string& scope)
 		funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
 	validateNativeSig(funcEntry);
 	validateOperatorSig(funcEntry);
+	normalizeParamDefaults(funcEntry);
 	if (funcEntry.value("func-type", "") == "syscall")
 		validateSyscallDecl(funcEntry);
 	else

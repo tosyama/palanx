@@ -1,0 +1,2 @@
+int32 v = 3;
+func f(int32 a = v) {}

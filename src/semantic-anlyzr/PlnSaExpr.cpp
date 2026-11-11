@@ -702,7 +702,7 @@ json PlnSemanticAnalyzer::sa_expr_maybe_void(const json &rawExpr, const PlnType*
 		}
 		sa_expr["label"] = strLiteralLabels[value];
 		sa_expr.erase("value");
-		sa_expr["value-type"] = {{"type-kind", "pntr"}, {"base-type", {{"type-kind", "prim"}, {"type-name", "uint8"}}}}; // LCOV_EXCL_BR_LINE
+		sa_expr["value-type"] = strLitType();
 
 	} else if (expr_type == "id") {
 		const json* varType = lookupVar(expr["name"].get<string>(), expr);

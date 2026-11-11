@@ -101,6 +101,27 @@ printf("%.1f %.1f\n", norm(@a), G.norm(@b));
 	EXPECT_EQ(execTestCommand("bin/palan out/app/main.pa"), "5.0 10.0\n");
 }
 
+// The program reads the defaults from the interface alone, through an alias too.
+TEST(build_mgr, library_parameter_defaults) {
+	cleanTestEnv();
+	writeFile("out/src/opt.pa", R"(library kit;
+cinclude <stdio.h>;
+export type Mode enum { Fast, Slow };
+const LIMIT = 40;
+export func run(int32 a, int32 lim = LIMIT + 2, Mode m = Mode.Slow, @[]uint8 tag = "dflt") {
+	printf("%d %d %d %s\n", a, lim, m, tag);
+}
+)");
+	ASSERT_EQ(execTestCommand("bin/palan --lib -o out/libs out/src/opt.pa"), "");
+	fs::remove_all("out/src");
+	writeFile("out/app/main.pa", R"(libpath "../libs";
+import <kit/opt> as K;
+K.run(1);
+K.run(2, 7, K.Mode.Fast);
+)");
+	EXPECT_EQ(execTestCommand("bin/palan out/app/main.pa"), "1 42 1 dflt\n2 7 0 dflt\n");
+}
+
 // A libpath adds a place for the whole program, wherever it is written and relative to that file.
 TEST(build_mgr, libpath_in_an_imported_module) {
 	buildGeoLibrary();

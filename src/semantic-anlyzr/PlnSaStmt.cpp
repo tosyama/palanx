@@ -533,6 +533,9 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef, bool topLevel)
 		sa_function(f);
 
 	json saFunc = sig;
+	// Each call is given every argument, so the definition keeps no defaults.
+	if (saFunc.contains("parameters"))
+		for (auto& p : saFunc["parameters"]) p.erase("init");
 	saFunc["name"] = (*currentFunc_)["symbol"];
 	normalizeSig(saFunc);
 	validateEmbeddedParams(saFunc);

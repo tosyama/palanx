@@ -1,0 +1,3 @@
+func f(int32 a, int32 b = 0) {}
+@func(int32, int32) fp = f;
+fp(1);

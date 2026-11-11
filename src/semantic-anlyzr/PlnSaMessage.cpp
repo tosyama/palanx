@@ -376,11 +376,6 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 		case E_ExprNotImplemented:
 			return "this expression is not supported in this version.";
 
-		case E_ParamDefaultNotImpl:
-			BOOST_ASSERT(arg1 != "\x01");
-			return "parameter '" + arg1 + "' has a default value; default values are not "
-			       "supported yet.";
-
 		case E_ParamNotImplemented:
 			return "this parameter is not supported in this version.";
 
@@ -864,6 +859,22 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			BOOST_ASSERT(arg1 != "\x01");
 			return "field '" + arg1 + "' cannot have an initializer in this version: only a primitive field "
 			       "or a one-dimensional array of primitives can.";
+
+		case E_ParamDefaultNotConst:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "the default value of parameter '" + arg1 + "' must be a compile-time constant: a number, "
+			       "'true' or 'false', an enum value, a const, or a string literal.";
+
+		case E_ParamDefaultNotLast:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "parameter '" + arg1 + "' needs a default value: it follows a parameter that has one, "
+			       "and parameters with default values come last.";
+
+		case E_OperatorFuncDefault:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "parameter '" + arg2 + "' of operator function '" + arg1
+			       + "' cannot have a default value: an operator is always given its operands.";
 
 		default:
 			BOOST_ASSERT(false);

@@ -135,15 +135,15 @@ string Writer::expr(const json& e) const
 	fail(e, "this expression");
 }
 
-// A named return's initial value is run by the body, so the caller never sees it.
+// A parameter's default is filled in by the caller; a named return's initial value is run by the body.
 string Writer::vars(const json& node, const json& list, bool isRets) const
 {
 	string s;
 	const char* sep = "";
 	for (auto& v : list) {
 		if (!v.contains("var-type")) fail(v.contains("loc") ? v : node, "this parameter or return");
-		if (v.contains("init") && !isRets) fail(v["init"], "a parameter's default value");
 		s += sep + type(v["var-type"]) + " " + v["name"].get<string>();
+		if (v.contains("init") && !isRets) s += " = " + expr(v["init"]);
 		sep = ", ";
 	}
 	return s;

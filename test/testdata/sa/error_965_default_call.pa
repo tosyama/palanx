@@ -1,0 +1,2 @@
+func h() -> int32 { return 1; }
+func f(int32 a = h()) {}

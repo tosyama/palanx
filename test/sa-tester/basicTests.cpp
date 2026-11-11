@@ -1421,6 +1421,39 @@ TEST(sa, code_point_literal)
 	ASSERT_EQ(args[2]["value-type"]["type-name"], "int32");
 }
 
+// An omitted argument is the default, typed by its parameter, wherever the
+// call is written; a string default gets a label only when a call uses it.
+TEST(sa, param_default)
+{
+	cleanTestEnv();
+	json jout = written(run_sa("../test/testdata/sa/339_param_default.pa"));
+	ASSERT_TRUE(jout.is_object());
+	for (auto& f : jout["functions"])
+		for (auto& p : f["parameters"]) {
+			ASSERT_FALSE(p.contains("init")) << f["name"];
+			ASSERT_FALSE(p.contains("default")) << f["name"];
+		}
+	ASSERT_EQ(jout["str-literals"], json::parse(R"([{"label": ".str0", "value": "hi"}, {"label": ".str1", "value": "x"}])"));
+	vector<json> calls;
+	for (auto& s : jout["statements"])
+		if (s["stmt-type"] == "expr") calls.push_back(s["body"]);
+	ASSERT_EQ(calls.size(), 5u);
+	for (size_t i : {0, 3}) {
+		const auto& args = calls[i]["args"];
+		ASSERT_EQ(args.size(), 5u) << i;
+		ASSERT_EQ(args[1]["value"], "8") << i;
+		ASSERT_EQ(args[1]["value-type"]["type-name"], "int64") << i;
+		ASSERT_EQ(args[2]["value"], "1") << i;
+		ASSERT_TRUE(args[2]["value-type"].contains("enum")) << i;
+		ASSERT_EQ(args[3]["value-type"]["type-name"], "flo64") << i;
+		ASSERT_EQ(args[4]["label"], ".str0") << i;
+	}
+	ASSERT_EQ(calls[1]["args"][1]["value"], "5");
+	ASSERT_EQ(calls[2]["args"][1]["value"], "3");
+	// `b = 2` after `int32 a` takes a's type.
+	ASSERT_EQ(calls[4]["args"][1]["value-type"]["type-name"], "int32");
+}
+
 // '==' and '<' are called for struct operands; the other comparisons are
 // derived from them, and a comparison with NULL stays a pointer comparison.
 TEST(sa, compare_func)

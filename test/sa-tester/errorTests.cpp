@@ -854,13 +854,11 @@ TEST(sa_error, expr_not_implemented)
 // None of these functions is called: the signature alone must be rejected.
 TEST(sa_error, sig_not_implemented)
 {
-	const string defaultNotImpl = "has a default value; default values are not supported yet.";
+	const string untyped = "is declared without a type; type inference is not supported yet";
 	const pair<string, string> cases[] = {
-		{"error_544_param_untyped_default.pa", ":1:8: error: parameter 'x' " + defaultNotImpl},
-		{"error_545_param_typed_default.pa", ":1:18: error: parameter 'x' " + defaultNotImpl},
-		{"error_546_param_inherit_default.pa", ":1:21: error: parameter 'b' " + defaultNotImpl},
+		{"error_544_param_untyped_default.pa", ":1:8: error: variable 'x' " + untyped},
 		{"error_547_param_move_owner.pa", ":1:8: error: this parameter is not supported in this version."},
-		{"error_549_syscall_param_default.pa", ":1:11: error: parameter 'x' " + defaultNotImpl},
+		{"error_549_syscall_param_default.pa", ":1:11: error: variable 'x' " + untyped},
 		{"error_550_inner_func_param.pa", ":2:13: error: this parameter is not supported in this version."},
 		{"error_552_ret_untyped.pa", ":1:13: error: this return value is not supported in this version."},
 		{"error_941_take_undeclarable.pa", ":2:1: error: this statement is not supported in this version."},
@@ -1452,6 +1450,21 @@ TEST(sa_error, give_and_take)
 		// A comparison types no literal by the other operand, so it is checked there.
 		{"error_959_wide_char_compare_byte.pa", ":1:48: error: character literal U+00E9 needs an integer type of 32 bits or more, not 'uint8': no byte of UTF-8 text holds it."},
 		{"error_960_wide_char_int16_arg.pa", ":2:3: error: character literal U+20AC needs an integer type of 32 bits or more, not 'int16': no byte of UTF-8 text holds it."},
+		// A candidate fitting through its defaults is never ranked above another.
+		{"error_961_default_ambiguous.pa", ":3:1: error: Ambiguous function call 'f': it can mean f(int32), f(int32, int32 = 0)."},
+		{"error_962_default_ambiguous_widen.pa", ":3:1: error: Ambiguous function call 'f': it can mean f(int32, int32 = 0), f(int64)."},
+		{"error_963_default_not_last.pa", ":1:1: error: parameter 'c' needs a default value: it follows a parameter that has one, and parameters with default values come last."},
+		{"error_964_default_var.pa", ":2:18: error: the default value of parameter 'a' must be a compile-time constant: a number, 'true' or 'false', an enum value, a const, or a string literal."},
+		{"error_965_default_call.pa", ":2:18: error: the default value of parameter 'a' must be a compile-time constant: a number, 'true' or 'false', an enum value, a const, or a string literal."},
+		{"error_966_default_struct.pa", ":2:15: error: the default value of parameter 'p' must be a compile-time constant: a number, 'true' or 'false', an enum value, a const, or a string literal."},
+		{"error_967_operator_func_default.pa", ":2:21: error: parameter 'b' of operator function '+' cannot have a default value: an operator is always given its operands."},
+		{"error_968_default_too_few.pa", ":2:1: error: function 'f' takes 1 to 2 argument(s), but 0 given."},
+		{"error_969_default_too_many.pa", ":2:1: error: function 'f' takes 1 to 2 argument(s), but 3 given."},
+		{"error_970_default_out_of_range.pa", ":1:17: error: Integer literal '300' is out of range for type 'int8'."},
+		{"error_971_default_type.pa", ":1:18: error: cannot convert '[?]uint8' to 'int32'."},
+		// A function pointer's type has no defaults.
+		{"error_972_default_func_ptr.pa", ":3:1: error: function 'fp' takes 2 argument(s), but 1 given."},
+		{"error_973_default_narrowing.pa", ":1:18: error: Implicit conversion from 'flo64' to 'int32' is not allowed"},
 		{"error_924_keep_param_count_nested.pa",
 		 ":3:2: error: the cast's function type has 2 parameters, but '@func(int32)' has 1."},
 		{"error_925_given_twice.pa",

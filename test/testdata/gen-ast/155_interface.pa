@@ -29,5 +29,6 @@ export func f(int32 x, @!Shown s) -> int32 { return x; }
 export func g() -> int32 a, int32 b { 1 -> a; 2 -> b; }
 export func +(@Shown a, @Shown b) -> int32 { return 1; }
 export func h() { }
+export func k(int32 a, int32 b = N + 1, Color c = Color.Green, @[]uint8 s = "a\tb", bool on = true, flo64 d = -1.5) -> int32 { return a; }
 export syscall sys(int64 x) -> int64 = 39;
 func hidden() -> int32 { return 1; }

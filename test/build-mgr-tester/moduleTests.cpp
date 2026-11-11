@@ -642,6 +642,20 @@ TEST(build_mgr, reuse_indirect_import_changed) {
 	EXPECT_NE(after.c, before.c);
 }
 
+// The caller holds the default, so changing it compiles the caller again.
+TEST(build_mgr, reuse_default_changed) {
+	cleanReuseEnv();
+	writeOldSource("c.pa", "export func c(int32 k = 1) -> int32 { return k; }\n");
+	writeOldSource("b.pa", "import \"c.pa\";\nexport func b() -> int32 { return c(); }\n");
+	writeOldSource("a.pa", "cinclude <stdio.h>;\nimport \"b.pa\";\nprintf(\"%d\\n\", b());\n");
+	ASSERT_EQ(execTestCommand("bin/palan out/a.pa"), "1\n");
+	ChainTimes before;
+	ofstream("out/c.pa") << "export func c(int32 k = 5) -> int32 { return k; }\n";
+	ASSERT_EQ(execTestCommand("bin/palan out/a.pa"), "5\n");
+	ChainTimes after;
+	EXPECT_NE(after.b, before.b);
+}
+
 TEST(build_mgr, reuse_mutual_import) {
 	cleanReuseEnv();
 	writeOldSource("m1.pa", "cinclude <stdio.h>;\nimport \"m2.pa\";\nexport func f1() -> int32 { return 1; }\nprintf(\"%d\\n\", f2());\n");
@@ -842,6 +856,19 @@ TEST(build_mgr, lib_const_from_an_array_through_a_selective_import) {
 		"[3]int32 table;\nconst K = len(@table);\n"
 		"export type Rows {\n\t[K]int32 a;\n};\n"
 		"export func first(@Rows r, Color c) -> int32;\n");
+}
+
+// Another module's const of the same name gives way, as it does for a type's size.
+TEST(build_mgr, lib_parameter_defaults) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(libBuild("defaults.pa")), "");
+	EXPECT_EQ(fileText(string(libOut) + "demo/defaults.pai"),
+		"library demo;\nbuilt \"" PALAN_VERSION "\";\ntarget \"" PALAN_TARGET "\";\n"
+		"const K = 2;\n"
+		"const __m1_K = 3;\n"
+		"export type Mode enum {\n\tFast,\n\tSlow,\n};\n"
+		"export type Box {\n\t[__m1_K]int32 a;\n};\n"
+		"export func put(@!Box b, int32 v = K * 10, Mode m = Mode.Slow, @[]uint8 tag = \"none\");\n");
 }
 
 TEST(build_mgr, lib_library_module_has_its_own_allocators) {
