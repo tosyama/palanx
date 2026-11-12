@@ -181,7 +181,8 @@ json PlnSemanticAnalyzer::sa_while_stmt(const json& stmt)
 	return result;
 }
 
-// head: a var-decl declared in the loop's scope ahead of the body, or null.
+// heads: statements ahead of the body in the loop's scope, their types
+// already resolved.
 json PlnSemanticAnalyzer::sa_loop_body(const json& astBody, const json& heads, json step)
 {
 	enterScope();
@@ -191,8 +192,13 @@ json PlnSemanticAnalyzer::sa_loop_body(const json& astBody, const json& heads, j
 	enterBlockDecls(astBody);
 
 	json body = json::array();
-	for (auto& head : heads)
-		for (auto& s : sa_resolved_var_decl(head, {})) body.push_back(move(s));
+	for (auto& head : heads) {
+		string t = head["stmt-type"];
+		json out = t == "var-decl" ? sa_resolved_var_decl(head, {})
+		         : t == "tapple-decl" ? sa_resolved_tapple_decl(head, vector<VarStorage>(head["vars"].size(), VarStorage::Heap))
+		         : sa_statements(json::array({head}));
+		for (auto& s : out) body.push_back(move(s));
+	}
 	for (auto& s : sa_statements(astBody)) body.push_back(move(s));
 
 	// Append free() for array vars in while body scope (reverse declaration order)
@@ -287,7 +293,7 @@ static void aliasLoopElem(json& node, const string& name, const json& elem)
 
 // `for a, i in arr { }` becomes a while over i, in a block of its own that
 // holds arr, evaluated once, and its length.
-json PlnSemanticAnalyzer::sa_for_stmt(const json& stmt)
+json PlnSemanticAnalyzer::sa_for_array(const json& stmt, json range)
 {
 	// LCOV_EXCL_BR_START
 	const json& loc = stmt["loc"];
@@ -307,13 +313,8 @@ json PlnSemanticAnalyzer::sa_for_stmt(const json& stmt)
 	enterScope();
 	json block = json::array();
 
-	json range = sa_expression(stmt["range"]);
 	json arrType = range["value-type"];
 	bool rangeBorrow = arrType.contains("mutable");
-	if (!isVarrPntr(arrType) && !isArrLevel(arrType)) {
-		cerr << locPrefix(stmt["range"]) << PlnSaMessage::getMessage(E_ForRangeNotArray) << endl;
-		exit(1);
-	}
 	string arr = "__for_" + to_string(tempVarCounter_++);
 	// The range is moved into `arr` below; a length known only at run time is
 	// kept by the location it names, which the copy's rows then index by.
@@ -358,24 +359,7 @@ json PlnSemanticAnalyzer::sa_for_stmt(const json& stmt)
 	json declType = astTypeOf(elemType);
 	if (declType.is_null()) declType = elemType;
 	json heads = json::array();
-	if (typedIdx) {
-		json idxType = resolveKnownType(stmt, stmt["index-type"]);
-		const PlnType* t = registry_.fromJson(idxType);
-		if (!isIntegerPrim(t) || isBoolPrim(t)) {
-			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ForIndexNotInteger, typeDisplayName(idxType)) << endl;
-			exit(1);
-		}
-		if (!isVarrPntr(arrType) && !arrType.value("run-size", false)) {
-			int64_t n = constArrSizeOrExit(arrType, stmt["range"]);
-			if (n > 0 && !intLiteralFits(to_string(n - 1), static_cast<const PrimType*>(t)->name)) {
-				cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ForIndexTooNarrow,
-					typeDisplayName(idxType), to_string(n)) << endl;
-				exit(1);
-			}
-		}
-		json conv = {{"expr-type","cast"},{"target-type",idxType},{"src",id(idx)},{"loc",loc}};
-		heads.push_back(varDecl(stmt["index"], idxType, move(conv), loc));
-	}
+	if (typedIdx) heads.push_back(forIndexHead(stmt, idx, &arrType));
 	json astBody = stmt["body"];
 	if (elem["borrow"]) {
 		// `@a`/`@!a` is the element itself, so the body reads and writes it as
@@ -413,6 +397,185 @@ json PlnSemanticAnalyzer::sa_for_stmt(const json& stmt)
 	json body = sa_loop_body(astBody, heads, move(step));
 	forIndexVars_.erase(idxName);
 	if (pinned) pinnedRanges_.pop_back();
+	block.push_back({{"stmt-type","while"},{"cond",move(cond)},{"body",move(body)},{"loc",loc}});
+
+	size_t scope = arrayScopeVars_.size() - 1;
+	for (auto& s : collectFreeStmts(scope, scope + 1)) block.push_back(move(s));
+	leaveScope();
+	return {{"stmt-type","block"},{"body",move(block)}};
+	// LCOV_EXCL_BR_STOP
+} // LCOV_EXCL_BR_LINE
+
+// `for a, i in x { }`: over an array, or over a struct by its type's `iter`
+// and `next`.
+json PlnSemanticAnalyzer::sa_for_stmt(const json& stmt)
+{
+	const json& range = stmt["range"];
+	// A location is borrowed by `iter` as it is written, so a struct field
+	// held inline is not read as a value.
+	if (isLocationExpr(range)) {
+		json vt = operandValueType(range);
+		if (isStructPntr(vt)) return sa_for_struct(stmt, vt, nullptr);
+	}
+	json rangeSa = sa_expression(range);
+	const json& vt = rangeSa["value-type"];
+	if (isStructPntr(vt)) {
+		json t = vt;
+		return sa_for_struct(stmt, t, &rangeSa);
+	}
+	if (!isVarrPntr(vt) && !isArrLevel(vt)) {
+		cerr << locPrefix(range) << PlnSaMessage::getMessage(E_ForRangeNotArray) << endl;
+		exit(1);
+	}
+	return sa_for_array(stmt, move(rangeSa));
+} // LCOV_EXCL_BR_LINE
+
+// A typed index `T i` declared from the hidden int64 counter `idx`. Every
+// index of an array of constant size must fit in T; any other length is known
+// only at run time.
+json PlnSemanticAnalyzer::forIndexHead(const json& stmt, const string& idx, const json* arrType)
+{
+	// LCOV_EXCL_BR_START
+	const json& loc = stmt["loc"];
+	json idxType = resolveKnownType(stmt, stmt["index-type"]);
+	const PlnType* t = registry_.fromJson(idxType);
+	if (!isIntegerPrim(t) || isBoolPrim(t)) {
+		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ForIndexNotInteger, typeDisplayName(idxType)) << endl;
+		exit(1);
+	}
+	if (arrType && !isVarrPntr(*arrType) && !arrType->value("run-size", false)) {
+		int64_t n = constArrSizeOrExit(*arrType, stmt["range"]);
+		if (n > 0 && !intLiteralFits(to_string(n - 1), static_cast<const PrimType*>(t)->name)) {
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_ForIndexTooNarrow,
+				typeDisplayName(idxType), to_string(n)) << endl;
+			exit(1);
+		}
+	}
+	json conv = {{"expr-type","cast"},{"target-type",idxType},{"src",{{"expr-type","id"},{"name",idx},{"loc",loc}}},{"loc",loc}};
+	return {{"stmt-type","var-decl"},{"loc",loc},
+	        {"vars",json::array({{{"name",stmt["index"]},{"var-type",idxType},{"init",move(conv)}}})}};
+	// LCOV_EXCL_BR_STOP
+} // LCOV_EXCL_BR_LINE
+
+// `for c, i in s { }` over a struct becomes, in a block of its own,
+//   I __for_it = iter(@s);   (or @!s)
+//   while true { (bool ok, E e) = next(@!__for_it); if !ok { break } ... }
+// The iterator may borrow s, so a struct a call returns is held in the block
+// until the loop ends. rangeSa is s analyzed, or null for a location.
+json PlnSemanticAnalyzer::sa_for_struct(const json& stmt, const json& rangeVT, json* rangeSa)
+{
+	// LCOV_EXCL_BR_START
+	const json& loc = stmt["loc"];
+	const json& elem = stmt["elem"];
+	const json& rangeAst = stmt["range"];
+	auto id = [&](const string& name) { return json{{"expr-type","id"},{"name",name},{"loc",loc}}; };
+	auto borrowOf = [&](json obj, bool mut) {
+		return json{{"expr-type","addr-of"},{"mutable",mut},{"object",move(obj)},{"loc",loc}};
+	};
+	json storageVT = rangeVT;
+	storageVT.erase("mutable");
+	string typeName = typeDisplayName(storageVT);
+
+	vector<Callee> iters = forProtocolCallees("iter", storageVT);
+	if (iters.empty()) {
+		cerr << locPrefix(rangeAst) << PlnSaMessage::getMessage(E_ForIterShape, typeName) << endl;
+		exit(1);
+	}
+	if (iters.size() > 1) {
+		cerr << locPrefix(rangeAst) << PlnSaMessage::getMessage(E_ForIterAmbiguous, typeName) << endl;
+		exit(1);
+	}
+	const json& iterDef = *iters[0].def;
+	bool iterMut = iterDef["parameters"][0]["var-type"]["mutable"];
+	const json& itType = iterDef["ret-type"];
+	vector<Callee> nexts = forProtocolCallees("next", itType);
+	if (nexts.empty()) {
+		cerr << locPrefix(rangeAst) << PlnSaMessage::getMessage(E_ForNextShape, typeDisplayName(itType)) << endl;
+		exit(1);
+	}
+	json eType = (*nexts[0].def)["rets"][1]["var-type"];
+	bool eBorrow = eType.contains("mutable");
+	if ((elem["borrow"] && !eBorrow) || (elem.value("mutable", false) && !eType.value("mutable", false))) {
+		string written = string(elem.value("mutable", false) ? "@!" : "@") + elem["name"].get<string>();
+		cerr << locPrefix(elem) << PlnSaMessage::getMessage(E_ForElemForm, written, typeDisplayName(eType)) << endl;
+		exit(1);
+	}
+
+	enterScope();
+	json block = json::array();
+	json rangeArg;
+	if (rangeSa) {
+		bool owned = isExpiringOwned(*rangeSa);
+		string held = pinTemp(move(*rangeSa), rangeAst, block);
+		if (owned) addOwnedScopeVar(held, makeOwnedFreeStmt(held, storageVT));
+		rangeArg = isPtrBorrow(rangeVT) ? id(held) : borrowOf(id(held), iterMut);
+	} else {
+		rangeArg = isPtrBorrow(rangeVT) ? rangeAst : borrowOf(rangeAst, iterMut);
+	}
+	json iterCall = {{"expr-type","call"},{"name","iter"},{"args",json::array({move(rangeArg)})},
+	                 {"iterates",storageVT},{"loc",loc}};
+	string it = pinTemp(sa_expression(iterCall), stmt, block);
+	addOwnedScopeVar(it, makeOwnedFreeStmt(it, itType));
+
+	const json i64 = {{"type-kind","prim"},{"type-name","int64"}};
+	bool typedIdx = stmt.contains("index-type");
+	string idx = typedIdx || !stmt.contains("index") ? "__for_i_" + to_string(tempVarCounter_++) : stmt["index"].get<string>();
+	for (auto& s : sa_var_decl({{"stmt-type","var-decl"},{"loc",loc},
+	                            {"vars",json::array({{{"name",idx},{"var-type",i64},
+	                             {"init",{{"expr-type","lit-int"},{"value","0"},{"loc",loc}}}}})}}))
+		block.push_back(move(s));
+	json step = json::array({{{"stmt-type","assign"},{"name",idx},
+		{"value",sa_expression({{"expr-type","add"},{"left",id(idx)},{"loc",loc},
+		                        {"right",{{"expr-type","lit-int"},{"value","1"},{"loc",loc}}}})}}});
+	json heads = json::array();
+	if (typedIdx) heads.push_back(forIndexHead(stmt, idx, nullptr));
+
+	// The element is received into the loop variable itself only when it is a
+	// copy already; a borrow is received into a hidden one the variable reads
+	// through, read-only for `@c`.
+	bool direct = !elem["borrow"] && !eBorrow;
+	string e = direct ? elem["name"].get<string>() : "__for_e_" + to_string(tempVarCounter_++);
+	json recvType = eType;
+	if (eBorrow && !elem.value("mutable", false)) {
+		if (isArrLevel(recvType)) recvType = withArrPermission(move(recvType), false);
+		else recvType["mutable"] = false;
+	}
+	string ok = "__for_ok_" + to_string(tempVarCounter_++);
+	heads.push_back({{"stmt-type","tapple-decl"},{"loc",loc},
+		{"vars",json::array({{{"var-name",ok},{"var-type",{{"type-kind","prim"},{"type-name","bool"}}}},
+		                     {{"var-name",e},{"var-type",astTypeOf(recvType)}}})},
+		{"value",{{"expr-type","call"},{"name","next"},{"args",json::array({borrowOf(id(it), true)})},
+		          {"iterates",itType},{"loc",loc}}}});
+	heads.push_back({{"stmt-type","if"},{"loc",loc},
+		{"cond",{{"expr-type","logical-not"},{"operand",id(ok)},{"loc",loc}}},
+		{"then",{{"stmt-type","block"},{"body",json::array({{{"stmt-type","break"},{"loc",loc}}})}}}});
+	// A borrowed array is the element as it is; any other borrow is read
+	// and written through `[0]`.
+	json through = isArrLevel(eType) ? id(e)
+	             : json{{"expr-type","arr-index"},{"array",id(e)},{"index",{{"expr-type","lit-int"},{"value","0"},{"loc",loc}}}};
+	json astBody = stmt["body"];
+	if (elem["borrow"]) {
+		declareVar(elem["name"], recvType);
+		aliasLoopElem(astBody, elem["name"], through);
+	} else if (!direct) {
+		json copyType = eType;
+		copyType.erase("mutable");
+		through["loc"] = elem["loc"];
+		heads.push_back({{"stmt-type","var-decl"},{"loc",elem["loc"]},
+			{"vars",json::array({{{"name",elem["name"]},{"var-type",astTypeOf(isArrLevel(eType) ? copyType : eType["base-type"])},
+			                      {"init",move(through)}}})}});
+	}
+
+	vector<string> path;
+	bool pinned = !rangeSa && locationPath(rangeAst, path);
+	if (pinned) pinnedRanges_.push_back({move(path), true, false});
+	string idxName = stmt.value("index", idx);
+	forIndexVars_.insert(idxName);
+	json body = sa_loop_body(astBody, heads, move(step));
+	forIndexVars_.erase(idxName);
+	if (pinned) pinnedRanges_.pop_back();
+	json cond = sa_expression({{"expr-type","lit-int"},{"value","1"},{"loc",loc},
+	                           {"value-type",{{"type-kind","prim"},{"type-name","bool"}}}});
 	block.push_back({{"stmt-type","while"},{"cond",move(cond)},{"body",move(body)},{"loc",loc}});
 
 	size_t scope = arrayScopeVars_.size() - 1;
@@ -1663,6 +1826,17 @@ json PlnSemanticAnalyzer::copyReturnBlock(const json& stmt, json& ret)
 // conversion rules as a single-value declaration.
 json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
 {
+	json stmt2 = stmt;
+	vector<VarStorage> storage;
+	for (auto& v : stmt2["vars"]) {
+		storage.push_back(takeVarStorage(v["var-type"]));
+		v["var-type"] = resolveKnownType(stmt2, v["var-type"]);
+	}
+	return sa_resolved_tapple_decl(stmt2, storage);
+} // LCOV_EXCL_BR_LINE
+
+json PlnSemanticAnalyzer::sa_resolved_tapple_decl(const json& stmt, const vector<VarStorage>& storages)
+{
 	json callExpr = tappleCallExpr(stmt);
 	const json& rets = findMultiRetFunc(stmt, callExpr, stmt["vars"].size())["rets"];
 	callExpr["multi-ret"] = rets.size();
@@ -1699,8 +1873,7 @@ json PlnSemanticAnalyzer::sa_tapple_decl(const json& stmt)
 		const json& v = stmt["vars"][i];
 		const json& retType = rets[i]["var-type"];
 		json varType = v["var-type"];
-		VarStorage storage = takeVarStorage(varType);
-		varType = resolveKnownType(stmt, varType);
+		VarStorage storage = storages[i];
 		string name = v["var-name"];
 		// A frame variable can't take a returned array block over, so it is
 		// declared from the temp, which moves the block's contents into the

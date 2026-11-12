@@ -1,0 +1,31 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+
+type word { [+]uint8 cs; };
+type words { [+]int64 lens; };
+type wordsit { @words w; int64 pos; [+]int64 seen; };
+func iter(@words w) -> wordsit { wordsit r; w -> r.w; return r; }
+// Each element is a new struct, owned by the loop; one is returned even at the end.
+func next(@!wordsit it) -> bool ok, word e
+{
+	false -> ok;
+	it.seen.push(it.pos);
+	if it.pos >= len(@it.w.lens) { return; }
+	int64 i = 0;
+	while i < it.w.lens[it.pos] { e.cs.push(97 + uint8(i)); i + 1 -> i; }
+	true -> ok;
+	it.pos + 1 -> it.pos;
+}
+func mk() -> words r { r.lens.push(1); r.lens.push(2); r.lens.push(3); }
+
+mtrace();
+{
+	for copy e in mk() { printf("%ld ", len(@e.cs)); }
+	words ws = mk();
+	for copy e, i in ws {
+		if i == 0 { continue }
+		if i == 2 { break }
+		printf("%ld ", len(@e.cs));
+	}
+	printf("\n");
+}

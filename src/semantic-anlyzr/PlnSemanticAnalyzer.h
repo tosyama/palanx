@@ -363,6 +363,8 @@ class PlnSemanticAnalyzer {
 	string defaultText(const json& d) const;
 	string calleesText(const string& name, const vector<Callee>& cands) const;
 	json   makeCall(const json& expr, const vector<Callee>& cands, const string& writtenName);
+	vector<Callee> findCalleesUnderAnyAlias(const string& name) const;
+	vector<Callee> forProtocolCallees(const string& name, const json& structVT) const;
 	vector<Callee> literalConversions(const json& structVT);
 	json   literalConversion(const json& ast, const json& toVT);
 	vector<Callee> usableCallees(const json& expr, const vector<Callee>& cands) const;
@@ -746,12 +748,16 @@ class PlnSemanticAnalyzer {
 	json copyReturnBlock(const json& stmt, json& ret);
 	const json& findMultiRetFunc(const json& stmt, const json& callExpr, size_t recvCount);
 	json sa_tapple_decl(const json& stmt);       // returns array of statements
+	json sa_resolved_tapple_decl(const json& stmt, const vector<VarStorage>& storages);
 	json sa_tapple_assign(const json& stmt);
 	json sa_block(const json& stmt);
 	json sa_if_stmt(const json& stmt);
 	json sa_while_stmt(const json& stmt);
 	json sa_loop_body(const json& astBody, const json& heads, json step);
 	json sa_for_stmt(const json& stmt);
+	json sa_for_array(const json& stmt, json range);
+	json sa_for_struct(const json& stmt, const json& rangeVT, json* rangeSa);
+	json forIndexHead(const json& stmt, const string& idx, const json* arrType);
 	json sa_break_stmt(const json& stmt);
 	json sa_continue_stmt(const json& stmt);
 

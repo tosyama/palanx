@@ -1,7 +1,7 @@
 Palan Semantic Analyzer JSON Specification
 ==========================================
 
-ver. 0.2.4
+ver. 0.2.5
 
 Output of palan-sa. Extends the AST JSON format (see ASTSpec.md) with resolved
 type information and pre-collected literal tables.
@@ -688,6 +688,24 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   `->` into it (allowed into a fixed-length range), and a writable borrow of it (`@!v`,
   method-form push/pop/resize, or a `@!` borrow passed on or bound as is). Indices on the path
   are not compared, so any index counts as the iterated one.
+
+  Over a struct `s` (`for copy c, i in s`), SA lowers it to a `block` holding, in order:
+  - the iterator `__pin_N` that the call `iter(@s)` (or `iter(@!s)`) returns. When `s` is a value
+    a call returns, it is first held in a `__pin_N` of its own, which the block frees if it owns it.
+    `iter` and `next` are those visible under any alias whose shape fits
+    (`iter(@T s) -> I` or `iter(@!T s) -> I`, with `I` a struct; `next(@!I it) -> bool ok, E`);
+    none is E_ForIterShape or E_ForNextShape, both `iter(@T)` and `iter(@!T)` E_ForIterAmbiguous.
+  - the `int64` index, as for an array.
+  - a `while` on a `bool` literal 1 whose body begins with a `tapple-decl` receiving
+    `next(@!__pin_N)` into `__for_ok_N` and the element, then an `if` on `!__for_ok_N` holding
+    `break`. A `copy c` of an element `E` returned by value receives it as `c`; otherwise it is
+    received into `__for_e_N` (read-only for `@c`), and `copy c` is then declared from
+    `__for_e_N[0]` (`__for_e_N` for an array). For `@c`/`@!c`, each `c` in `body` is replaced by
+    `__for_e_N[0]` as for an array's element. `@c` over a returned `E`, or `@!c` over `@E`, is
+    E_ForElemForm. The typed index and the step are as for an array.
+  - the release of the iterator, and of the held `s` when the block owns it.
+  When `s` is a location, the same E_ChangeForRange checks apply to it, with every change to `s`
+  itself counted, also `->` into it and rebinding it.
 
 - **break** - exit the innermost while loop
   - stmt-type\*: "break"

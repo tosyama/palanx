@@ -777,6 +777,9 @@ inline json astTypeOf(const json& saType)
 		return {{"type-kind","prim"},{"type-name",saType["base-type"]["type-name"]}};
 	} else if (saType.value("type-kind","") == "prim") {
 		return saType;
+	} else if (isPtrBorrow(saType)) {
+		out = {{"type-kind","pntr"},{"mutable",saType["mutable"]}};
+		elem = astTypeOf(saType["base-type"]);
 	}
 	if (elem.is_null())
 		return nullptr;

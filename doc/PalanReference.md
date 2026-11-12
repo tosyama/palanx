@@ -1,6 +1,6 @@
 # Palan Language Reference
 
-**Version:** v0.2.4
+**Version:** v0.2.5
 
 Palan is a compiled systems programming language designed as a simpler, safer, and more enjoyable alternative to C. It targets developers who want low-level control and direct access to C libraries, without the sharp edges of C syntax. Palan code compiles to native x86-64 binaries via AT&T assembly, with no runtime overhead.
 
@@ -594,7 +594,7 @@ import "lib.pa";           // import Palan source file (see §11)
 if expr { ... }            // conditional (see §6)
 if expr { ... } else { ... }  // conditional with else (see §6)
 while expr { ... }         // loop (see §6)
-for copy a, i in arr { ... }  // loop over an array's elements (see §6)
+for copy a, i in arr { ... }  // loop over an array's elements, or a struct's (see §6)
 ```
 
 ### If / If-Else Statements
@@ -704,6 +704,45 @@ printf("\n");                          // 0:20 1:40 2:60
   `@!arr` are compile errors. Writing elements, changing an inner array (`m[0].push(1)` in
   `for copy r in m`) and `@arr` are fine. A change made through another borrow of `arr` is not
   detected.
+
+A struct can be iterated over when its type defines two functions, `iter` and `next`:
+
+```palan
+cinclude <stdio.h>;
+
+type bag { [+]int32 v; };
+type bagit { @bag b; int64 pos; };     // the iterator: where the loop is
+func iter(@bag b) -> bagit { bagit r; b -> r.b; return r; }
+func next(@!bagit it) -> bool ok, int32 c
+{
+    false -> ok;
+    if it.pos >= len(@it.b.v) { return; }
+    it.b.v[it.pos] -> c;
+    true -> ok;
+    it.pos + 1 -> it.pos;
+}
+
+bag g;
+g.v.push(10); g.v.push(20);
+for copy c, i in g { printf("%ld:%d ", i, c); }    // 0:10 1:20
+```
+
+- `for copy c in s` calls `iter(@s)` once to get an iterator, then calls `next` with it before
+  each iteration, running the body while `ok` is true. When `ok` is false the element is not used.
+- `iter` is `func iter(@T s) -> I` or `func iter(@!T s) -> I`, one of the two, where `I` is a
+  struct type returned by value; with `@!T`, `s` must be writable. `next` is
+  `func next(@!I it) -> bool ok, E`. Another shape, or a type without them, is a compile error
+  naming the shapes expected. They are found also in a module imported under an alias, since
+  `for` never writes their names.
+- What `next` returns decides the loop variable: an element `E` by value allows `copy` only (a
+  struct is received as returned, without a copy, and freed at the end of each iteration); `@E`
+  allows `copy` and `@`; `@!E` allows all three. With `@c` and `@!c`, `c` stands for the element
+  itself, as for an array.
+- `i` counts the iterations from 0. A type may be written for it, which is not checked to fit,
+  as for an array whose length is known only at run time.
+- `s` is evaluated once; a struct returned by a call is freed after the loop. The body cannot
+  change `s` itself: `->` or `->>` into or out of it, and passing `@!s` (also `s.f()` and
+  `s << x`), are compile errors. Reading `s` and writing its fields are fine.
 
 ### break / continue
 

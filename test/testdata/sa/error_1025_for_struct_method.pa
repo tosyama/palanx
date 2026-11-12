@@ -1,0 +1,9 @@
+type bag { [+]int32 v; };
+type bagit { @bag b; int64 pos; };
+type mbagit { @!bag b; int64 pos; };
+func iter(@!bag b) -> mbagit { mbagit r; b -> r.b; return r; }
+func next(@!mbagit it) -> bool ok, int32 c { false -> ok; 0 -> c; }
+func add(@!bag b, int32 x) { b.v.push(x); }
+func <<(@!bag b, int32 x) -> @!bag { b.v.push(x); return b; }
+bag g;
+for copy c in g { g.add(c); }

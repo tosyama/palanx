@@ -1,0 +1,4 @@
+type bag { [+]int32 v; };
+type bagit { @bag b; int64 pos; };
+bag g;
+for copy c in g { }

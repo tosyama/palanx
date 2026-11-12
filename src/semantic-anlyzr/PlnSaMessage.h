@@ -216,6 +216,10 @@ enum PlnSaMessageCode {
 	E_CopyFuncSig,
 	E_CopyFuncPlace,
 	E_CopyFuncExported,
+	E_ForIterShape,		// arg1: struct type display name
+	E_ForIterAmbiguous,	// arg1: struct type display name
+	E_ForNextShape,		// arg1: iterator type display name
+	E_ForElemForm,		// arg1: the loop variable as written ('@c' or '@!c'), arg2: next's element type
 };
 
 class PlnSaMessage

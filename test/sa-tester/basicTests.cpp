@@ -1315,6 +1315,32 @@ TEST(sa, for_loop_index_type)
 	ASSERT_EQ(head["init"]["src"]["name"], counter);
 }
 
+// A struct is iterated by its type's 'iter' and 'next': the iterator is held
+// in the loop's block, and '@!c' is the element 'next' returns a borrow of.
+// The body may read the struct and write its fields.
+TEST(sa, for_struct)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/344_for_struct.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& b = jout["statements"][1]["body"];
+	string it = b[0]["vars"][0]["name"];
+	ASSERT_EQ(b[1]["body"]["args"][0]["name"], "g");
+	ASSERT_EQ(b[2]["vars"][0]["name"], "i");
+	ASSERT_EQ(b[3]["stmt-type"], "while");
+	ASSERT_EQ(b[3]["cond"]["value"], "1");
+	const auto& w = b[3]["body"];
+	ASSERT_EQ(w[0]["stmt-type"], "tapple-decl");
+	ASSERT_EQ(w[0]["value"]["args"][0]["name"], it);
+	string e = w[0]["vars"][1]["var-name"];
+	ASSERT_EQ(w[1]["stmt-type"], "if");
+	ASSERT_EQ(w[1]["then"]["body"].back()["stmt-type"], "break");
+	ASSERT_EQ(w[2]["target"]["array"]["name"], e);
+	ASSERT_EQ(w[2]["target"]["index"]["value"], "0");
+	ASSERT_EQ(w[3]["stmt-type"], "field-assign");
+	ASSERT_EQ(b[4]["body"]["args"][0]["name"], it);
+}
+
 // Changes that leave the iterated array's storage and length alone: its
 // elements, deeper arrays, read-only borrows, a fixed-length array in place,
 // and rebinding a borrow.

@@ -1,7 +1,7 @@
 Palan Abstract Syntax Tree Json Specification
 ============================================
 
-ver. 0.2.4
+ver. 0.2.5
 
 \* - Required
 
@@ -517,8 +517,8 @@ Statement model
   16. while - while loop statement
     - cond\* - Condition expression model
     - body\* - Statement model list (raw array, no block wrapper)
-  17. for - loop over an array's elements (`for copy a, i in arr { ... }`; SA lowers it to a block
-      holding a while)
+  17. for - loop over an array's elements, or over a struct by its type's `iter` and `next`
+      (`for copy a, i in arr { ... }`; SA lowers it to a block holding a while)
     - elem\* - The loop variable
       - name\* - Variable name string
       - borrow\* - Boolean, true for `@a`/`@!a` (the element itself, read-only or writable) and false for `copy a` (a copy)
@@ -527,7 +527,7 @@ Statement model
     - index - Name string of the index variable (omitted when absent)
     - index-type - Type model of the index written before its name (`for @a, int32 i in arr`);
       omitted when not written, and the index is then `int64`
-    - range\* - The array expression model
+    - range\* - The expression model of the array or struct iterated over
     - body\* - Statement model list (raw array, no block wrapper)
   18. break - exit the innermost while or for loop (no additional fields)
   19. continue - skip to next iteration of innermost while or for loop (no additional fields)

@@ -741,6 +741,11 @@ costs a scan each time. Borrows among several return values are accepted today.
   change through another borrow is not detected (doc/Issues.md #19).
 - A type without `iter`, or whose `iter` or `next` has another shape, is an error naming the shape
   expected. An iterator itself cannot be given to `for`.
+- The iterator type is a struct, returned by value. `next` is chosen by it, so a primitive
+  iterator (`next(@!int64 it)`) would have the iterations of unrelated types compete for one
+  signature.
+- `iter` and `next` are found as operator functions are: an alias does not hide them, since `for`
+  never writes their names.
 
 **Character literals.** A character literal is the Unicode code point it holds (`'é'` is 233,
 `'😀'` is 128512). Today only printable ASCII is accepted.

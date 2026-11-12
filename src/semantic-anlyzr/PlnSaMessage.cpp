@@ -485,7 +485,7 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			return "'len' cannot tell this array's length: an array declared with its size, or a variable-length array, keeps one, but a '[]T' does not.";
 
 		case E_ForRangeNotArray:
-			return "'for' takes an array to iterate over.";
+			return "'for' takes an array, or a struct whose type has 'iter' and 'next', to iterate over.";
 
 		case E_GlobalNotReplaceable:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -527,7 +527,7 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 
 		case E_ChangeForRange:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "cannot change the array a 'for' loop iterates over ('" + arg1 + "').";
+			return "cannot change what a 'for' loop iterates over ('" + arg1 + "').";
 
 		case E_ForIndexNotInteger:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -943,6 +943,26 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 
 		case E_CopyFuncExported:
 			return "'->' is not exported: it comes with its type wherever the type goes.";
+
+		case E_ForIterShape:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'for' over '" + arg1 + "' needs 'func iter(@" + arg1 + " s) -> I' or 'func iter(@!" + arg1
+			       + " s) -> I', I a struct type, and 'func next(@!I it) -> bool ok, E'.";
+
+		case E_ForIterAmbiguous:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'for' over '" + arg1 + "' finds both 'iter(@" + arg1 + ")' and 'iter(@!" + arg1
+			       + ")'; a type has one of them.";
+
+		case E_ForNextShape:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'for' needs 'func next(@!" + arg1 + " it) -> bool ok, E' for the iterator '" + arg1 + "'.";
+
+		case E_ForElemForm:
+			BOOST_ASSERT(arg1 != "\x01" && arg2 != "\x01");
+			return "'" + arg1 + "' needs 'next' to return the element as a borrow"
+			       + string(arg1.rfind("@!", 0) == 0 ? " '@!E'" : " '@E' or '@!E'")
+			       + ", but it returns '" + arg2 + "'.";
 
 		default:
 			BOOST_ASSERT(false);

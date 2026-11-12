@@ -1260,22 +1260,22 @@ TEST(sa_error, implicit_args)
 TEST(sa_error, for_loop)
 {
 	const pair<string, string> cases[] = {
-		{"error_838_for_not_array.pa", ":1:28: error: 'for' takes an array to iterate over."},
+		{"error_838_for_not_array.pa", ":1:28: error: 'for' takes an array, or a struct whose type has 'iter' and 'next', to iterate over."},
 		{"error_839_for_index_assign.pa", ":1:34: error: cannot assign to 'i': the index of a 'for' loop is read-only."},
 		{"error_840_for_index_addr_of.pa", ":1:46: error: cannot assign to 'i': the index of a 'for' loop is read-only."},
 		{"error_841_for_unsized.pa", ":1:35: error: 'len' cannot tell this array's length: an array declared with its size, or a variable-length array, keeps one, but a '[]T' does not."},
 		{"error_843_for_ro_write.pa", ":1:27: error: cannot bind a read-only pointer '@T' to a mutable pointer '@!T'."},
 		{"error_845_for_dup_name.pa", ":1:17: error: Variable 'a' is already declared."},
-		{"error_846_for_push.pa", ":1:37: error: cannot change the array a 'for' loop iterates over ('v')."},
-		{"error_847_for_copy_varr.pa", ":1:49: error: cannot change the array a 'for' loop iterates over ('v')."},
-		{"error_848_for_transfer_fixed.pa", ":1:43: error: cannot change the array a 'for' loop iterates over ('c')."},
-		{"error_849_for_transfer_source.pa", ":1:49: error: cannot change the array a 'for' loop iterates over ('v')."},
-		{"error_850_for_container_borrow.pa", ":3:30: error: cannot change the array a 'for' loop iterates over ('s.arr')."},
-		{"error_851_for_borrow_arg.pa", ":2:42: error: cannot change the array a 'for' loop iterates over ('p')."},
-		{"error_852_for_borrow_decl.pa", ":1:42: error: cannot change the array a 'for' loop iterates over ('p')."},
-		{"error_853_for_any_index.pa", ":1:39: error: cannot change the array a 'for' loop iterates over ('vv[]')."},
-		{"error_854_for_field_transfer.pa", ":2:33: error: cannot change the array a 'for' loop iterates over ('s.arr')."},
-		{"error_855_for_elem_copy.pa", ":1:51: error: cannot change the array a 'for' loop iterates over ('vv[]')."},
+		{"error_846_for_push.pa", ":1:37: error: cannot change what a 'for' loop iterates over ('v')."},
+		{"error_847_for_copy_varr.pa", ":1:49: error: cannot change what a 'for' loop iterates over ('v')."},
+		{"error_848_for_transfer_fixed.pa", ":1:43: error: cannot change what a 'for' loop iterates over ('c')."},
+		{"error_849_for_transfer_source.pa", ":1:49: error: cannot change what a 'for' loop iterates over ('v')."},
+		{"error_850_for_container_borrow.pa", ":3:30: error: cannot change what a 'for' loop iterates over ('s.arr')."},
+		{"error_851_for_borrow_arg.pa", ":2:42: error: cannot change what a 'for' loop iterates over ('p')."},
+		{"error_852_for_borrow_decl.pa", ":1:42: error: cannot change what a 'for' loop iterates over ('p')."},
+		{"error_853_for_any_index.pa", ":1:39: error: cannot change what a 'for' loop iterates over ('vv[]')."},
+		{"error_854_for_field_transfer.pa", ":2:33: error: cannot change what a 'for' loop iterates over ('s.arr')."},
+		{"error_855_for_elem_copy.pa", ":1:51: error: cannot change what a 'for' loop iterates over ('vv[]')."},
 		// '@a' is the element itself, written through a read-only view of the range.
 		{"error_869_for_ro_elem_write.pa", ":1:33: error: cannot write through read-only pointer '@T'"},
 		{"error_870_for_ro_elem_write_owned.pa", ":2:18: error: cannot write through read-only pointer '@T'"},
@@ -1328,6 +1328,38 @@ TEST(sa_error, unqualified_enumerator)
 		cleanTestEnv();
 		genModuleAst("../test/testdata/sa/lib_sa_types.pa");
 		string ast_out = moduleAstPath("../test/testdata/sa/" + file);
+		ASSERT_EQ(execTestCommand(
+			"palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, for_struct)
+{
+	const string iterShape = "error: 'for' over 'bag' needs 'func iter(@bag s) -> I' or 'func iter(@!bag s) -> I', "
+	                         "I a struct type, and 'func next(@!I it) -> bool ok, E'.";
+	const string nextShape = "error: 'for' needs 'func next(@!bagit it) -> bool ok, E' for the iterator 'bagit'.";
+	const string change = "error: cannot change what a 'for' loop iterates over ";
+	const pair<string, string> cases[] = {
+		{"error_1016_for_no_iter.pa", ":4:15: " + iterShape},
+		{"error_1017_for_iter_both.pa", ":6:15: error: 'for' over 'bag' finds both 'iter(@bag)' and 'iter(@!bag)'; a type has one of them."},
+		{"error_1018_for_no_next.pa", ":5:15: " + nextShape},
+		{"error_1019_for_next_shape.pa", ":6:15: " + nextShape},
+		{"error_1020_for_iter_prim.pa", ":5:15: " + iterShape},
+		{"error_1021_for_elem_value_borrow.pa", ":6:5: error: '@c' needs 'next' to return the element as a borrow '@E' or '@!E', but it returns 'int32'."},
+		{"error_1022_for_elem_ro_mut.pa", ":6:5: error: '@!c' needs 'next' to return the element as a borrow '@!E', but it returns '@int32'."},
+		{"error_1023_for_iter_mut_readonly.pa", ":8:18: error: cannot bind a read-only pointer '@T' to a mutable pointer '@!T'."},
+		{"error_1024_for_struct_borrow_arg.pa", ":9:23: " + change + "('g')."},
+		{"error_1025_for_struct_method.pa", ":9:19: " + change + "('g')."},
+		{"error_1026_for_struct_append.pa", ":9:19: " + change + "('g')."},
+		{"error_1027_for_struct_copy_into.pa", ":10:19: " + change + "('g')."},
+		{"error_1028_for_struct_move_out.pa", ":10:19: " + change + "('g')."},
+		{"error_1029_for_struct_field_range.pa", ":11:22: " + change + "('x.in')."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
 		ASSERT_EQ(execTestCommand(
 			"palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
 		string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");

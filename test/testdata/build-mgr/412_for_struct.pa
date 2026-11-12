@@ -1,0 +1,47 @@
+cinclude <stdio.h>;
+import "lib_for_struct.pa" as L;
+
+type pt { int64 x; int64 y; };
+type pts { [+]pt v; };
+type ptsit { @!pts p; int64 pos; };
+func iter(@!pts p) -> ptsit { ptsit r; p -> r.p; return r; }
+func next(@!ptsit it) -> bool ok, @!pt e
+{
+	false -> ok;
+	if it.pos >= len(@it.p.v) { return; }
+	@!it.p.v[it.pos] -> e;
+	true -> ok;
+	it.pos + 1 -> it.pos;
+}
+
+type nums { [+]int32 n; };
+type numsit { @nums s; int64 pos; };
+func iter(@nums s) -> numsit { numsit r; s -> r.s; return r; }
+func next(@!numsit it) -> bool ok, @int32 c
+{
+	false -> ok;
+	if it.pos >= len(@it.s.n) { return; }
+	@it.s.n[it.pos] -> c;
+	true -> ok;
+	it.pos + 1 -> it.pos;
+}
+func mk() -> nums r { r.n.push(4); r.n.push(5); r.n.push(6); }
+
+pts s;
+s.v.push([1, 2]); s.v.push([3, 4]); s.v.push([5, 6]);
+for @!e in s { e.x * 10 -> e.x; }
+pt q = [7, 8];
+for @!e, i in s { if i == 1 { q -> e; } }
+for copy e in s { printf("%ld,%ld ", e.x, e.y); }
+for @e, int32 i in s { printf("%d:%ld ", i, e.y); }
+printf("\n");
+
+for copy c in mk() { if c == 5 { continue } printf("%d ", c); }
+nums ns = mk();
+for @c in ns { if c == 6 { break } printf("%d ", c); }
+printf("\n");
+
+// From a module imported under an alias: 'for' never writes the names.
+L.span sp = [2, 5];
+for copy k, i in sp { printf("%ld:%ld ", i, k); }
+printf("\n");

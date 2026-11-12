@@ -770,6 +770,46 @@ json PlnSemanticAnalyzer::sa_expr_call_ptr(const json& expr, json callee, const 
 	return sa_expr;
 } // LCOV_EXCL_BR_LINE
 
+// The functions `name` means, also under any alias: for one called where its
+// name is never written.
+vector<Callee> PlnSemanticAnalyzer::findCalleesUnderAnyAlias(const string& name) const
+{
+	vector<Callee> found = findCallees(name);
+	for (auto it = importScopes.rbegin(); it != importScopes.rend(); ++it)
+		for (auto& [alias, bucket] : *it)
+			if (!alias.empty())
+				for (auto& c : findCalleesByAlias(alias, name)) found.push_back(c);
+	return found;
+} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+
+// The `iter` or `next` functions a 'for' over the struct `structVT` points to
+// calls: `iter(@T s) -> I` or `iter(@!T s) -> I` for a struct I, and
+// `next(@!I it) -> bool ok, E`.
+vector<Callee> PlnSemanticAnalyzer::forProtocolCallees(const string& name, const json& structVT) const
+{
+	const json& structType = structVT["base-type"];
+	bool isNext = name == "next";
+	vector<Callee> fit;
+	set<string> seen;
+	for (auto& c : findCalleesUnderAnyAlias(name)) {
+		if (c.isC) continue;
+		const json& def = *c.def;
+		const json& params = def["parameters"];
+		if (params.size() != 1 || params[0].contains("default") || palanVariadicParam(params)) continue;
+		const json& pt = params[0]["var-type"];
+		if (!isStructBorrow(pt) || pt["base-type"] != structType) continue;
+		if (isNext) {
+			const json& rets = def.value("rets", json::array());
+			if (!pt.value("mutable", false) || rets.size() != 2
+			    || rets[0]["var-type"] != json{{"type-kind","prim"},{"type-name","bool"}}) continue;
+		} else if (!isStructStorage(def.value("ret-type", json()))) {
+			continue;
+		}
+		if (seen.insert(calleeKey(def, false)).second) fit.push_back(c);
+	}
+	return fit;
+} // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+
 // The functions converting a string literal to the struct `structVT` points
 // to: those visible by the type's name, under any alias since a conversion is
 // never written qualified, returning the struct and callable with the literal
@@ -778,11 +818,7 @@ vector<Callee> PlnSemanticAnalyzer::literalConversions(const json& structVT)
 {
 	const json& structType = structVT["base-type"];
 	string name = PlnSaMessage::writtenTypeName(structType["type-name"].get<string>());
-	vector<Callee> found = findCallees(name);
-	for (auto it = importScopes.rbegin(); it != importScopes.rend(); ++it)
-		for (auto& [alias, bucket] : *it)
-			if (!alias.empty())
-				for (auto& c : findCalleesByAlias(alias, name)) found.push_back(c);
+	vector<Callee> found = findCalleesUnderAnyAlias(name);
 
 	json lit = {{"expr-type", "lit-str"}}; // LCOV_EXCL_BR_LINE
 	vector<CallArg> litArgs{{lit, false, {{"expr-type", "lit-str"}, {"value-type", strLitType()}}}}; // LCOV_EXCL_BR_LINE
@@ -834,6 +870,11 @@ json PlnSemanticAnalyzer::sa_expr_call(const json& expr)
 		json call = expr;
 		call.erase("converts-to");
 		return makeCall(call, literalConversions(expr["converts-to"]), callName);
+	}
+	if (expr.contains("iterates")) {
+		json call = expr;
+		call.erase("iterates");
+		return makeCall(call, forProtocolCallees(callName, expr["iterates"]), callName);
 	}
 	if (findFuncPtrVar(expr)) {
 		json id = {{"expr-type", "id"}, {"name", expr["name"]}}; // LCOV_EXCL_BR_LINE
@@ -1607,7 +1648,7 @@ const json& PlnSemanticAnalyzer::findMultiRetFunc(const json& stmt, const json& 
 		cands = findCalleesByAlias(alias, fname);
 	} else {
 		fname = callExpr["name"].get<string>();
-		cands = findCallees(fname);
+		cands = callExpr.contains("iterates") ? forProtocolCallees(fname, callExpr["iterates"]) : findCallees(fname);
 	}
 	if (cands.empty()) {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TupleUndefinedFunction, fname) << endl;

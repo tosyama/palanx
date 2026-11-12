@@ -665,6 +665,21 @@ TEST(build_mgr, for_loop_index_type) {
 		"(0,0)1(4,0)3(0,1)4(4,1)6\n254:254 255:255 0:256 1:257 \n");
 }
 
+// '@!e' writes the element 'next' returns a borrow of; a range a call returns
+// lives until the loop ends; 'iter' and 'next' are found under an alias.
+TEST(build_mgr, for_struct) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand("bin/palan -o out/for_struct_bin ../test/testdata/build-mgr/412_for_struct.pa"), "");
+	ASSERT_EQ(execTestCommand("out/for_struct_bin"),
+		"10,2 7,8 50,6 0:2 1:8 2:6 \n4 6 4 5 \n0:2 1:3 2:4 \n");
+}
+
+// Each element 'next' returns by value is freed at the end of its iteration,
+// also by 'continue', 'break' and the last call returning false.
+TEST(build_mgr, for_struct_mtrace) {
+	expectMtraceRun("413_for_struct_mtrace", "1 2 3 2 \n", 34);
+}
+
 TEST(build_mgr, top_var_const_in_sig) {
 	cleanTestEnv();
 	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/369_top_var_const.pa");
