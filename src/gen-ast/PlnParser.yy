@@ -252,6 +252,15 @@ struct BodyList {
 				PlnGenAstMessage::getMessage(E_ExpectedInKeyword, word)));
 	}
 
+	static string fieldAccess(const string& file, const string& word,
+	                          const palan::PlnParser::location_type& loc)
+	{
+		if (word != "private" && word != "readonly")
+			throw runtime_error(PlnGenAstMessage::locatedError(file, loc.begin.line, loc.begin.column,
+				PlnGenAstMessage::getMessage(E_UnknownFieldMarker, word)));
+		return word;
+	}
+
 	[[noreturn]] static void variadicNotLast(PlnLexer& lexer, const palan::PlnParser::location_type& loc)
 	{
 		throw runtime_error(PlnGenAstMessage::locatedError(lexer.inputFile, loc.begin.line, loc.begin.column,
@@ -953,6 +962,10 @@ type_member: type_expr ID ';'
 	{ $$ = {{"name", move($2)}, {"var-type", move($1)}}; } // LCOV_EXCL_BR_LINE
 	| type_expr ID '=' expression ';'
 	{ $$ = {{"name", move($2)}, {"var-type", move($1)}, {"init", move($4)}}; } // LCOV_EXCL_BR_LINE
+	| ID type_expr ID ';'
+	{ $$ = {{"name", move($3)}, {"var-type", move($2)}, {"access", fieldAccess(lexer.inputFile, $1, @1)}}; } // LCOV_EXCL_BR_LINE
+	| ID type_expr ID '=' expression ';'
+	{ $$ = {{"name", move($3)}, {"var-type", move($2)}, {"init", move($5)}, {"access", fieldAccess(lexer.inputFile, $1, @1)}}; } // LCOV_EXCL_BR_LINE
 	| KW_FUNC long_func_name '(' paramaters ')' return_def block
 	{ $$ = {{"not-impl", true}}; } // LCOV_EXCL_BR_LINE
 	;

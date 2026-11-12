@@ -1,0 +1,6 @@
+export type T {
+	private [+]uint8 bytes = [0];
+	readonly bool done;
+	private int64 private;
+	readonly readonly;
+};

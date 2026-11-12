@@ -417,7 +417,13 @@ json PlnSemanticAnalyzer::sa_for_stmt(const json& stmt)
 		json vt = operandValueType(range);
 		if (isStructPntr(vt)) return sa_for_struct(stmt, vt, nullptr);
 	}
-	json rangeSa = sa_expression(range);
+	const json& elem = stmt["elem"];
+	string rangeKind = range.value("expr-type", "");
+	bool writes = elem.value("borrow", false) && elem.value("mutable", false);
+	json rangeSa = !writes ? sa_expression(range)
+		: rangeKind == "field-access" ? sa_expr_field_access(range, true)
+		: rangeKind == "arr-index"    ? sa_expr_arr_index(range, true)
+		: sa_expression(range);
 	const json& vt = rangeSa["value-type"];
 	if (isStructPntr(vt)) {
 		json t = vt;
@@ -1207,7 +1213,7 @@ json PlnSemanticAnalyzer::storeTargetType(const json& stmt)
 	if (stmt["stmt-type"] == "arr-assign")
 		return sa_expr_arr_index(stmt["target"], /*forWrite=*/true)["value-type"];
 	FieldChain chain = resolveObjectChain(stmt["object"], /*forWrite=*/true);
-	return fieldValueType(findFieldOrExit(chain.structName, stmt["field"].get<string>(), stmt));
+	return fieldValueType(findFieldOrExit(chain.structName, stmt["field"].get<string>(), stmt, true));
 } // LCOV_EXCL_BR_LINE
 
 // A copy of what saSrc holds, made into pre and released by post, standing in
@@ -1956,7 +1962,7 @@ json PlnSemanticAnalyzer::sa_field_assign(const json& stmt, json* litAddr)
 {
 	FieldChain chain = resolveObjectChain(stmt["object"], /*forWrite=*/true);
 	string fn = stmt["field"].get<string>();
-	const FieldLayout* it = &findFieldOrExit(chain.structName, fn, stmt);
+	const FieldLayout* it = &findFieldOrExit(chain.structName, fn, stmt, true);
 	bool transfer = stmt.value("ownership-transfer", false);
 	if (transfer && it->typeKind != "owned") {
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_TransferToNonOwnedField, fn) << endl;

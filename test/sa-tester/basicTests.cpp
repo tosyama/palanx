@@ -1318,6 +1318,15 @@ TEST(sa, for_loop_index_type)
 // A struct is iterated by its type's 'iter' and 'next': the iterator is held
 // in the loop's block, and '@!c' is the element 'next' returns a borrow of.
 // The body may read the struct and write its fields.
+// Outside its module a type's read-only fields are read, and whole values are copied and lent.
+TEST(sa, hidden_fields)
+{
+	cleanTestEnv();
+	genModuleAst("../test/testdata/sa/lib_sa_hidden.pa");
+	json jout = run_sa("../test/testdata/sa/345_hidden_fields.pa");
+	ASSERT_TRUE(jout.is_object());
+}
+
 TEST(sa, for_struct)
 {
 	cleanTestEnv();

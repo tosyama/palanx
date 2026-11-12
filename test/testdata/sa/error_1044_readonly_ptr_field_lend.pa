@@ -1,0 +1,4 @@
+import "lib_sa_hidden.pa";
+box b;
+func f(@!pt a) { }
+b.p -> f();

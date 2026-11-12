@@ -773,6 +773,10 @@ plain data (`samples/raytracer/vecmath.pa`'s `vec3`).
   out of it). Naming either in a struct literal, or writing a positional struct literal of a type
   having either, is an error. Operations on the whole value (copy, move, `->`, passing it, `@!s`)
   are allowed.
+- `readonly` covers everything reached through the field, a borrowed pointee too: a `readonly @!T`
+  field reads as `@T` outside. A pointee is not part of the value, but leaving it writable would
+  let any module change what the type's module chose to expose read only; a module wanting it
+  changed from outside provides a function.
 - A `.pai` keeps `private` fields, marked, since the layout and the allocators need them.
 - Generated modules (names starting with `__`, such as the allocators) are exempt.
 

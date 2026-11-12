@@ -1510,3 +1510,18 @@ TEST(gen_ast, str_lit_bytes) {
 	// A valid UTF-8 character stays as it is however it was written; a byte written raw is escaped.
 	ASSERT_EQ(stmts[2]["value"]["value"], "€€\\xFFé");
 }
+
+// A marker is a word only before a field's type: 'private' and 'readonly' stay names.
+TEST(gen_ast, hidden_fields)
+{
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/163_hidden_fields.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const json& f = jout["ast"]["statements"][0]["fields"];
+	ASSERT_EQ(f[0]["access"], "private");
+	ASSERT_EQ(f[1]["access"], "readonly");
+	ASSERT_EQ(f[2]["name"], "private");
+	ASSERT_EQ(f[2]["access"], "private");
+	ASSERT_EQ(f[3]["var-type"]["type-name"], "readonly");
+	ASSERT_FALSE(f[3].contains("access"));
+}

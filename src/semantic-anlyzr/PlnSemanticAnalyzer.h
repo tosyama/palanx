@@ -46,6 +46,9 @@ struct FieldLayout {
 	// variable whose array is laid out in a frame.
 	json    type;
 	json    initAst;   // the field's initializer as written; null when it has none
+	// "private" or "readonly" toward code outside the module defining the
+	// struct; empty = public.
+	string  access;
 };
 
 // Where an aggregate variable's outermost storage block lives: `$T v;` puts it
@@ -684,7 +687,9 @@ class PlnSemanticAnalyzer {
 	void requireOwnedBase(const json& saBase, const json& locNode);
 	json makeFieldAssign(const FieldChain& chain, const FieldLayout& field, json value);
 	json makeFieldAccess(const FieldChain& chain, const FieldLayout& field);
-	const FieldLayout& findFieldOrExit(const string& structName, const string& fieldName, const json& locNode);
+	const FieldLayout& findFieldOrExit(const string& structName, const string& fieldName, const json& locNode,
+	                                   bool forWrite);
+	bool outsideTypeModule(const string& structName) const;
 	// Look up a struct already known to be registered (name presence must be checked
 	// by the caller beforehand) and reject it if its layout isn't known yet.
 	const StructDef& requireCompleteStruct(const string& structName, const json& locNode);

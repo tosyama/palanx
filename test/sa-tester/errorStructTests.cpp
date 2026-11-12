@@ -1138,3 +1138,46 @@ TEST(sa, error_append)
 		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
 	}
 }
+
+TEST(sa_error, hidden_fields)
+{
+	const string priv = "error: the field 'secret' of 'box' is private to the module defining 'box'.";
+	auto ro = [](const string& field) {
+		return "error: the field '" + field + "' of 'box' is read-only outside the module defining 'box', "
+		       "and so is anything reached through it.";
+	};
+	auto marker = [](const string& m, const string& field) {
+		return "error: '" + m + "' on the field '" + field + "' needs an exported struct ('export type'): "
+		       "the boundary is the module defining it.";
+	};
+	const pair<string, string> cases[] = {
+		{"error_1030_private_field_read.pa", ":3:11: " + priv},
+		{"error_1031_private_field_write.pa", ":3:1: " + priv},
+		{"error_1032_readonly_field_write.pa", ":3:1: " + ro("n")},
+		{"error_1033_readonly_field_borrow.pa", ":3:15: " + ro("n")},
+		{"error_1034_readonly_field_push.pa", ":3:1: " + ro("items")},
+		{"error_1035_readonly_field_elem.pa", ":3:6: " + ro("items")},
+		{"error_1036_readonly_field_nested.pa", ":3:6: " + ro("at")},
+		{"error_1037_readonly_field_through_ptr.pa", ":3:6: " + ro("p")},
+		{"error_1038_readonly_field_move_out.pa", ":3:16: " + ro("items")},
+		{"error_1039_struct_lit_hidden.pa",
+		 ":3:10: error: a struct literal of 'box' outside the module defining it cannot set the private field 'secret'."},
+		{"error_1040_struct_lit_positional.pa",
+		 ":3:15: error: 'box' has private or read-only fields: outside the module defining it, a struct literal of it names the fields it sets."},
+		{"error_1041_field_access_not_exported.pa", ":1:1: " + marker("private", "x")},
+		{"error_1042_field_access_block_type.pa", ":3:2: " + marker("readonly", "x")},
+		{"error_1043_struct_lit_hidden_no_init.pa",
+		 ":2:9: error: no struct literal of 'box' can be written outside the module defining it: its readonly field 'items' has no initializer."},
+		{"error_1044_readonly_ptr_field_lend.pa", ":4:8: error: cannot bind a read-only pointer '@T' to a mutable pointer '@!T'."},
+		{"error_1045_readonly_field_for_borrow.pa", ":3:12: " + ro("items")},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		genModuleAst("../test/testdata/sa/lib_sa_hidden.pa");
+		string ast_out = moduleAstPath("../test/testdata/sa/" + file);
+		ASSERT_EQ(execTestCommand(
+			"palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}

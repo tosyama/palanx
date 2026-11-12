@@ -194,6 +194,38 @@ TEST(build_mgr, library_copy_func_of_an_internal_private_type) {
 		string::npos);
 }
 
+// The interface keeps hidden fields, which the user's allocators lay out and copy.
+TEST(build_mgr, library_hidden_fields) {
+	cleanTestEnv();
+	writeFile("out/src/bag.pa", R"(library kit;
+export type Bag {
+	private [+]int32 items;
+	readonly int32 count = 0;
+	int32 tag;
+};
+export func add(@!Bag b, int32 v) -> @!Bag { b.items.push(v); b.count + 1 -> b.count; return b; }
+export func sum(@Bag b) -> int32 s { for copy v in b.items { s + v -> s; } }
+)");
+	ASSERT_EQ(execTestCommand("bin/palan --lib -o out/libs out/src/bag.pa"), "");
+	fs::remove_all("out/src");
+	string pai = fileText("out/libs/kit/bag.pai");
+	EXPECT_NE(pai.find("\tprivate [+]int32 items;\n\treadonly int32 count = 0;\n\tint32 tag;\n"), string::npos) << pai;
+	writeFile("out/app/main.pa", R"(libpath "../libs";
+cinclude <stdio.h>;
+import <kit/bag>;
+Bag a; 9 -> a.tag;
+a.add(1).add(2);
+Bag b = a;
+b.add(4);
+Bag c; b -> c;
+printf("%d %d %d %d %d\n", sum(@a), a.count, sum(@c), c.count, c.tag);
+)");
+	EXPECT_EQ(execTestCommand("bin/palan out/app/main.pa"), "3 2 7 3 9\n");
+	writeFile("out/app/bad.pa", "libpath \"../libs\";\nimport <kit/bag>;\nBag a;\n3 -> a.count;\n");
+	EXPECT_NE(execTestCommand("bin/palan out/app/bad.pa").find("the field 'count' of 'Bag' is read-only"),
+		string::npos);
+}
+
 // A libpath adds a place for the whole program, wherever it is written and relative to that file.
 TEST(build_mgr, libpath_in_an_imported_module) {
 	buildGeoLibrary();

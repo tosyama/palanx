@@ -38,6 +38,7 @@ enum PlnMessageCode {
 	E_CharLitInvalidUtf8,
 	E_InvalidCodePointEscape,	// the escape as written
 	E_VariadicNotLast,
+	E_UnknownFieldMarker,	// the word before the field's type
 };
 
 class PlnGenAstMessage

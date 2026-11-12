@@ -64,7 +64,7 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj, bool forWrit
 	}
 	FieldChain base = resolveObjectChain(obj["object"], forWrite);
 	string fn = obj["field"].get<string>();
-	const FieldLayout* it = &findFieldOrExit(base.structName, fn, obj);
+	const FieldLayout* it = &findFieldOrExit(base.structName, fn, obj, forWrite);
 	if (it->typeKind == "prim" || it->typeKind == "embed-varr" || (it->typeKind == "owned" && !isStructPntr(it->type))) {
 		cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
 		exit(1);
@@ -118,7 +118,14 @@ void PlnSemanticAnalyzer::requireOwnedBase(const json& saBase, const json& locNo
 	}
 }
 
-const FieldLayout& PlnSemanticAnalyzer::findFieldOrExit(const string& structName, const string& fieldName, const json& locNode)
+bool PlnSemanticAnalyzer::outsideTypeModule(const string& structName) const
+{
+	auto origin = typeOrigins_.find(structName);
+	return origin != typeOrigins_.end() && origin->second != moduleId_;
+}
+
+const FieldLayout& PlnSemanticAnalyzer::findFieldOrExit(const string& structName, const string& fieldName, const json& locNode,
+                                                        bool forWrite)
 {
 	const StructDef& def = requireCompleteStruct(structName, locNode);
 	auto it = find_if(def.fields.begin(), def.fields.end(), [&](const FieldLayout& f){ return f.name == fieldName; });
@@ -128,6 +135,11 @@ const FieldLayout& PlnSemanticAnalyzer::findFieldOrExit(const string& structName
 	}
 	if (!it->unsupported.empty()) {
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnsupportedCFieldType, structName, fieldName, it->unsupported) << endl;
+		exit(1);
+	}
+	if ((it->access == "private" || (it->access == "readonly" && forWrite)) && outsideTypeModule(structName)) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(it->access == "private" ? E_PrivateField : E_ReadonlyField,
+			PlnSaMessage::writtenTypeName(structName), fieldName) << endl;
 		exit(1);
 	}
 	return *it;
@@ -234,7 +246,7 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 	if (obj_type == "field-access") {
 		FieldChain chain = resolveObjectChain(obj["object"], /*forWrite=*/isMutable);
 		string fn = obj["field"].get<string>();
-		const FieldLayout& fld = findFieldOrExit(chain.structName, fn, obj);
+		const FieldLayout& fld = findFieldOrExit(chain.structName, fn, obj, isMutable);
 		bool isOwned = fld.typeKind == "owned";
 		bool isArrField = (isOwned && isArrLevel(fld.type)) || fld.typeKind == "embed-arr";
 		if (fld.typeKind != "prim" && fld.typeKind != "embed" && fld.typeKind != "embed-varr" && !isOwned && !isArrField) {
@@ -1451,7 +1463,13 @@ json PlnSemanticAnalyzer::sa_expr_field_access(const json& expr, bool forWrite)
 {
 	FieldChain chain = resolveObjectChain(expr["object"], forWrite);
 	string fn = expr["field"].get<string>();
-	return makeFieldAccess(chain, findFieldOrExit(chain.structName, fn, expr));
+	const FieldLayout& fld = findFieldOrExit(chain.structName, fn, expr, forWrite);
+	json out = makeFieldAccess(chain, fld);
+	// A read-only field's pointer, read outside, must not lend its pointee for writing.
+	if (fld.access == "readonly" && fld.typeKind == "raw-ptr" && outsideTypeModule(chain.structName))
+		for (json* t = &out["value-type"]; t->value("type-kind", "") == "pntr"; t = &(*t)["base-type"])
+			if (t->contains("mutable")) (*t)["mutable"] = false;
+	return out;
 } // LCOV_EXCL_BR_LINE
 
 json PlnSemanticAnalyzer::makeFieldAccess(const FieldChain& chain, const FieldLayout& fld)

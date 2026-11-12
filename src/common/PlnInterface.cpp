@@ -180,7 +180,8 @@ string Writer::statement(const json& s) const
 	if (kind == "struct-def") {
 		string out = exported + "type " + name + " {\n";
 		for (auto& f : s["fields"])
-			out += "\t" + type(f["var-type"]) + " " + f["name"].get<string>()
+			out += "\t" + (f.contains("access") ? f["access"].get<string>() + " " : "")
+				+ type(f["var-type"]) + " " + f["name"].get<string>()
 				+ (f.contains("init") ? " = " + expr(f["init"]) : "") + ";\n";
 		return out + "};\n";
 	}

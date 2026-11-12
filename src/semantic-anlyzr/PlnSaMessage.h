@@ -220,6 +220,12 @@ enum PlnSaMessageCode {
 	E_ForIterAmbiguous,	// arg1: struct type display name
 	E_ForNextShape,		// arg1: iterator type display name
 	E_ForElemForm,		// arg1: the loop variable as written ('@c' or '@!c'), arg2: next's element type
+	E_FieldAccessNotExported,	// arg1: "private" or "readonly", arg2: field name
+	E_PrivateField,		// arg1: struct type display name, arg2: field name
+	E_ReadonlyField,	// arg1: struct type display name, arg2: field name
+	E_StructLitHiddenField,	// arg1: struct type display name, arg2: field name, arg3: "private" or "readonly"
+	E_StructLitPositionalHidden,	// arg1: struct type display name
+	E_StructLitHiddenNoInit,	// arg1: struct type display name, arg2: field name, arg3: "private" or "readonly"
 };
 
 class PlnSaMessage

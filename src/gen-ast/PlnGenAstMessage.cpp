@@ -98,6 +98,10 @@ string PlnGenAstMessage::getMessage(PlnMessageCode msg_code, string arg1, string
 		case E_VariadicNotLast:
 			return "a variadic parameter ('[...]T') must be the last parameter.";
 
+		case E_UnknownFieldMarker:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "Expected 'private' or 'readonly' before the field's type, but found '" + arg1 + "'.";
+
 		case E_SyscallNamedReturn:
 			return "a syscall must declare its return with '-> type'; named and multiple "
 			       "return values are not supported.";

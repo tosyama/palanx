@@ -2134,6 +2134,8 @@ with `->` first.
   With `$` (`$Point p;`) the struct is placed in the stack frame instead; see
   [Stack Structs](#stack-structs-t).
 - **Layout**: C ABI-compatible (natural alignment, padding, total size rounded up to max-field alignment). Matches System V AMD64 ABI struct layout.
+- **Visibility**: every field is public; an exported struct may hide fields from other files
+  (see [Hidden and Read-only Fields](#hidden-and-read-only-fields)).
 
 ### Stack Structs (`$T`)
 
@@ -2728,6 +2730,43 @@ flo32 l = len2(@p);
   with a name an import makes writable is a compile error.
 - Two files may import each other and use each other's types anywhere, including in type
   declarations, as long as no type contains itself (see [Declaration order](#declaration-order)).
+
+### Hidden and Read-only Fields
+
+A field of an exported struct may start with `private` (not visible outside the file declaring the
+struct) or `readonly` (read only outside it). Unmarked fields are public. Inside the file, every
+field is used as usual.
+
+```palan
+// counter.pa
+export type Counter {
+    private [+]int64 log;
+    readonly int64 count = 0;
+};
+export func add(@!Counter c, int64 v) { c.log.push(v); c.count + 1 -> c.count; }
+```
+
+```palan
+// main.pa
+import "counter.pa";
+Counter c;
+c.add(3);
+int64 n = c.count;     // reading is fine
+3 -> c.count;          // compile error: read-only outside counter.pa
+int64 x = c.log[0];    // compile error: private
+```
+
+- Outside the file, a `readonly` field and whatever is reached through it are read only: `->`
+  into it, `@!c.count`, a method-form call or `push` on it, `<<=` out of it, and writing an
+  element, a field or a pointee through it are compile errors. A `readonly` pointer field is read
+  as a read-only pointer (`@T`). To let other files change it, the declaring file provides a function.
+- Operations on the whole value are allowed outside: copying, moving, `->`, passing `c` or `@!c`.
+- A struct literal written outside sets only public fields, by name: naming a hidden field, or a
+  positional literal of a struct having one, is a compile error. A hidden field without an
+  [initializer](#field-initializers) thus makes such a literal impossible outside.
+- `private` and `readonly` are not reserved words: they are names everywhere else. On a field of a
+  struct that is not exported, they are a compile error.
+- A library's interface lists hidden fields with their marks, since the struct's layout needs them.
 
 ### Module Names (`library`)
 

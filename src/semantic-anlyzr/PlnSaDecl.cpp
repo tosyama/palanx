@@ -848,7 +848,14 @@ json PlnSemanticAnalyzer::sa_struct_lit(const json& item, const StructDef& def)
 	}
 	const json& items = item["items"];
 	vector<const json*> given(def.fields.size(), nullptr);
+	bool outside = outsideTypeModule(def.name);
 	if (et == "arr-lit") {
+		bool hidden = any_of(def.fields.begin(), def.fields.end(), [](const FieldLayout& f){ return !f.access.empty(); });
+		if (outside && hidden) {
+			cerr << locPrefix(item) << PlnSaMessage::getMessage(E_StructLitPositionalHidden,
+				PlnSaMessage::writtenTypeName(def.name)) << endl;
+			exit(1);
+		}
 		if (items.size() != def.fields.size()) {
 			cerr << locPrefix(item) << PlnSaMessage::getMessage(E_StructLitFieldCount,
 			                                  def.name, to_string(def.fields.size()), to_string(items.size())) << endl;
@@ -864,6 +871,11 @@ json PlnSemanticAnalyzer::sa_struct_lit(const json& item, const StructDef& def)
 				cerr << locPrefix(named) << PlnSaMessage::getMessage(E_UnknownField, def.name, fn, def.keyword()) << endl;
 				exit(1);
 			}
+			if (outside && !it->access.empty()) {
+				cerr << locPrefix(named) << PlnSaMessage::getMessage(E_StructLitHiddenField,
+					PlnSaMessage::writtenTypeName(def.name), fn, it->access) << endl;
+				exit(1);
+			}
 			const json*& slot = given[it - def.fields.begin()];
 			if (slot) {
 				cerr << locPrefix(named) << PlnSaMessage::getMessage(E_StructLitDupField, fn) << endl;
@@ -873,6 +885,11 @@ json PlnSemanticAnalyzer::sa_struct_lit(const json& item, const StructDef& def)
 		}
 		for (size_t k = 0; k < given.size(); k++) {
 			if (!given[k] && !def.fields[k].initAst.is_null()) given[k] = &def.fields[k].initAst;
+			if (!given[k] && outside && !def.fields[k].access.empty()) {
+				cerr << locPrefix(item) << PlnSaMessage::getMessage(E_StructLitHiddenNoInit,
+					PlnSaMessage::writtenTypeName(def.name), def.fields[k].name, def.fields[k].access) << endl;
+				exit(1);
+			}
 			if (!given[k]) {
 				cerr << locPrefix(item) << PlnSaMessage::getMessage(E_StructLitMissingField, def.name, def.fields[k].name) << endl;
 				exit(1);
@@ -1042,7 +1059,18 @@ json PlnSemanticAnalyzer::sa_struct_def(const json& stmt)
 		while (leaf->value("type-kind", "") == "pntr") leaf = &(*leaf)["base-type"];
 		if (leaf->value("type-kind", "") == "func") *leaf = deepNormalizePrimToStruct(stmt, *leaf);
 	}
-	structDefs_[name] = buildStructDef(name, fields, stmt);
+	StructDef def = buildStructDef(name, fields, stmt);
+	for (auto& f : fields) {
+		if (!f.contains("access")) continue;
+		if (!stmt.value("export", false)) {
+			cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_FieldAccessNotExported,
+				f["access"].get<string>(), f["name"].get<string>()) << endl;
+			exit(1);
+		}
+		for (auto& fl : def.fields)
+			if (fl.name == f["name"].get<string>()) fl.access = f["access"].get<string>();
+	}
+	structDefs_[name] = move(def);
 	return json::array();
 } // LCOV_EXCL_BR_LINE
 

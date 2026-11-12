@@ -1400,7 +1400,7 @@ json PlnSemanticAnalyzer::operandValueType(const json& obj)
 {
 	if (obj.value("expr-type", "") == "field-access") {
 		FieldChain chain = resolveObjectChain(obj["object"], /*forWrite=*/false);
-		return fieldValueType(findFieldOrExit(chain.structName, obj["field"].get<string>(), obj));
+		return fieldValueType(findFieldOrExit(chain.structName, obj["field"].get<string>(), obj, false));
 	}
 	return sa_expression(obj)["value-type"];
 }

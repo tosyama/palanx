@@ -964,6 +964,35 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			       + string(arg1.rfind("@!", 0) == 0 ? " '@!E'" : " '@E' or '@!E'")
 			       + ", but it returns '" + arg2 + "'.";
 
+		case E_FieldAccessNotExported:
+			BOOST_ASSERT(arg1 != "\x01" && arg2 != "\x01");
+			return "'" + arg1 + "' on the field '" + arg2 + "' needs an exported struct ('export type'): "
+			       "the boundary is the module defining it.";
+
+		case E_PrivateField:
+			BOOST_ASSERT(arg1 != "\x01" && arg2 != "\x01");
+			return "the field '" + arg2 + "' of '" + arg1 + "' is private to the module defining '" + arg1 + "'.";
+
+		case E_ReadonlyField:
+			BOOST_ASSERT(arg1 != "\x01" && arg2 != "\x01");
+			return "the field '" + arg2 + "' of '" + arg1 + "' is read-only outside the module defining '" + arg1
+			       + "', and so is anything reached through it.";
+
+		case E_StructLitHiddenField:
+			BOOST_ASSERT(arg1 != "\x01" && arg2 != "\x01" && arg3 != "\x01");
+			return "a struct literal of '" + arg1 + "' outside the module defining it cannot set the " + arg3
+			       + " field '" + arg2 + "'.";
+
+		case E_StructLitPositionalHidden:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'" + arg1 + "' has private or read-only fields: outside the module defining it, a struct "
+			       "literal of it names the fields it sets.";
+
+		case E_StructLitHiddenNoInit:
+			BOOST_ASSERT(arg1 != "\x01" && arg2 != "\x01" && arg3 != "\x01");
+			return "no struct literal of '" + arg1 + "' can be written outside the module defining it: its " + arg3
+			       + " field '" + arg2 + "' has no initializer.";
+
 		default:
 			BOOST_ASSERT(false);
 	}
