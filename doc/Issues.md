@@ -191,9 +191,9 @@ A variable-length array (v0.2.1) adds a shorter-lived case: `push` and `resize` 
 
 ---
 
-## 28. A Type Cannot Hide Its Fields, and Exported Type Names Share One Namespace
+## 28. A Type Cannot Hide Its Fields
 
-**Summary:** Every field of an exported struct can be read and written by any importer, so a library type cannot keep its invariants: writing `bytes` of a `std/utf8` `utf8` can drop the NUL at its end or contradict `hadInvalid`. The library therefore offers functions for everything ordinary use needs, so that the fields can later be hidden without breaking callers. Separately, an exported struct or enum name is shared by the whole program, an alias import included, so library types take a prefix (`utf8mode`) to avoid clashing with others. Both are to be revisited as the standard library grows.
+**Summary:** Every field of an exported struct can be read and written by any importer, so a library type cannot keep its invariants: writing `bytes` of a `std/utf8` `utf8` can drop the NUL at its end or contradict `hadInvalid`. The library therefore offers functions for everything ordinary use needs, so that the fields can later be hidden without breaking callers.
 
 ---
 
@@ -212,3 +212,11 @@ A variable-length array (v0.2.1) adds a shorter-lived case: `push` and `resize` 
 ## 31. A Variadic Argument Cannot Borrow a Temporary Inside Another Call
 
 **Summary:** A variadic argument that borrows a temporary held inside a call returning a borrow, such as `f(id(@mk()))` for `id(@T p) -> @T`, is rejected (E_VariadicArgTempBorrow). The arguments are laid out in an array by statements before the call, and codegen releases a statement's temporaries at the statement's end, so the temporary would be gone when `f` runs. A statement form keeping its temporaries until the call would lift the restriction.
+
+---
+
+## 32. Exported Type Names Share One Namespace
+
+**Summary:** An exported struct or enum is identified program-wide by its written name, so the same name exported by two modules is `E_DuplicateTypeName`, an alias import included, and library types take a prefix (`utf8mode`) to avoid clashing with others. Identifying it as a non-exported type is, by `__pln_L<module hash>_<Name>`, is not enough on its own: `--lib` writes the exported types of a library's other modules into the main's `.pai` as the main's own, so the reader would identify them by the main's module, and the symbols of public functions using them (`get(@Kept)` with `Kept` from `kept.pa`) would differ from the object's. The `.pai` would need to state the module each such type comes from.
+
+That is to be designed together with hiding a type behind an alias: a type the main publishes as `export type X = U.Y;` would show its users only its name, not its fields or size. Its values would be owned by the library or by a member of another type, and the library would offer only functions lending them or moving their ownership; a value the user receives would be freed through the library's own function. Copying and assignment need deciding with it, since the user does not know the size: an initialization from a value (`X b = a;`), `->` into an existing value, passing or returning it as `T`, and copying a struct holding it by value would each be rejected or left to the library's functions (such as a `->` the type defines), while a move (`->>`) passes only the pointer. This would replace today's error for publishing an alias of another module's private type. A function's symbol holds the type behind the alias, so both need the module stated in the `.pai`. A type of another library is not affected: the `.pai` imports that library (`import <...>`) rather than copying its types.

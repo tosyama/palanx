@@ -19,8 +19,7 @@ features any library type can use, not as special cases for `utf8` (3.8):
   array sized at run time.
 - A type defines how `for` iterates over it.
 - A character literal may be any Unicode code point, written as is or as `\u{...}`.
-- A type's fields can be hidden or read-only outside its module, and exported types of different
-  modules may share a name (doc/Issues.md #28).
+- A type's fields can be hidden or read-only outside its module (doc/Issues.md #28).
 
 `std/utf8` is then reworked on these features (3.9), and the standard library gets a reference of
 its own, moved out of PalanReference.md.
@@ -742,15 +741,6 @@ plain data (`samples/raytracer/vecmath.pa`'s `vec3`).
   are allowed.
 - A `.pai` keeps `private` fields, marked, since the layout and the allocators need them.
 - Generated modules (names starting with `__`, such as the allocators) are exempt.
-
-**Exported type names per module.** Today an exported struct or enum is identified program-wide
-by its written name, which keys the allocators the build manager generates (3.6), so the same name
-exported by two modules is `E_DuplicateTypeName` even under an alias import, and library types take
-prefixes. An exported type's identity will include its module, as a non-exported one's does
-(`__pln_L<module hash>_<Name>`, SASpec.md), so two modules may export one name. Names clash only
-where both can be written unqualified in one scope, and an alias import resolves that. The build
-manager's allocator keys, the type names in `__allocators.pa` and symbols naming such a type follow
-the new identity, encoded where `.` cannot be written; messages show the written name.
 
 ### 3.9 std/utf8
 
