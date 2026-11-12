@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 #include "../test-base/testBase.h"
+#include "saTestUtil.h"
 
 using namespace std;
 
@@ -1074,6 +1075,32 @@ TEST(sa_error, literal_conversion)
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
 		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa, error_copy_func)
+{
+	const string sig = "error: '->' must be 'func ->(@T src, @!T dst)' of one struct T, with no defaults and no return value.";
+	const string place = "error: '->' is part of its type's definition: it is defined at the top level of the module "
+	                     "defining the struct, not of a C struct or of another module's.";
+	const pair<string, string> cases[] = {
+		{"error_1009_copy_func_ret.pa", ":2:1: " + sig},
+		{"error_1010_copy_func_read_only_dst.pa", ":2:1: " + sig},
+		{"error_1011_copy_func_two_types.pa", ":3:1: " + sig},
+		{"error_1012_copy_func_exported.pa", ":2:1: error: '->' is not exported: it comes with its type wherever the type goes."},
+		{"error_1013_copy_func_nested.pa", ":3:2: " + place},
+		{"error_1014_copy_func_c_struct.pa", ":2:1: " + place},
+		{"error_1015_copy_func_other_module.pa", ":2:1: " + place},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		// An import is looked for where the work tree keeps its AST.
+		genModuleAst("../test/testdata/sa/lib_sa_copy_func.pa");
+		string ast_out = moduleAstPath("../test/testdata/sa/" + file);
 		ASSERT_EQ(execTestCommand(
 			"palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
 		string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");

@@ -436,6 +436,11 @@ const std::map<std::string, std::string>& operatorFuncNames()
     return names;
 } // LCOV_EXCL_BR_LINE
 
+std::string copyFuncSymbol(const std::string& typeName)
+{
+    return "__pln_cp_" + symbolType({{"type-kind", "struct"}, {"type-name", typeName}}); // LCOV_EXCL_BR_LINE
+}
+
 std::string funcSymbol(const std::string& name, const json& params)
 {
     // LCOV_EXCL_BR_START

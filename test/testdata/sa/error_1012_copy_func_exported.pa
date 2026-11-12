@@ -1,0 +1,2 @@
+type T { int32 a; };
+export func ->(@T src, @!T dst) { }

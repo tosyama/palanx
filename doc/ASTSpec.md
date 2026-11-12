@@ -49,6 +49,7 @@ AST model
 Function definition model
 -------------------------
 - name\* - Function name string; an operator function's is its operator: "+" "-" "*" "/" "%" "==" "<"
+  "<<"; a type's own copy is "->" (SpecAndDesign.md 3.8)
 - func-type\* - Function type string: "palan" "c" "syscall"
 - loc\* - Location Array (palan, syscall only)
 
@@ -58,7 +59,8 @@ Function definition model
      - ret-type - Return variable type (unnamed single return only; omitted for void and named returns)
      - rets - Named return list (Palan parameter, see below; omitted for an unnamed return and void)
      - block\* - Block object (function body; see Block object below). Absent for a function a
-       `.pai` declares (SpecAndDesign.md 3.7)
+       `.pai` declares (SpecAndDesign.md 3.7): an exported one, or a type's `->`, which a `.pai`
+       writes unexported
 
   2. **c** - C function prototype (from `cinclude`)
      - parameters\* - Parameter list (C parameter, see below; empty array when no parameters)

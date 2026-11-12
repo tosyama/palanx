@@ -1,0 +1,64 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type T { [+]int32 v; int32 mode; };
+func ->(@T src, @!T dst)
+{
+	src.v -> dst.v;
+	printf("->%d ", dst.mode);
+}
+// Owns nothing: its '->' still keeps it from being copied as bytes.
+type F { int32 x; int32 keep; };
+func ->(@F src, @!F dst) { src.x -> dst.x; printf("F%d ", dst.keep); }
+type Q { T t; int32 n; };
+type E { $T t; $F f; $[2]$F fs; int32 n; };
+
+func mk(int32 m) -> T t { m -> t.mode; t.v.push(m); }
+func show(T t) -> int32 { return t.mode; }
+func mkF(int32 x, int32 keep) -> F f { x -> f.x; keep -> f.keep; }
+
+mtrace();
+{
+	T a = mk(1); T b = mk(2);
+	a -> b; printf("| %d %d\n", b.mode, b.v[0]);
+	a -> b -> a; printf("| %d %d\n", a.mode, b.v[0]);
+	b -> b; printf("| self %d\n", b.v[0]);
+	mk(3) -> b; printf("| %d\n", b.v[0]);
+
+	// New values are copied whole: no '->'.
+	T c = b; printf("new %d ", c.mode);
+	printf("%d ", show(c));
+	T d <<= mk(4); d ->> c; printf("%d\n", c.mode);
+
+	Q p; 7 -> p.t.mode; mk(5) -> p.t; 6 -> p.n;
+	Q q; 8 -> q.t.mode;
+	p -> q; printf("| %d %d %d\n", q.t.mode, q.n, q.t.v[0]);
+	p.t -> q.t; printf("| field\n");
+
+	[2]T xs; [2]T ys; 1 -> ys[0].mode; 2 -> ys[1].mode; 9 -> xs[1].v.push();
+	xs -> ys; printf("| %d\n", ys[1].v[0]);
+
+	// The elements a [+]T has are written into; those it gains are new.
+	[+]T us; us.push(mk(1)); us.push(mk(2));
+	[+]T vs; vs.push(mk(8));
+	us -> vs; printf("| %d %d %ld\n", vs[0].mode, vs[1].mode, len(@vs));
+	[+]T ws; ws.push(mk(5)); ws.push(mk(6)); ws.push(mk(7));
+	vs -> ws; printf("| %d %d %ld\n", ws[0].mode, ws[1].mode, len(@ws));
+
+	E e1; 1 -> e1.f.x; 3 -> e1.fs[1].x; 11 -> e1.n; e1.t.v.push(42);
+	E e2; 4 -> e2.f.keep; 5 -> e2.fs[0].keep; 6 -> e2.fs[1].keep; 7 -> e2.t.mode;
+	e1 -> e2; printf("| %d %d %d %d %d %d\n", e2.n, e2.f.keep, e2.f.x, e2.t.mode, e2.t.v[0], e2.fs[1].x);
+
+	[2]$F fa; [2]$F fb;
+	1 -> fa[0].x; 2 -> fa[1].x; 3 -> fb[0].keep; 4 -> fb[1].keep;
+	fa -> fb; printf("| %d %d\n", fb[1].keep, fb[1].x);
+	[+]$F fv; fv.push(mkF(1, 9)); fv.push(mkF(2, 9));
+	[+]$F gv; gv.push(mkF(3, 4));
+	fv -> gv; printf("| %d %d %ld\n", gv[0].keep, gv[1].keep, len(@gv));
+	[+][2]$F ra; ra.resize(1); 1 -> ra[0][0].x; 2 -> ra[0][1].x;
+	[+][2]$F rb; rb.resize(2); 3 -> rb[0][0].keep; 4 -> rb[0][1].keep;
+	ra -> rb; printf("| %d %ld\n", rb[0][1].x, len(@rb));
+
+	// A literal is a new value, which '->' then writes in.
+	[[1, 2], 0] -> a; printf("| %d %d\n", a.mode, a.v[1]);
+}
+muntrace();

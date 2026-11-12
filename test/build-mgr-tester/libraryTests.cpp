@@ -154,6 +154,46 @@ printf("%d %d\n", K.sum(p, [3]), K.pick(add));
 	EXPECT_EQ(execTestCommand("bin/palan out/app/main.pa"), "a, b, c\n5 6\n");
 }
 
+// A type's '->' crosses the interface with its type, a private one's too.
+TEST(build_mgr, library_copy_func) {
+	cleanTestEnv();
+	writeFile("out/src/tx.pa", R"(library kit;
+cinclude <stdio.h>;
+type Inner { [+]int32 v; int32 keep; };
+func ->(@Inner src, @!Inner dst) { src.v -> dst.v; printf("I%d ", dst.keep); }
+export type T { int32 mode; Inner in; };
+func ->(@T src, @!T dst) { src.in -> dst.in; printf("T%d ", dst.mode); }
+export func mk(int32 m) -> T t { m -> t.mode; m -> t.in.keep; }
+)");
+	ASSERT_EQ(execTestCommand("bin/palan --lib -o out/libs out/src/tx.pa"), "");
+	fs::remove_all("out/src");
+	string pai = fileText("out/libs/kit/tx.pai");
+	EXPECT_NE(pai.find("export func mk(int32 m) -> T t;\nfunc ->(@Inner src, @!Inner dst);\nfunc ->(@T src, @!T dst);\n"),
+		string::npos) << pai;
+	writeFile("out/app/main.pa", R"(libpath "../libs";
+cinclude <stdio.h>;
+import <kit/tx>;
+T a = mk(1); T b = mk(2);
+a -> b;
+[+]T vs; vs.push(mk(3));
+[+]T ws; ws.push(mk(4)); ws.push(mk(5));
+vs -> ws;
+printf("%d %d %ld\n", b.mode, ws[0].in.keep, len(@ws));
+)");
+	EXPECT_EQ(execTestCommand("bin/palan out/app/main.pa"), "I2 T2 I4 T4 2 4 1\n");
+}
+
+// The reader would identify a private type of an internal module by the main's
+// module, so its '->' could not be linked.
+TEST(build_mgr, library_copy_func_of_an_internal_private_type) {
+	cleanTestEnv();
+	writeFile("out/src/inner.pa", "library kit;\ntype In { [+]int32 v; };\n"
+		"func ->(@In src, @!In dst) { src.v -> dst.v; }\nexport type Box { In in; };\n");
+	writeFile("out/src/box.pa", "library kit;\nimport \"inner.pa\";\nexport func mk() -> Box b { }\n");
+	EXPECT_NE(execTestCommand("bin/palan --lib -o out/libs out/src/box.pa").find("as a type with its own '->'"),
+		string::npos);
+}
+
 // A libpath adds a place for the whole program, wherever it is written and relative to that file.
 TEST(build_mgr, libpath_in_an_imported_module) {
 	buildGeoLibrary();

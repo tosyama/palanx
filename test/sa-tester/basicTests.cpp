@@ -1576,3 +1576,29 @@ TEST(sa, append)
 	// get(@!a) << 5
 	ASSERT_EQ(call(1)["args"][0]["name"], get);
 }
+
+// Copying into an existing value calls the type's '->', or the generated
+// function writing the parts of a struct holding one; initializing does not.
+TEST(sa, copy_func)
+{
+	cleanTestEnv();
+	json jout = written(run_sa("../test/testdata/sa/343_copy_func.pa"));
+	ASSERT_TRUE(jout.is_object());
+	const json& f = jout["functions"][0];
+	const string copyFunc = f["name"];
+	ASSERT_EQ(copyFunc.rfind("__pln_cp_", 0), 0u);
+	ASSERT_TRUE(f["export"].get<bool>());
+	const auto& st = jout["statements"];
+	// a -> b
+	ASSERT_EQ(st[2]["body"]["name"], copyFunc);
+	ASSERT_EQ(st[2]["body"]["args"][0]["name"], "a");
+	ASSERT_EQ(st[2]["body"]["args"][1]["name"], "b");
+	// T c = a
+	ASSERT_EQ(st[4]["body"]["name"], "memcpy");
+	// p -> q
+	ASSERT_EQ(st[7]["body"]["name"].get<string>().rfind("__allocators..__pln_assign_", 0), 0u);
+	const auto& shapes = jout["alloc-shapes"];
+	ASSERT_EQ(shapes[0]["copy-func"], copyFunc);
+	ASSERT_TRUE(shapes[1]["assigns"].get<bool>());
+	ASSERT_FALSE(shapes[1].contains("copy-func"));
+}

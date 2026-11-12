@@ -1132,6 +1132,8 @@ printf("%g %g %g\n", c.x, c.y, c.z);
   struct (`T` or `@T`), and none can be `@!`.
 - An operator over numbers only is the built-in one and cannot be defined.
 - A struct an operator returns can be borrowed as a call argument: `f(@(a + b))`.
+- `func ->` is not an operator function but part of a type: see
+  [A Type's Own Copy](#a-types-own-copy-func--).
 
 #### Comparison Functions
 
@@ -1495,6 +1497,38 @@ minos[0][3] -> mino[0];      // copy one struct element
   `[n]T` array, get copies of the source's. A `@T`/`@!T` pointer is copied as a pointer.
 - A struct returned by a function is copied the same way, and then freed. A `[]T` return has
   no size known at compile time, so it cannot be copied into an array.
+
+#### A Type's Own Copy (`func ->`)
+
+A struct type can define what copying into an existing value of it does:
+
+```palan
+cinclude <stdio.h>;
+
+type Text { [+]uint8 bytes; int32 mode; };
+// Keeps dst's mode: only the bytes are copied.
+func ->(@Text src, @!Text dst) { src.bytes -> dst.bytes; }
+
+Text a; 1 -> a.mode;
+Text b; 2 -> b.mode;
+a -> b;            // calls ->(@a, @!b): b.mode stays 2
+Text c = a;        // a new value: copied whole, c.mode is 1
+```
+
+- The function is `func ->(@T src, @!T dst)`: two parameters of one struct type, no defaults and
+  no return value. It is part of the type: it is defined at the top level of the module defining
+  `T`, is not exported, and comes with `T` into every module `T` reaches, also one reaching `T`
+  only as a field of another type. A C struct has none.
+- It is called wherever a value of `T` that already exists is copied into, nested or not: `x -> v`,
+  a field of `T` when the struct holding it is copied into (`p -> q` calls it for `q.name` when
+  `name` is a `T`, `$T` or `[n]$T` field), each element of a `[n]T`, and each element a `[+]T`
+  already has. So `p -> q` and `p.name -> q.name` agree. The rest of a copy is as without it.
+- A new value is copied whole and never calls it: initializing a declaration (`T c = a;`), the
+  elements a `[+]T` gains by a copy, `->>` and `<<=`, an argument for a `T` parameter, and a
+  returned value.
+- An array or struct literal written into an existing value (`[[1, 2], 0] -> a`) is made as a new
+  value first, which is then copied in as above.
+- `src` and `dst` may be the same value (`s -> s`); the function must handle that.
 
 ### Ownership Transfer (`->>`)
 

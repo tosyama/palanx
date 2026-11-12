@@ -1267,7 +1267,7 @@ json PlnSemanticAnalyzer::ownedBlockArg(const json& locNode, const json& arg, Ca
 	enterScope();
 	json body = sa_resolved_var_decl(decl);
 	json value = {{"expr-type","id"},{"name",name},{"var-type",paramVT},{"value-type",paramVT}};
-	if (!isLit) body.push_back(makeCopyStmt(arg, value, saArg));
+	if (!isLit) body.push_back(makeCopyStmt(arg, value, saArg, CopyInto::New));
 	takeScopeRelease(name);
 	leaveScope();
 	return makeTempExpr(move(body), move(value), json::array());

@@ -179,7 +179,7 @@ static int buildAllocators(const PlnAllocShapes& shapes, const string& dir, cons
 	string alloc_ast = alloc_pa + ".ast.json";
 	{
 		ofstream hdr(tempNameOf(alloc_h));
-		writeAllocatorsHeader(hdr);
+		writeAllocatorsHeader(hdr, shapes);
 		ofstream out(tempNameOf(alloc_pa));
 		writeAllocatorsSource(out, shapes, library);
 	}

@@ -33,7 +33,7 @@ private:
 	string operand(const json& e) const;
 	string args(const json& list) const;
 	string vars(const json& node, const json& list, bool isRets) const;
-	string funcDecl(const json& f) const;
+	string funcDecl(const json& f, bool exported = true) const;
 	string statement(const json& s) const;
 };
 
@@ -150,10 +150,10 @@ string Writer::vars(const json& node, const json& list, bool isRets) const
 	return s;
 }
 
-string Writer::funcDecl(const json& f) const
+string Writer::funcDecl(const json& f, bool exported) const
 {
 	bool isSyscall = f["func-type"] == "syscall";
-	string s = string("export ") + (isSyscall ? "syscall " : "func ") + f["name"].get<string>()
+	string s = string(exported ? "export " : "") + (isSyscall ? "syscall " : "func ") + f["name"].get<string>()
 		+ "(" + vars(f, f["parameters"], false) + ")";
 	if (f.contains("rets")) s += " -> " + vars(f, f["rets"], true);
 	else if (f.contains("ret-type")) s += " -> " + type(f["ret-type"]);
@@ -327,6 +327,9 @@ string Writer::write()
 		}
 	}
 	for (auto& f : ast_.value("export", json::array())) out += funcDecl(f);
+	// A type's '->' comes with the type, unexported.
+	for (auto& f : ast_["ast"].value("functions", json::array()))
+		if (f["name"] == "->") out += funcDecl(f, false);
 	return out;
 }
 
@@ -562,8 +565,19 @@ json Merger::merged()
 			}
 		}
 	}
+	json copyFuncs = json::array();
+	for (int m = 0; m < modules_.size(); m++)
+		for (auto& f : (*modules_[m])["ast"].value("functions", json::array())) {
+			if (f["name"] != "->") continue;
+			auto key = find(m, f["parameters"][0]["var-type"]["base-type"]["type-name"].get<string>());
+			if (!key || !reached_.count(*key)) continue;
+			json decl = f;
+			decl.erase("block");
+			walk(decl["parameters"], m, true);
+			copyFuncs.push_back(move(decl));
+		}
 	return {{"original", main["original"]}, {"module", main["module"]}, {"target", main["target"]},
-		{"ast", {{"statements", move(out)}}}, {"export", move(funcs)}};
+		{"ast", {{"statements", move(out)}, {"functions", move(copyFuncs)}}}, {"export", move(funcs)}};
 } // LCOV_EXCL_BR_LINE -- closing brace of a function with many local json/string temporaries; the branch coverpoints here are compiler-generated destructor dispatch, not source-level conditionals
 
 } // namespace

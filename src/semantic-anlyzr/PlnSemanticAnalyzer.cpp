@@ -465,6 +465,34 @@ void PlnSemanticAnalyzer::validateVariadicSig(const json& funcDef)
 		fail(E_VariadicWithDefault);
 }
 
+// A type's '->' is part of the type, as how it is freed is: every module
+// the StructDef reaches calls it, whether it sees the defining module's
+// functions or not, so the module defining the type alone defines it. Every
+// module's '->' passes through here, its own and an imported one alike.
+// It links from any module and from the generated allocators, so it is global.
+void PlnSemanticAnalyzer::registerCopyFunc(json& funcEntry, const string& scope)
+{
+	auto fail = [&](PlnSaMessageCode code) {
+		cerr << locPrefix(funcEntry) << PlnSaMessage::getMessage(code) << endl;
+		exit(1);
+	};
+	if (funcEntry.value("export", false)) fail(E_CopyFuncExported);
+	const json& params = funcEntry["parameters"];
+	bool shaped = params.size() == 2 && !funcEntry.contains("ret-type") && !funcEntry.contains("rets");
+	for (size_t i = 0; shaped && i < 2; i++) {
+		const json& vt = params[i]["var-type"];
+		shaped = !params[i].contains("init") && isStructBorrow(vt) && vt["mutable"].get<bool>() == (i == 1)
+		      && vt["base-type"] == params[0]["var-type"]["base-type"];
+	}
+	if (!shaped) fail(E_CopyFuncSig);
+	string name = params[0]["var-type"]["base-type"]["type-name"];
+	auto origin = typeOrigins_.find(name);
+	if (scope != moduleId_ || origin == typeOrigins_.end() || origin->second != moduleId_) fail(E_CopyFuncPlace);
+	funcEntry["symbol"] = copyFuncSymbol(name);
+	funcEntry["export"] = true;
+	structDefs_.at(name).copyFunc = funcEntry["symbol"];
+}
+
 // An operator function is called only where an operand is a struct, and an
 // operand is never written with '@!' (see sa_operator_call), but for the one
 // '<<' appends to.
@@ -754,7 +782,9 @@ json PlnSemanticAnalyzer::normalizeFuncSig(const json& f, const string& scope)
 	validateVariadicSig(funcEntry);
 	validateOperatorSig(funcEntry);
 	normalizeParamDefaults(funcEntry);
-	if (funcEntry.value("func-type", "") == "syscall")
+	if (funcEntry["name"] == "->")
+		registerCopyFunc(funcEntry, scope);
+	else if (funcEntry.value("func-type", "") == "syscall")
 		validateSyscallDecl(funcEntry);
 	else
 		funcEntry["symbol"] = scope + ".."
@@ -1376,6 +1406,9 @@ PlnSemanticAnalyzer& PlnSemanticAnalyzer::importTypeContext(json impAst)
 	program_->imported.push_back(move(sub));
 	if (mod.moduleAst_["ast"].contains("statements"))
 		mod.indexTopDecls(mod.moduleAst_["ast"]["statements"]);
+	// Before any of its types is adopted, so that each carries its '->'.
+	for (auto& f : mod.moduleAst_["ast"].value("functions", json::array()))
+		if (f["name"] == "->") mod.normalizeFuncSig(f, mod.moduleId_);
 	return mod;
 }
 
@@ -1396,6 +1429,8 @@ json PlnSemanticAnalyzer::interfaceSymbols(const json& ast)
 		json entry = sub.normalizeFuncSig(f, sub.moduleId_);
 		if (entry.contains("symbol")) symbols.push_back(entry["symbol"]);
 	}
+	for (auto& f : ast["ast"].value("functions", json::array()))
+		if (f["name"] == "->") symbols.push_back(sub.normalizeFuncSig(f, sub.moduleId_)["symbol"]);
 	return symbols;
 } // LCOV_EXCL_BR_LINE
 

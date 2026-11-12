@@ -70,7 +70,10 @@ Root
   **Arr entry** (`[n]T` whose element owns storage, a variable or an owned field; a row is such
   an element): build-mgr generates `__pln_alloc_arr_E(n)`, `__pln_init_arr_E(outer, n)`,
   `__pln_free_arr_E(pts, n)`, `__pln_fini_arr_E(pts, n)` and `__pln_copy_arr_E(dst, src, n)`,
-  `E` being the element's `key`, each followed by the lengths below it
+  and with an element holding a type with its own `->`, `__pln_assign_arr_E(dst, src, n)`, which
+  writes into the existing elements as the struct entry's `assigns` says. An array of structs
+  laid out in place (`[n]$T`), copied as bytes, has only `__pln_assign_arr_E(@!T dst, @T src, n)`.
+  `E` is the element's `key`, each function's arguments followed by the lengths below it
   (`[2][3][4]int32` is `__pln_alloc_arr_PPint32(2, 3, 4)`). Levels laid out in place in the
   array itself are one run of their elements: with `S` owning fields, `[2]$[3]S` is
   `__pln_alloc_arr_P1S(6)`:
@@ -86,7 +89,9 @@ Root
   `__pln_push_varr_T(@!hdr h, T x)`,
   `__pln_resize_varr_T(@!hdr h, int64 n)` and `__pln_pop_varr_T(@!hdr h) -> T`, and
   `__pln_copy_varr_T(@!hdr h, @T src, int64 n)` (grows as needed, then sets the length to `n`
-  and copies `n` elements from `src`, which may be `h`'s own). Growing
+  and copies `n` elements from `src`, which may be `h`'s own), and with an element holding a type
+  with its own `->`, `__pln_assign_varr_T` taking the same, which writes into the elements `h`
+  has and copies those it gains as `copy` does. Growing
   reallocates `data` to max(needed, cap × 2, 4) elements; shrinking keeps the capacity, and
   the elements `resize` adds are undefined. An empty `pop` or a negative `resize` calls `abort()`.
   With a struct `T` (elem kind `"struct"`), `data` is `@!@!T`, an array of owned slots, of
@@ -123,7 +128,7 @@ Root
   - shape-name\* - `__pln_B<n>`
   - total-size\* - `n`
 
-  **Struct entry** (a struct owning fields):
+  **Struct entry** (a struct owning fields, or holding a type with its own `->`):
   - shape-kind\* - "struct"
   - shape-name\* - Struct name string
   - total-size\* - Total size in bytes (C ABI layout)
@@ -135,7 +140,8 @@ Root
     of its elements' slots. A `$[+]U field` is its header laid out in the struct, built empty
     with it (`__pln_init_varr_U(h, 0, 0)`), released with `__pln_fini_varr_U` and copied with
     `__pln_copy_varr_U`. A `$T field` of a struct owning fields lists `T`'s owned fields in
-    place of itself, at their offsets in the outer struct and named by their path (`name.bytes`):
+    place of itself, at their offsets in the outer struct and named by their path (`name.bytes`),
+    unless `T` holds a type with its own `->` (see `runs`):
     - name\* - Field name string, or the path to it through structs laid out in the struct
     - offset\* - Byte offset within the struct
     - elem\* - The element, as in the arr and varr entries (`"struct"` for `T`, `"varr"` for
@@ -162,6 +168,20 @@ Root
     array laid out in one block (`[n]$P`, `[m]$[n]$P`); the generated helpers call it wherever
     elements laid out in place come into use (`[+]$P`'s resize, a row block of `$P`).
 
+  - runs - Structs laid out in the struct (`$T`, `$[n]$T`) whose type holds one with its own `->`,
+    each kept whole and handled by its type's functions (`__pln_init/fini/copy_T`, and its `->`
+    or `__pln_assign_T` when written into); omitted when none:
+    - offset\* - Byte offset within the struct
+    - name\* - The struct
+    - count\* - How many of it lie there in a row (1 for `$T`)
+  - copy-func - The symbol of the struct's own `->`, which `__allocators.h` declares as
+    `void <symbol>(const void *src, void *dst);`
+  - assigns - `true` when the struct holds a type with its own `->`, itself or in a field or
+    element at any depth. build-mgr then also generates `__pln_assign_T(@!T dst, @T src)` (unless
+    it has `copy-func`, which is called instead), which writes into an existing `dst`: as
+    `__pln_copy_T`, but writing the parts of such types through their `->`. Such a struct is never
+    reduced to a bytes entry.
+
   Non-owned fields are deliberately not described: build-mgr re-declares the struct in the
   generated allocator module with only the owned fields at their offsets and opaque padding
   elsewhere, because the full layout cannot always be re-expressed as Palan source (C unions,
@@ -183,6 +203,7 @@ SA-annotated statements.
 
 - name\* - Symbol name of the function (see "Symbol names" below), not the written name
 - func-type\* - "palan"
+- export - `true` for an exported function and for a type's `->`, which codegen makes global
 - parameters\* - Parameter list (Palan parameter: name, var-type; empty array when no parameters)
 - ret-type - Return variable type (single-return functions only)
 - rets - Return value list (multi-return functions only)
@@ -218,6 +239,10 @@ A function defined inside another one has the enclosing function's symbol in pla
 `<module>` (`util..a.v..f.v`). A `{ }` block that defines functions adds `..b<n>`, its order
 among such blocks of the enclosing function or of the top level (`util..a.v..b1..f.v`,
 `util..b1..f.v`).
+
+A type's `->` (SpecAndDesign.md 3.8) is `__pln_cp_` and the struct as a `<param>` writes it
+(`__pln_cp_4utf8`): a type has one, so the type alone names it, and the generated allocators
+declare it in C, which takes no `.`.
 
 - `<name>`: the function's name; an operator function's is a word that starts with a digit, so that
   no written name can be it: `0add` `0sub` `0mul` `0div` `0mod` `0eq` `0lt` `0app` for

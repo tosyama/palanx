@@ -21,6 +21,6 @@ struct PlnAllocShapes {
 	bool empty() const { return structs.empty() && arrays.empty(); }
 };
 
-void writeAllocatorsHeader(std::ostream& hdr);
+void writeAllocatorsHeader(std::ostream& hdr, const PlnAllocShapes& shapes);
 // library: the module's identity the allocators belong to, or empty for a program's.
 void writeAllocatorsSource(std::ostream& out, const PlnAllocShapes& shapes, const std::string& library);

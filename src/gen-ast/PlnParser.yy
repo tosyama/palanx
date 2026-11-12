@@ -1323,6 +1323,14 @@ func_def: KW_FUNC func_name '(' paramaters ')' return_def block_obj
 				PlnGenAstMessage::getMessage(E_InterfaceOnly, "a function without a body")));
 		$$ = leafNode(funcDecl(ast, true, {{"name", $3}, {"func-type", "palan"}}, $5, $7, @$)); // LCOV_EXCL_BR_LINE
 	}
+	// A type's '->', which comes with the type rather than being exported.
+	| KW_FUNC func_name '(' paramaters ')' return_def ';'
+	{
+		if (!isInterfaceFile(lexer.inputFile))
+			throw runtime_error(PlnGenAstMessage::locatedError(lexer.inputFile, @$.begin.line, @$.begin.column,
+				PlnGenAstMessage::getMessage(E_InterfaceOnly, "a function without a body")));
+		$$ = leafNode(funcDecl(ast, false, {{"name", $2}, {"func-type", "palan"}}, $4, $6, @$)); // LCOV_EXCL_BR_LINE
+	}
 	;
 
 func_name: ID
@@ -1339,6 +1347,7 @@ op_func_name: '+' { $$ = "+"; }
 	| OPE_EQ { $$ = "=="; }
 	| '<' { $$ = "<"; }
 	| OPE_APPEND { $$ = "<<"; }
+	| ARROW { $$ = "->"; }
 	| OPE_NE { derivedCompare(lexer, @$, "!=", "=="); }
 	| '>' { derivedCompare(lexer, @$, ">", "<"); }
 	| OPE_LE { derivedCompare(lexer, @$, "<=", "<"); }

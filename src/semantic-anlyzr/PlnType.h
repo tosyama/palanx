@@ -135,5 +135,9 @@ bool argConvOk(const PlnType* from, const PlnType* to);
 std::string funcSymbol(const std::string& name, const json& params);
 // Each operator a function can be named by, with the word its symbol uses.
 const std::map<std::string, std::string>& operatorFuncNames();
+// The symbol of struct typeName's '->': a C identifier, since the generated
+// allocators declare it in C to call it. A type has one '->', so its name,
+// the type's identity in the program, is enough, wherever an interface puts it.
+std::string copyFuncSymbol(const std::string& typeName);
 // A type as one identifier-safe word, distinct for distinct types.
 std::string symbolType(const json& t);

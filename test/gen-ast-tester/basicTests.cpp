@@ -1044,6 +1044,17 @@ TEST(gen_ast, code_point_literal) {
 	ASSERT_EQ(stmts[4]["value"]["value"], "x€y😀\\x00");
 }
 
+TEST(gen_ast, copy_func)
+{
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/162_copy_func.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const json& f = jout["ast"]["functions"][0];
+	ASSERT_EQ(f["name"], "->");
+	ASSERT_EQ(f["parameters"].size(), 2u);
+	ASSERT_FALSE(jout.contains("export"));
+}
+
 // '<<' binds as the shifts do: tighter than '->', looser than '+'.
 TEST(gen_ast, append)
 {

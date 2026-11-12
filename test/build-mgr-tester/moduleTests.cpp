@@ -203,6 +203,19 @@ TEST(build_mgr, import_symlink_file) {
 	ASSERT_EQ(execTestCommand("bin/palan out/a/main.pa"), "7\n");
 }
 
+// A type's '->' comes with the type: main.pa reaches T only through Q, and
+// copying a Q into an existing one still calls it.
+TEST(build_mgr, copy_func_reaches_with_its_type) {
+	cleanTestEnv();
+	writeModule("out/t.pa", "cinclude <stdio.h>;\nexport type T { [+]int32 v; int32 mode; };\n"
+		"func ->(@T src, @!T dst) { src.v -> dst.v; printf(\"keeps %d \", dst.mode); }\n");
+	writeModule("out/q.pa", "import \"t.pa\";\nexport type Q { T t; int32 n; };\n"
+		"export func mkq(int32 m) -> Q q { m -> q.t.mode; m -> q.n; }\n");
+	writeModule("out/main.pa", "cinclude <stdio.h>;\nimport \"q.pa\";\n"
+		"Q p = mkq(1); Q q = mkq(2);\np -> q;\np.t -> q.t;\nprintf(\"%d %d\\n\", q.t.mode, q.n);\n");
+	ASSERT_EQ(execTestCommand("bin/palan out/main.pa"), "keeps 2 keeps 2 2 1\n");
+}
+
 TEST(build_mgr, import_symlink_dir) {
 	cleanTestEnv();
 	writeModule("out/real/lib.pa", "export func f() -> int32 { return 7; }\n");

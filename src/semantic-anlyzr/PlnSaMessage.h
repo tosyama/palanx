@@ -213,6 +213,9 @@ enum PlnSaMessageCode {
 	E_AppendNotStruct,	// arg1: left operand type
 	E_AppendReadOnly,
 	E_AppendLeftOperand,
+	E_CopyFuncSig,
+	E_CopyFuncPlace,
+	E_CopyFuncExported,
 };
 
 class PlnSaMessage

@@ -345,8 +345,9 @@ For a shape key `K`, the functions are:
 | `__pln_free_K(p, sizes...)` | releases what `p` owns, then `p`; `p` may be NULL |
 | `__pln_init_K(p, sizes...)` | builds the value in an existing block (a `$` variable) |
 | `__pln_fini_K(p, sizes...)` | releases what `p` owns, but not `p` (a `$` variable) |
-| `__pln_copy_K(dst, src, sizes...)` | copies `src` into `dst`, owned parts included (a type's own `->` splits this path from 0.2.5, 3.8) |
-| `__pln_initrun_T(p, from, to)` | builds `p[from]` to `p[to - 1]`, structs `T` laid out in place (only a `T` with initializers owning nothing) |
+| `__pln_copy_K(dst, src, sizes...)` | copies `src` into `dst`, owned parts included: `dst` becomes a new value |
+| `__pln_assign_K(dst, src, sizes...)` | copies `src` into the existing `dst`, the parts of a type with its own `->` (3.8) by it (only a `K` holding one) |
+| `__pln_initrun_T(p, from, to)` | builds `p[from]` to `p[to - 1]`, structs `T` laid out in place (only a `T` owning nothing) |
 
 | Shape | `K` | Functions |
 |-------|-----|-----------|
@@ -391,6 +392,16 @@ since structs of one size no longer build alike. Its elements laid out in place 
 (`__pln_init_T` on each element of a run) when their slots come into use, as an owned element is,
 and copied and freed as bytes. A value taken over (`<<=`, `->>`) or written by a C function is
 not built again.
+A struct holding a type with its own `->` (3.8), itself or in a field or element at any depth,
+has `assigns` in its shape, and the type's shape has the function's symbol (`copy-func`), which
+`__allocators.h` declares. Such a struct is never reduced to `__pln_B<n>` either, even owning
+nothing, since writing into it is no longer copying bytes. A struct of that kind laid out in
+another (a `$T` or `$[n]$T` field) is not merged into it as other structs laid out in place are:
+it is kept whole, a run of them (`runs`), declared as its type and built, freed, copied and
+written by its own functions, so that copying the bytes around it leaves the parts its `->`
+keeps alone. `__pln_assign_K` writes the existing elements through helpers
+`__pln_assignrun/aset_E` beside the copy's; into a `[+]T` it writes the elements it has and
+copies those it gains whole, as `__pln_set_E` does.
 A length may be known only at run time (`[m][k]int32`), so keys leave every length out and every
 `arr_E`/`varr_E` function and helper takes, after its own arguments, one length per array level
 below it, outermost first, through rows and `[+]U` elements alike: `[m][3]int32` and `[+][3]int32`
@@ -616,6 +627,23 @@ and `<<=` exist today.
 already exists. Its parameters follow the order the operands are written, as every operator
 function's do; it returns nothing, and `a -> b -> c` passes `b` on after the copy, as today.
 
+It is part of the type, not an operator function. An operator function is found among the
+functions visible where the operator is written; `->` is also called where nothing is written
+(a field of a struct copied into), and a module can hold a `T` while seeing none of `T`'s
+module's functions (`T` a field of a type it imports: palan-sa adopts `T`'s StructDef for its
+layout without importing that module). Choosing it by visibility would make one copy behave
+differently by module, while the generated allocators share one function per shape (3.6).
+Carrying every operator function with its type instead was not taken: which type a function of
+two struct operands goes with would need a rule, and an operator would reach a module by two
+paths. So:
+
+- It is defined at the top level of the module defining `T` (not for a C struct), and is not
+  exported. The StructDef carries its symbol (`copyFunc`), so it reaches every module `T` does.
+- Its symbol is `__pln_cp_` and `T` as a symbol writes a struct (SASpec.md's Symbol names): one
+  `->` per type, named by the type's identity, which a library's interface keeps. It is a C
+  identifier, global, since the generated allocators declare it in C and call it.
+- A `.pai` writes it, unexported and without a body, after the functions, for each type it writes.
+
 - The source is the same type `@T` only. A `->` from another type would be an implicit conversion
   under another name; such a value is converted explicitly (`utf8(x) -> s;`), and a string literal
   converts by itself (`"" -> s;`).
@@ -627,10 +655,11 @@ function's do; it returns nothing, and `a -> b -> c` passes `b` on after the cop
 - A type without `->` is copied as today, except for the parts of a type that has one.
 - `src` and `dst` may be the same value (`s -> s`); the function handles that, and the reference
   says so.
-- Today every copy, into a new value or an existing one, goes through the same generated
-  `__pln_copy_K` (3.6), and copying into a `[+]T` builds the missing elements, then copies over
-  all of them. Initialization must keep copying whole while `->` calls the type's function, so the
-  two paths separate in palan-sa and in the generated allocators.
+- palan-sa tells each copy it makes as into a new value or an existing one: `x -> v` into a
+  variable, field or element is existing; initialization, a temporary, an argument and a return
+  are new. Into an existing value of a type with its own `->`, it calls it; of a type holding
+  one, the generated `__pln_assign_K` (3.6); otherwise, and into a new value, the copy as before.
+  An aggregate literal written into such a type is first made into a temporary, a new value.
 
 **Default arguments.** `func find(@utf8 s, @utf8 x, int64 from = 0) -> int64`. Parameters with
 defaults come last.

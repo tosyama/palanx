@@ -541,7 +541,7 @@ json PlnSemanticAnalyzer::sa_arr_copy_var_decl(const json& stmt, VarStorage stor
 	json result = sa_var_decl_group(declStmt, storage);
 	const json& vt = *findVar(name);
 	json dst = {{"expr-type","id"},{"name",name},{"var-type",vt},{"value-type",vt}}; // LCOV_EXCL_BR_LINE
-	result.push_back(makeCopyStmt(stmt, dst, src));
+	result.push_back(makeCopyStmt(stmt, dst, src, CopyInto::New));
 	return result;
 } // LCOV_EXCL_BR_LINE
 
@@ -788,7 +788,7 @@ void PlnSemanticAnalyzer::emitArrLitAssigns(const json& arrAst, const ArrLitShap
 		if (isRow) {
 			emitArrLitAssigns(elemAst, shape, value, out, false, depth + 1);
 		} else if (shape.structDef && value.is_object()) {
-			out.push_back(makeCopyStmt(elemAst, sa_expression(elemAst), value));
+			out.push_back(makeCopyStmt(elemAst, sa_expression(elemAst), value, CopyInto::New));
 		} else if (shape.structDef) {
 			emitStructLitAssigns(elemAst, *shape.structDef, value, out);
 		} else {
@@ -932,7 +932,7 @@ void PlnSemanticAnalyzer::emitStructLitAssigns(const json& objAst, const StructD
 		if (isLitArrField(f))
 			emitArrLitAssigns(fieldAst, arrLitShape(objAst, f.name, fieldValueType(f), true), values[k], out, false); // LCOV_EXCL_BR_LINE
 		else if (values[k].is_object())
-			out.push_back(makeCopyStmt(objAst, makeFieldAccess(resolveObjectChain(objAst, /*forWrite=*/true), f), values[k])); // LCOV_EXCL_BR_LINE
+			out.push_back(makeCopyStmt(objAst, makeFieldAccess(resolveObjectChain(objAst, /*forWrite=*/true), f), values[k], CopyInto::New)); // LCOV_EXCL_BR_LINE
 		else
 			emitStructLitAssigns(fieldAst, requireCompleteStruct(fieldStructName(f), objAst), values[k], out);
 	}
@@ -1565,7 +1565,7 @@ json PlnSemanticAnalyzer::sa_struct_var_decl(const json& stmt, VarStorage storag
 		if (!returned.is_null())
 			for (auto& st : bindStructRet(move(returned), var_id)) initStmts.push_back(move(st));
 		if (!copySrc.is_null())
-			initStmts.push_back(makeCopyStmt(stmt, var_id, copySrc));
+			initStmts.push_back(makeCopyStmt(stmt, var_id, copySrc, CopyInto::New));
 	}
 	result.push_back(sa_stmt);
 	for (auto& s : post)

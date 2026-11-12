@@ -1,0 +1,9 @@
+type T { int32 mode; };
+func ->(@T src, @!T dst) { }
+type Q { T t; int32 n; };
+
+T a; T b;
+a -> b;
+T c = a;
+Q p; Q q;
+p -> q;

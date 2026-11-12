@@ -51,6 +51,9 @@ struct FieldLayout {
 // Where an aggregate variable's outermost storage block lives: `$T v;` puts it
 // in the function's stack frame.
 enum class VarStorage { Heap, Frame };
+// A copy makes a new value whole, or writes into one that exists, which a
+// type's '->' does for the parts of its type (SpecAndDesign.md 3.8).
+enum class CopyInto { New, Existing };
 
 // The allocator helpers build-mgr generates (SpecAndDesign.md 3.6), one
 // family per shape: __pln_<op>_<struct>, and for an array of any element E,
@@ -87,6 +90,8 @@ struct StructDef {
 	bool hasInits = false;
 	json inits = json::array();
 	bool built() const { return ownsFields || hasInits; }
+	// The symbol of its own '->', which it carries to every module it reaches.
+	string copyFunc;
 	// false = tag is known but its layout isn't (C incomplete-type equivalent, e.g. FILE).
 	// Only usable through a pointer (@T/@!T); buildStructDef sets this true on success.
 	bool   isComplete = false;
@@ -624,6 +629,7 @@ class PlnSemanticAnalyzer {
 	// that runs and would be misclassified as unsupported.
 	void  validateNativeSig(const json& funcDef);
 	void  validateOperatorSig(const json& funcDef);
+	void  registerCopyFunc(json& funcEntry, const string& scope);
 	void  validateVariadicSig(const json& funcDef);
 	json  normalizeArrBorrowType(const json& locNode, const json& type);
 	json  varrBorrowType(const json& locNode, const json& arr, bool isMutable);
@@ -708,13 +714,14 @@ class PlnSemanticAnalyzer {
 	bool storageRoots(const json& v, set<string>& roots, bool contents);
 	void resolvePending(json& stmts);
 	json sa_assign_stmt(const json& stmt);  // returns json::array()
-	json sa_varr_lit_assign(const json& stmt, const json& varType, json* litAddr = nullptr);
+	json sa_lit_assign_via_temp(const json& stmt, const json& varType, json* litAddr = nullptr);
 	json sa_transfer_to_var(const json& stmt, const string& name, const json& varType, const PlnType* toType);
 	json sa_transfer_to_owner_view(const json& stmt, const json& target);
 	// `src -> dst` for a dst that isCopiedByValue: a statement copying src's
 	// contents into dst's storage. Diagnoses E_CopyShapeMismatch.
 	json elemsFiniStmt(const string& name, const json& arrType);
-	json makeCopyStmt(const json& locNode, const json& dst, const json& src);
+	json makeCopyStmt(const json& locNode, const json& dst, const json& src, CopyInto into);
+	bool assignsByFunc(const json& t) const;
 	json sa_arr_assign_stmt(const json& stmt, json* litAddr = nullptr);  // returns json::array()
 	// `[...] -> target` / `{...} -> target` for a struct or array target; returns a block.
 	// With litAddr, returns the statements without a scope of their own and

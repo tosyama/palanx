@@ -934,6 +934,16 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			       "or a call returning '@!T': a value a call or an operator returns is a temporary, "
 			       "and what is appended to it would be lost.";
 
+		case E_CopyFuncSig:
+			return "'->' must be 'func ->(@T src, @!T dst)' of one struct T, with no defaults and no return value.";
+
+		case E_CopyFuncPlace:
+			return "'->' is part of its type's definition: it is defined at the top level of the module "
+			       "defining the struct, not of a C struct or of another module's.";
+
+		case E_CopyFuncExported:
+			return "'->' is not exported: it comes with its type wherever the type goes.";
+
 		default:
 			BOOST_ASSERT(false);
 	}

@@ -1392,6 +1392,12 @@ TEST(build_mgr, append_mtrace) {
 	expectMtraceRun("410_append_mtrace", "abcde\nabcderetT\nabcderetT!?\nabcderetT!?x\nfg\n", 24);
 }
 
+TEST(build_mgr, copy_func_mtrace) {
+	expectMtraceRun("411_copy_func_mtrace",
+		"->2 | 2 1\n->2 ->1 | 1 1\n->2 | self 1\n->2 | 3\nnew 2 2 4\n->7 ->8 | 8 6 5\n->8 | field\n->1 ->2 | 9\n"
+		"->8 | 8 2 2\n->5 ->6 | 5 6 2\n->7 F4 F5 F6 | 11 4 1 7 42 3\nF3 F4 | 4 2\nF4 | 4 9 2\nF3 F4 | 2 1\n->1 | 1 2\n", 90);
+}
+
 TEST(build_mgr, compare_func_mtrace) {
 	expectMtraceRun("403_compare_func_mtrace",
 		"1 0 0\n1 0 1 0\n0 1 1 1\n1 0\n1 1\n0 1\n1 2 0\n3 4 1\n", 4);
