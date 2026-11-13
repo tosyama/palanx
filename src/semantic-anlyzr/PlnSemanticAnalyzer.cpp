@@ -15,6 +15,7 @@
 #include "PlnSemanticAnalyzer.h"
 #include "PlnSaMessage.h"
 #include "PlnSaInternal.h"
+#include "../common/PlnInterface.h"
 
 struct PlnSemanticAnalyzer::TypeProgram {
 	map<string, PlnSemanticAnalyzer*> modules;  // moduleId -> its type context, the root's included
@@ -774,6 +775,11 @@ json PlnSemanticAnalyzer::normalizeFuncSig(const json& f, const string& scope)
 	if (f.contains("ret-type")) ensureSigType(f["ret-type"]);
 
 	json funcEntry = resolveSigTypes(f);
+	// Diagnostics name a parameter as written: `@[]T` resolves to the same type as `@T`.
+	json written = json::array();
+	for (auto& p : f.value("parameters", json::array()))
+		written.push_back(writeType(p["var-type"]));
+	funcEntry["_written-params"] = written;
 	normalizeSig(funcEntry);
 	validateEmbeddedParams(funcEntry);
 	if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)

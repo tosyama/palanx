@@ -22,13 +22,13 @@ class Writer {
 public:
 	Writer(const json& ast, const vector<string>& libs) : ast_(ast), libs_(libs) {}
 	string write();
+	string type(const json& t) const;
 
 private:
 	const json& ast_;
 	const vector<string>& libs_;
 
 	[[noreturn]] void fail(const json& node, const string& what) const;
-	string type(const json& t) const;
 	string expr(const json& e) const;
 	string operand(const json& e) const;
 	string args(const json& list) const;
@@ -597,4 +597,11 @@ string writeLibraryInterface(const json& main, const vector<json>& internals)
 	for (auto& ast : internals) collectLinks(ast["ast"], libs);
 	json merged = Merger(main, internals).merged();
 	return Writer(merged, libs).write();
+}
+
+string writeType(const json& astType)
+{
+	static const json noModule = {{"original", ""}};
+	static const vector<string> noLibs;
+	return Writer(noModule, noLibs).type(astType);
 }

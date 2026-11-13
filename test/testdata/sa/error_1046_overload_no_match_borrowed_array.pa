@@ -1,0 +1,5 @@
+type T { int32 a; };
+func f(@!T s, @[]uint8 cs) { }
+func f(@!T s, @[4]int32 a, [...]@[]uint8 xs) { }
+T a; T b;
+f(@!a, b);

@@ -1227,6 +1227,8 @@ TEST(sa_error, overload)
 		{"error_716_overload_no_match_chained_literal.pa", ":3:6: error: No function 'pp' takes (int64); there are pp(@int32), pp(@int64)."},
 		{"error_717_overload_no_match_aggregate.pa", ":3:1: error: No function 'f' takes (literal); there are f(int32), f(int64)."},
 		{"error_718_overload_no_match_no_args.pa", ":3:1: error: No function 'printf' takes (); there are printf(@int8, ...), printf(int32)."},
+		// A parameter is shown as written: '@[]T' is the same type as '@T'.
+		{"error_1046_overload_no_match_borrowed_array.pa", ":5:1: error: No function 'f' takes (@!T, T); there are f(@!T, @[]uint8), f(@!T, @[4]int32, [...]@[]uint8)."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

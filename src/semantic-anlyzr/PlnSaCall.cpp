@@ -281,11 +281,13 @@ string PlnSemanticAnalyzer::calleesText(const string& name, const vector<Callee>
 	for (auto& c : cands) {
 		if (!text.empty()) text += ", "; // LCOV_EXCL_BR_LINE
 		text += name + "(";
-		bool first = true;
+		const json* written = c.def->contains("_written-params") ? &(*c.def)["_written-params"] : nullptr;
+		size_t i = 0;
 		for (auto& p : (*c.def)["parameters"]) {
-			if (!first) text += ", ";
-			first = false;
-			text += p.value("name", "") == "..." ? string("...") : typeDisplayName(p["var-type"]); // LCOV_EXCL_BR_LINE
+			if (i) text += ", ";
+			text += written ? (*written)[i].get<string>()
+			      : p.value("name", "") == "..." ? string("...") : typeDisplayName(p["var-type"]); // LCOV_EXCL_BR_LINE
+			i++;
 			if (p.contains("default")) text += " = " + defaultText(p["default"]);
 		}
 		text += ")";

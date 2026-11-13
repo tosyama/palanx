@@ -1063,7 +1063,7 @@ TEST(sa_error, literal_conversion)
 	const pair<string, string> cases[] = {
 		{"error_987_literal_no_conversion.pa", ":2:1: " + noCopy},
 		{"error_988_literal_conversion_needs_args.pa", ":3:1: " + noCopy},
-		{"error_989_literal_conversion_ambiguous.pa", ":4:10: error: Ambiguous function call 'text': it can mean text(@uint8), text(@uint8, int32 = 0)."},
+		{"error_989_literal_conversion_ambiguous.pa", ":4:10: error: Ambiguous function call 'text': it can mean text(@[]uint8), text(@[]uint8, int32 = 0)."},
 		{"error_990_literal_to_writable.pa", ":4:1: error: cannot convert '[?]uint8' to '@!text'."},
 		{"error_991_literal_as_struct.pa", ":3:10: error: cannot cast to 'text'"},
 		{"error_992_literal_borrowed_var.pa", ":3:11: " + borrowed},
