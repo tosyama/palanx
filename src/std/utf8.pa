@@ -223,10 +223,11 @@ export func <<(@!utf8 s, @utf8 t) -> @!utf8 { return append(s, t); }
 export func <<(@!utf8 s, @[]uint8 cs) -> @!utf8 { return append(s, cs); }
 
 // Adds the code point c. One that is not a character (a surrogate, beyond U+10FFFF, or negative)
-// is an invalid part, which KEEP_INVALID has no bytes to keep for.
+// is an invalid part, which KEEP_INVALID has no bytes to keep for. So is 0, which would end the
+// text where C reads it.
 export func appendChar(@!utf8 s, int32 c) -> @!utf8
 {
-	if c < 0 || c > 1114111 || (c >= 55296 && c <= 57343) {
+	if c <= 0 || c > 1114111 || (c >= 55296 && c <= 57343) {
 		true -> s.hadInvalid;
 		if s.mode == utf8mode.REPLACE_INVALID {
 			s.bytes.pop();
@@ -579,6 +580,15 @@ func testAppend()
 	utf8 ds = utf8("", utf8mode.DELETE_INVALID);
 	ds.appendChar(57343);
 	expectText(@ds, "", true, "delete non-character");
+	utf8 zr;
+	zr.appendChar(0);
+	expectText(@zr, "\xEF\xBF\xBD", true, "replace NUL");
+	utf8 zk = utf8("a", utf8mode.KEEP_INVALID);
+	zk.appendChar(0).appendChar(98);
+	expectText(@zk, "ab", true, "keep NUL");
+	utf8 zd = utf8("", utf8mode.DELETE_INVALID);
+	zd.appendChar(0);
+	expectText(@zd, "", true, "delete NUL");
 }
 
 func testOperators()

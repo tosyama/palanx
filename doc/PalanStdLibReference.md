@@ -36,6 +36,8 @@ if t -> startsWith("h\u{E9}", "H\u{E9}") && t != s { t.replace("&", "+").trim();
 `utf8` is UTF-8 text held with a NUL at the end, so `cstr` gives it to C as it is. A declared
 `utf8` is empty. A string literal converts to one wherever a `utf8` is expected
 (`utf8 s = "abc";`, `"" -> s;`, `s == "abc"`); other bytes are converted by calling `utf8`.
+Bytes given as a literal or a `@[]uint8` are read up to their first NUL, so they must end with one:
+`"ab\0cd"` is the text `"ab"`. A `utf8` never holds a NUL.
 
 A character is a Unicode code point: `"🇯🇵"` has 2. Positions (`find`, `slice`, `insert`,
 `remove`) count characters, an invalid part counting as one, so reaching one scans the text from
@@ -60,7 +62,8 @@ time: a sequence cut at the end of one `<<` is an invalid part even if the next 
 
 `hadInvalid` tells that an invalid part was met in making the text, or in making the texts it was
 made from: adding `t` to `s` sets it if `t`'s is set. It is never cleared by adding; `x -> s`
-replaces it with `x`'s.
+replaces it with `x`'s. A part made by `slice` or `split` has `s`'s, whether it holds an invalid part
+or not.
 
 | Text | Mode |
 |------|------|
@@ -86,20 +89,20 @@ or `@[]uint8` operand as its bytes.
 | `cstr(@utf8 s) -> @[]uint8` | the NUL-terminated bytes, until `s` is changed |
 | `byteLen(@utf8 s) -> int64` | the number of bytes, without the NUL |
 | `charCount(@utf8 s) -> int64` | the number of characters |
-| `for copy c, i in s` | each character `c` as an `int32` code point, `-1` for an invalid part |
+| `for copy c, i in s` | each character `c` as an `int32` code point, `-1` for an invalid part; `i` counts the characters from 0 |
 | `a == b`, `a < b` (and `!=`, `>`, `<=`, `>=`) | by bytes, which is code point order; either one may be a literal or `@[]uint8` |
 | `a + b` | `a` then `b`, either one a literal or `@[]uint8` |
 | `s << x` | adds `x` (`@utf8`, a literal or `@[]uint8`) and gives `s` back: `s << a << b` |
 | `append(@!utf8 s, x) -> @!utf8` | `s << x` |
-| `appendChar(@!utf8 s, int32 c) -> @!utf8` | adds the code point `c`; a surrogate, a value beyond U+10FFFF or a negative one is an invalid part, which `KEEP_INVALID` has no bytes to keep for, so it drops it |
+| `appendChar(@!utf8 s, int32 c) -> @!utf8` | adds the code point `c`; 0, a surrogate, a value beyond U+10FFFF or a negative one is an invalid part, which `KEEP_INVALID` has no bytes to keep for, so it drops it |
 | `startsWith(@utf8 s, ...)`, `endsWith`, `contains` | whether `s` starts with, ends with or contains any of the texts given (`s -> startsWith("http:", "https:")`); none given is false, `""` is true |
-| `find(@utf8 s, @utf8 x, int64 from = 0) -> int64` | the position of the first `x` at or after `from`, or `-1`; `""` is found at `from` |
-| `replace(@!utf8 s, @utf8 from, @utf8 to) -> @!utf8` | replaces every `from`; an empty `from` changes nothing |
+| `find(@utf8 s, @utf8 x, int64 from = 0) -> int64` | the position of the first `x` at or after `from`, or `-1`; `""` is found at `from`, and nothing is found from beyond the end |
+| `replace(@!utf8 s, @utf8 from, @utf8 to) -> @!utf8` | replaces every `from`, from the left and without overlapping, not searching what replaced it (`"aaaa"` with `"aa"` to `"a"` gives `"aa"`); an empty `from` changes nothing |
 | `insert(@!utf8 s, int64 pos, @utf8 x) -> @!utf8` | inserts `x` before the character at `pos` |
 | `remove(@!utf8 s, int64 start, int64 end) -> @!utf8` | removes the characters from `start` up to `end` |
 | `trim(@!utf8 s) -> @!utf8` | removes the 25 characters of Unicode's White_Space at both ends |
 | `slice(@utf8 s, int64 start, int64 end) -> utf8` | the characters from `start` up to `end` |
-| `split(@utf8 s, @utf8 sep) -> [+]utf8` | the parts between each `sep`, empty ones included (`"a,,b"` gives `"a"`, `""`, `"b"`); an empty `sep` gives the whole text |
+| `split(@utf8 s, @utf8 sep) -> [+]utf8` | the parts between each `sep`, empty ones included (`"a,,b"` gives `"a"`, `""`, `"b"`); an empty `sep` gives the whole text, and an empty text one empty part |
 | `join(@[+]utf8 parts, @utf8 sep) -> utf8` | the parts with `sep` between them (`parts -> join(", ")`); no parts give empty text |
 
 The functions changing `s` return it, so they chain: `s.replace("\t", " ").trim();`. `s -> s`
