@@ -14,7 +14,7 @@ type E { $T t; $F f; $[2]$F fs; int32 n; };
 // Its arrays of T are laid out before T's '->' is registered.
 type K { int32 x; int32 keep; };
 func ->(@K src, @!K dst) { src.x -> dst.x; printf("K%d ", dst.keep); }
-type G { [+]T a; $[+]T b; [2]T c; [2][+]T e; [+]K ks; };
+type G { [+]T a; $[+]T b; [2]T c; [2][+]T e; [+]K ks; [+]$[2]K rows; };
 
 func mk(int32 m) -> T t { m -> t.mode; t.v.push(m); }
 func show(T t) -> int32 { return t.mode; }
@@ -68,7 +68,9 @@ mtrace();
 	3 -> g2.c[1].mode;
 	g1.e[0].resize(1); g2.e[0].resize(1); 4 -> g2.e[0][0].mode;
 	g1.ks.resize(1); g2.ks.resize(1); 5 -> g1.ks[0].x; 7 -> g2.ks[0].keep;
-	g1 -> g2; printf("| %d %d\n", g2.ks[0].x, g2.ks[0].keep);
+	// The row g2 gains is copied whole.
+	g1.rows.resize(2); g2.rows.resize(1); 3 -> g1.rows[1][1].x; 4 -> g1.rows[1][1].keep; 8 -> g2.rows[0][1].keep;
+	g1 -> g2; printf("| %d %d %d %d\n", g2.ks[0].x, g2.ks[0].keep, g2.rows[1][1].x, g2.rows[1][1].keep);
 
 	// A literal is a new value, which '->' then writes in.
 	[[1, 2], 0] -> a; printf("| %d %d\n", a.mode, a.v[1]);

@@ -760,13 +760,18 @@ void writeAllocatorsSource(ostream& out, const PlnAllocShapes& shapes, const str
 			    << "    int64 m = h.len;\n"
 			    << "    if n > m {\n";
 			if (e.built) out << "        __pln_build_" << e.key << "(h.data, m, n" << ma << ");\n";
-			if (e.owned)
-				out << "        int64 i = m;\n"
-				    << "        while i < n {\n"
-				    << "            __pln_set_" << e.key << "(h.data, i, " << borrowed(e, "src[i]") << ma << ");\n"
+			if (e.owned) {
+				// A row laid out in place is no slot of its own, but its elements' slots.
+				bool isRow = e.kind == "embed-row";
+				const ElemOps& s = isRow ? *e.leaf : e;
+				string per = isRow ? " * " + countOf(e, names) : "";
+				out << "        int64 i = m" << per << ";\n"
+				    << "        while i < n" << per << " {\n"
+				    << "            __pln_set_" << s.key << "(h.data, i, " << borrowed(s, "src[i]")
+				    << (isRow ? lenArgs(names, e.depth) : ma) << ");\n"
 				    << "            i + 1 -> i;\n"
 				    << "        }\n";
-			else
+			} else
 				out << "        memcpy(" << slotAddr(e, "h.data", "m", names) << ", " << slotAddr(e, "src", "m", names)
 				    << ", (n - m) * " << size << ");\n";
 			out << "    } else {\n";
