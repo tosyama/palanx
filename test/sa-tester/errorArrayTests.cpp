@@ -540,6 +540,7 @@ TEST(sa_error, varr)
 		{"error_801_arr_named_ret_init.pa", ":1:26: error: named return 'r' of a struct or array type cannot have an initializer."},
 		{"error_802_arr_return_lit_count.pa", ":2:2: error: array '[3]int32' has size 3 but its array literal has 2 elements."},
 		{"error_803_arr_param_lit_count.pa", ":2:3: error: array 'x' has size 3 but its array literal has 2 elements."},
+		{"error_1047_varr_borrow_row_vs_struct.pa", ":5:1: error: array shape '@![+][2]$F' does not match '[+]F': its elements must have the same size and layout, and be owned by both or by neither."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

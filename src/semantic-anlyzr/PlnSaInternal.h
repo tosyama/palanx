@@ -738,7 +738,7 @@ inline bool elemShapeMatch(const json& from, const json& to) {
 	if (isVarrPntr(from) && isVarrPntr(to)) {
 		const json& fe = from["base-type"]["base-type"];
 		const json& te = to["base-type"]["base-type"];
-		if (isArrLevel(te)) return from["base-type"] == to["base-type"];
+		if (isArrLevel(te) || isArrLevel(fe)) return from["base-type"] == to["base-type"];
 		if (isPtrBorrow(te)) return isPtrBorrow(fe) && arrShapeMatch(fe, te, isWritableThrough(to));
 	}
 	if (to.value("type-kind","") != "pntr" || to.contains("arr-size") || !isArrLevel(from))

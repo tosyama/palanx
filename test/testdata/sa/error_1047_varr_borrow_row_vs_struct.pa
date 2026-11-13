@@ -1,0 +1,5 @@
+type F { int32 x; };
+func f(@![+]F v) { }
+[+]F fs; fs.resize(1);
+[+][2]$F z; z.resize(1);
+f(@!z);
