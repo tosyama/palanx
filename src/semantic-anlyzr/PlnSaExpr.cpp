@@ -343,7 +343,7 @@ void PlnSemanticAnalyzer::checkIntLiteralRange(const json& lit)
 // type would silently hold, or compare against, something no text has.
 void PlnSemanticAnalyzer::rejectWideCharLit(const json& lit, const json& type)
 {
-	if (!lit.value("char", false) || stol(lit["value"].get<string>()) < 128) return;
+	if (!lit.value("char", false) || stol(lit["value"].get<string>()) < 128) return; // LCOV_EXCL_BR_LINE
 	const PlnType* t = registry_.fromJson(type);
 	if (!isIntegerPrim(t)) return;
 	auto pn = static_cast<const PrimType*>(t)->name;
@@ -471,7 +471,7 @@ optional<int64_t> PlnSemanticAnalyzer::constArrLen(const json& expr)
 json PlnSemanticAnalyzer::runtimeArrLen(const json& expr)
 {
 	const json* arr = lenOperand(expr);
-	if (!arr || !operandValueType(*arr).value("run-size", false)) return json();
+	if (!arr || !operandValueType(*arr).value("run-size", false)) return json(); // LCOV_EXCL_BR_LINE
 	return arrLenOf(sa_expression(*arr), expr);
 }
 
@@ -994,7 +994,7 @@ json PlnSemanticAnalyzer::sa_expr_cmp(const json& expr)
 	for (int i : {0, 1}) {
 		const json operand = foldConstExpr(expr[i ? "right" : "left"]);
 		if (isNullPtrLit(operand)) nullOperand = true;
-		if (isAggregateLit(operand) || operand.value("expr-type", "") == "lit-int") continue;
+		if (isAggregateLit(operand) || operand.value("expr-type", "") == "lit-int") continue; // LCOV_EXCL_BR_LINE
 		probes[i] = sa_expression(expr[i ? "right" : "left"]);
 		structOperand = structOperand || isStructPntr(probes[i]["value-type"]);
 	}

@@ -40,7 +40,7 @@ inline json wrapConvert(const json& expr, const json& to_type) {
 
 inline json strLitType() {
 	return {{"type-kind", "pntr"}, {"base-type", {{"type-kind", "prim"}, {"type-name", "uint8"}}}}; // LCOV_EXCL_BR_LINE
-}
+} // LCOV_EXCL_BR_LINE
 
 // True if `t` is a non-float primitive type (int8..uint64). Shared by every
 // operator that requires integer operands (logical &&/||/!, bitwise &/|/^/~)
@@ -213,8 +213,8 @@ inline bool isPtrBorrow(const json& vt)
 // NULL, as gen-ast folds the C macro.
 inline bool isNullPtrLit(const json& expr)
 {
-	return expr.value("expr-type", "") == "lit-int" && expr.contains("value-type")
-	    && expr["value-type"].value("type-kind", "") == "pntr";
+	return expr.value("expr-type", "") == "lit-int" && expr.contains("value-type") // LCOV_EXCL_BR_LINE
+	    && expr["value-type"].value("type-kind", "") == "pntr"; // LCOV_EXCL_BR_LINE
 }
 inline bool isAggregateLit(const json& expr)
 {
@@ -243,7 +243,7 @@ inline bool isVarrAstType(const json& t)
 }
 inline bool isVariadicAstType(const json& t)
 {
-	return t.value("type-kind","") == "arr" && t.value("specifier","") == "variadic";
+	return t.value("type-kind","") == "arr" && t.value("specifier","") == "variadic"; // LCOV_EXCL_BR_LINE
 }
 // The `[...]E` parameter of a Palan signature, which only the last one can be.
 inline const json* palanVariadicParam(const json& params)

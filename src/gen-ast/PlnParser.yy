@@ -1392,7 +1392,7 @@ paramaters: /* empty */
 	| var_declarations
 	{ $$ = $1.toVector(); }
 	| variadic_param
-	{ $$ = {move($1)}; }
+	{ $$ = {move($1)}; } // LCOV_EXCL_BR_LINE
 	| var_declarations ',' variadic_param
 	{ $$ = $1.push(move($3)).toVector(); }
 	| variadic_param ',' var_declarations

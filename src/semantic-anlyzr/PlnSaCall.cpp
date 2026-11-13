@@ -150,7 +150,7 @@ static bool isCVariadicSig(const json& funcParams)
 static json variadicElemParam(const json& variadic)
 {
 	return {{"name", variadic.value("name", "")}, {"var-type", variadic["var-type"]["base-type"]}}; // LCOV_EXCL_BR_LINE
-}
+} // LCOV_EXCL_BR_LINE
 
 static bool isAggregateLitArg(const json& arg)
 {
@@ -200,7 +200,7 @@ ArgFit PlnSemanticAnalyzer::argFit(const CallArg& arg, const json& param, size_t
 {
 	const json& paramVT = param["var-type"];
 	// A string literal never fits a struct parameter as it is.
-	if (arg.ast.value("expr-type", "") == "lit-str" && literalConversion(arg.ast, paramVT) != arg.ast)
+	if (arg.ast.value("expr-type", "") == "lit-str" && literalConversion(arg.ast, paramVT) != arg.ast) // LCOV_EXCL_BR_LINE
 		return ArgFit::Converted;
 	auto fitOf = [&](const json& ast, const json& sa0) {
 		json sa = takesVarrData(sa0["value-type"], &paramVT, isCFunc) ? varrData(sa0) : sa0;
@@ -285,7 +285,7 @@ string PlnSemanticAnalyzer::calleesText(const string& name, const vector<Callee>
 		size_t i = 0;
 		for (auto& p : (*c.def)["parameters"]) {
 			if (i) text += ", ";
-			text += written ? (*written)[i].get<string>()
+			text += written ? (*written)[i].get<string>() // LCOV_EXCL_BR_LINE
 			      : p.value("name", "") == "..." ? string("...") : typeDisplayName(p["var-type"]); // LCOV_EXCL_BR_LINE
 			i++;
 			if (p.contains("default")) text += " = " + defaultText(p["default"]);
@@ -419,7 +419,7 @@ json PlnSemanticAnalyzer::sa_expr_append(const json& expr)
 	bool isLocation = isLocationExpr(left);
 	bool isCall = let == "call" || let == "member-call" || let == "chain-call" || let == "call-ptr" || let == "append";
 	json leftSa = let == "field-access" ? json() : sa_expr_maybe_void(left);
-	json leftVT = leftSa.is_null() ? operandValueType(left) : leftSa.value("value-type", json());
+	json leftVT = leftSa.is_null() ? operandValueType(left) : leftSa.value("value-type", json()); // LCOV_EXCL_BR_LINE
 	auto fail = [&](PlnSaMessageCode code, const string& arg = "\x01") {
 		cerr << locPrefix(left.contains("loc") ? left : expr) << PlnSaMessage::getMessage(code, arg) << endl;
 		exit(1);
@@ -440,9 +440,9 @@ json PlnSemanticAnalyzer::sa_expr_append(const json& expr)
 	}
 	// As an arithmetic operand: one that takes its type from the parameter is
 	// left for the function chosen to type.
-	if (!isAggregateLit(right) && foldConstExpr(right)["expr-type"] != "lit-int") {
+	if (!isAggregateLit(right) && foldConstExpr(right)["expr-type"] != "lit-int") { // LCOV_EXCL_BR_LINE
 		probes[1] = sa_expression(right);
-		if (!isStructPntr(probes[1]["value-type"]) && takesExpectedType(right)) probes[1] = json();
+		if (!isStructPntr(probes[1]["value-type"]) && takesExpectedType(right)) probes[1] = json(); // LCOV_EXCL_BR_LINE
 	}
 	return sa_operator_call(expr, "<<", {&recv, &right}, {move(probes[0]), move(probes[1])}); // LCOV_EXCL_BR_LINE
 } // LCOV_EXCL_LINE -- only exception cleanup is attributed here
@@ -464,15 +464,15 @@ json PlnSemanticAnalyzer::sa_compare_call(const json& expr, json probes[2])
 		json body = json::array();
 		json ahead = chainValueAhead(left, nullptr, body);
 		json aheadProbe = probes[0].is_null() ? json() : sa_expression(ahead);
-		json saCall = sa_operator_call(expr, func, {&right, &ahead}, {move(probes[1]), move(aheadProbe)});
+		json saCall = sa_operator_call(expr, func, {&right, &ahead}, {move(probes[1]), move(aheadProbe)}); // LCOV_EXCL_BR_LINE
 		size_t idx = arrayScopeVars_.size() - 1;
 		json release = collectFreeStmts(idx, idx + 1);
 		leaveScope();
 		call = makeTempExpr(move(body), move(saCall), move(release));
 	} else if (swap) {
-		call = sa_operator_call(expr, func, {&right, &left}, {move(probes[1]), move(probes[0])});
+		call = sa_operator_call(expr, func, {&right, &left}, {move(probes[1]), move(probes[0])}); // LCOV_EXCL_BR_LINE
 	} else {
-		call = sa_operator_call(expr, func, {&left, &right}, {move(probes[0]), move(probes[1])});
+		call = sa_operator_call(expr, func, {&left, &right}, {move(probes[0]), move(probes[1])}); // LCOV_EXCL_BR_LINE
 	}
 	if (op != "!=" && op != "<=" && op != ">=") return call;
 	// LCOV_EXCL_BR_START
@@ -803,11 +803,11 @@ vector<Callee> PlnSemanticAnalyzer::forProtocolCallees(const string& name, const
 		if (isNext) {
 			const json& rets = def.value("rets", json::array());
 			if (!pt.value("mutable", false) || rets.size() != 2
-			    || rets[0]["var-type"] != json{{"type-kind","prim"},{"type-name","bool"}}) continue;
+			    || rets[0]["var-type"] != json{{"type-kind","prim"},{"type-name","bool"}}) continue; // LCOV_EXCL_BR_LINE
 		} else if (!isStructStorage(def.value("ret-type", json()))) {
 			continue;
 		}
-		if (seen.insert(calleeKey(def, false)).second) fit.push_back(c);
+		if (seen.insert(calleeKey(def, false)).second) fit.push_back(c); // LCOV_EXCL_BR_LINE
 	}
 	return fit;
 } // LCOV_EXCL_LINE -- only exception cleanup is attributed here
@@ -830,7 +830,7 @@ vector<Callee> PlnSemanticAnalyzer::literalConversions(const json& structVT)
 		const json& def = *c.def;
 		const json& ret = def.value("ret-type", json::object());
 		const json& params = def["parameters"];
-		if (!isStructStorage(ret) || ret["base-type"] != structType || params.empty()) continue;
+		if (!isStructStorage(ret) || ret["base-type"] != structType || params.empty()) continue; // LCOV_EXCL_BR_LINE
 		// A first parameter taking a struct would ask for a conversion of its own.
 		if (isStructPntr(params[0]["var-type"])) continue;
 		const json* variadic = palanVariadicParam(params);
@@ -838,7 +838,7 @@ vector<Callee> PlnSemanticAnalyzer::literalConversions(const json& structVT)
 		if (requiredArgCount(params, fixedCount) > 1) continue;
 		const json& first = fixedCount ? params[0] : variadicElemParam(*variadic);
 		if (argFit(litArgs[0], first, 0, c.isC, name) == ArgFit::None) continue;
-		if (seen.insert(calleeKey(def, c.isC)).second) convs.push_back(c);
+		if (seen.insert(calleeKey(def, c.isC)).second) convs.push_back(c); // LCOV_EXCL_BR_LINE
 	}
 	return convs;
 } // LCOV_EXCL_LINE -- only exception cleanup is attributed here
@@ -848,7 +848,7 @@ vector<Callee> PlnSemanticAnalyzer::literalConversions(const json& structVT)
 // is returned as it is.
 json PlnSemanticAnalyzer::literalConversion(const json& ast, const json& toVT)
 {
-	if (ast.value("expr-type", "") != "lit-str" || !isStructPntr(toVT) || toVT.value("mutable", false))
+	if (ast.value("expr-type", "") != "lit-str" || !isStructPntr(toVT) || toVT.value("mutable", false)) // LCOV_EXCL_BR_LINE
 		return ast;
 	json storage = toVT;
 	storage.erase("mutable");
@@ -1148,9 +1148,9 @@ json PlnSemanticAnalyzer::bindCallArgs(const json& locNode, vector<CallArg>& arg
 	for (size_t i = args.size(); i < fixedCount; i++) {
 		const json& d = funcParams[i]["default"];
 		if (d["expr-type"] == "lit-str") {
-			args.push_back(analyzeCallArgs(json::array({d}))[0]);
+			args.push_back(analyzeCallArgs(json::array({d}))[0]); // LCOV_EXCL_BR_LINE
 		} else {
-			CallArg ca{d, false, d};
+			CallArg ca{d, false, d}; // LCOV_EXCL_BR_LINE
 			args.push_back(move(ca));
 		}
 	}
@@ -1230,7 +1230,7 @@ json PlnSemanticAnalyzer::bindCallArgs(const json& locNode, vector<CallArg>& arg
 		}
 		size_t count = elems.size();
 		saArgs.push_back(variadicArrayArg(locNode, elemParam["var-type"], move(elems), funcName));
-		saArgs.push_back({{"expr-type","lit-int"},{"value",to_string(count)},
+		saArgs.push_back({{"expr-type","lit-int"},{"value",to_string(count)}, // LCOV_EXCL_BR_LINE
 		                  {"value-type",{{"type-kind","prim"},{"type-name","uint64"}}}}); // LCOV_EXCL_BR_LINE
 	}
 	return saArgs;

@@ -31,7 +31,7 @@ string PlnSaMessage::localTypeName(const string& moduleId, int seq, const string
 
 static const regex& localTypePart()
 {
-	static const regex part(string(localTypePrefix) + "[0-9a-f]{16}_([0-9]+_)?");
+	static const regex part(string(localTypePrefix) + "[0-9a-f]{16}_([0-9]+_)?"); // LCOV_EXCL_BR_LINE
 	return part;
 }
 

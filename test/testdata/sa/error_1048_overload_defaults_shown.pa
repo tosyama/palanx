@@ -1,0 +1,4 @@
+type Color enum { RED, GREEN = 5 };
+func f(int32 a, bool b = true, @[]uint8 s = "x", Color c = Color.GREEN, int32 n = 3) { }
+func f(@[]uint8 a, bool b = false, Color c = Color.RED) { }
+[2]int32 x; f(@x);

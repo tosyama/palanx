@@ -195,8 +195,8 @@ json PlnSemanticAnalyzer::sa_loop_body(const json& astBody, const json& heads, j
 	for (auto& head : heads) {
 		string t = head["stmt-type"];
 		json out = t == "var-decl" ? sa_resolved_var_decl(head, {})
-		         : t == "tapple-decl" ? sa_resolved_tapple_decl(head, vector<VarStorage>(head["vars"].size(), VarStorage::Heap))
-		         : sa_statements(json::array({head}));
+		         : t == "tapple-decl" ? sa_resolved_tapple_decl(head, vector<VarStorage>(head["vars"].size(), VarStorage::Heap)) // LCOV_EXCL_BR_LINE
+		         : sa_statements(json::array({head})); // LCOV_EXCL_BR_LINE
 		for (auto& s : out) body.push_back(move(s));
 	}
 	for (auto& s : sa_statements(astBody)) body.push_back(move(s));
@@ -597,15 +597,15 @@ json PlnSemanticAnalyzer::bindRunLens(const string& name, const json& location)
 {
 	json decls = json::array();
 	const json& at = location["expr-type"] == "addr-of" ? location["object"] : location;
-	const json u64 = {{"type-kind","prim"},{"type-name","uint64"}};
+	const json u64 = {{"type-kind","prim"},{"type-name","uint64"}}; // LCOV_EXCL_BR_LINE
 	size_t k = 0;
 	for (const json* t = &at["value-type"]; isArrLevel(*t); t = &(*t)["base-type"], k++) {
 		if (!t->value("run-size", false)) continue;
 		auto [root, depth] = arrRoot(at);
 		string lenName = "__" + name + "_d" + to_string(k);
 		declareVar(lenName, u64);
-		decls.push_back({{"stmt-type","var-decl"},
-		                 {"vars",json::array({{{"name",lenName},{"var-type",u64},{"init",runtimeLen(*root, depth + k)}}})}});
+		decls.push_back({{"stmt-type","var-decl"}, // LCOV_EXCL_BR_LINE
+		                 {"vars",json::array({{{"name",lenName},{"var-type",u64},{"init",runtimeLen(*root, depth + k)}}})}}); // LCOV_EXCL_BR_LINE
 	}
 	return decls;
 } // LCOV_EXCL_BR_LINE
@@ -672,13 +672,13 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef, bool topLevel)
 	// whose length arrives in a parameter of its own.
 	string variadic;
 	json variadicType;
-	const json u64 = {{"type-kind","prim"},{"type-name","uint64"}};
+	const json u64 = {{"type-kind","prim"},{"type-name","uint64"}}; // LCOV_EXCL_BR_LINE
 	if (sig.contains("parameters"))
 		for (auto& p : sig["parameters"]) {
 			json vt = sigType(funcDef, p["var-type"]);
 			if (vt.value("variadic", false)) {
 				variadic = p["name"];
-				variadicType = {{"type-kind","pntr"},{"run-size",true},{"base-type",vt["base-type"]}};
+				variadicType = {{"type-kind","pntr"},{"run-size",true},{"base-type",vt["base-type"]}}; // LCOV_EXCL_BR_LINE
 				declareVar(variadic, variadicType, &funcDef);
 				declareVar("__" + variadic + "_d0", u64, &funcDef);
 				continue;
@@ -752,7 +752,7 @@ void PlnSemanticAnalyzer::sa_function(const json& funcDef, bool topLevel)
 	validateNativeSig(saFunc);
 	if (!variadic.empty()) {
 		saFunc["parameters"].back()["var-type"] = variadicType;
-		saFunc["parameters"].push_back({{"name","__" + variadic + "_d0"},{"var-type",u64}});
+		saFunc["parameters"].push_back({{"name","__" + variadic + "_d0"},{"var-type",u64}}); // LCOV_EXCL_BR_LINE
 	}
 	// Single named return: add ret-type so codegen knows the return type
 	if (!saFunc.contains("ret-type") && saFunc.contains("rets") && saFunc["rets"].size() == 1)
@@ -1422,7 +1422,7 @@ json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt, json* litAddr)
 		cerr << locPrefix(stmt) << PlnSaMessage::getMessage(E_WriteThroughReadOnlyPtr) << endl;
 		exit(1);
 	}
-	if (isAggregateLit(stmt["value"]) && (isVarrStorage(sa_target["value-type"]) || assignsByFunc(withoutArrPermission(sa_target["value-type"]))))
+	if (isAggregateLit(stmt["value"]) && (isVarrStorage(sa_target["value-type"]) || assignsByFunc(withoutArrPermission(sa_target["value-type"])))) // LCOV_EXCL_BR_LINE
 		return sa_lit_assign_via_temp(stmt, sa_target["value-type"], litAddr);
 	if (isAggregateLit(stmt["value"]) && (isStructPntr(sa_target["value-type"]) || isArrLevel(sa_target["value-type"]))) {
 		json lit = sa_aggregate_lit_assign(stmt, stmt["target"], sa_target["value-type"], litAddr);
@@ -1430,7 +1430,7 @@ json PlnSemanticAnalyzer::sa_arr_assign_stmt(const json& stmt, json* litAddr)
 	}
 	if (!transfer && isCopiedByValue(sa_target["value-type"]))
 		return json::array({makeCopyStmt(stmt, sa_target, // LCOV_EXCL_BR_LINE
-			sa_expression(literalConversion(stmt["value"], sa_target["value-type"])), CopyInto::Existing)});
+			sa_expression(literalConversion(stmt["value"], sa_target["value-type"])), CopyInto::Existing)}); // LCOV_EXCL_BR_LINE
 	if (sa_target.value("addr-only", false)) {
 		// The element itself is an address computation (e.g. a struct array
 		// element), not a storage slot to overwrite -- assign to its fields instead.

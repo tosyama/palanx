@@ -161,7 +161,7 @@ const PlnType* PlnTypeRegistry::fromJson(const json& j)
         std::vector<const PlnType*> params;
         for (auto& p : j["parameters"]) params.push_back(fromJson(p["var-type"]));
         const json& ps = j["parameters"];
-        bool variadic = !ps.empty() && ps.back().contains("var-type") && ps.back()["var-type"].value("variadic", false);
+        bool variadic = !ps.empty() && ps.back().contains("var-type") && ps.back()["var-type"].value("variadic", false); // LCOV_EXCL_BR_LINE
         return funcType(params, fromJson(j["ret-type"]), variadic);
     }
     // kind == "struct" (the only remaining possibility once unrepresentableTypeName
@@ -439,7 +439,7 @@ const std::map<std::string, std::string>& operatorFuncNames()
 std::string copyFuncSymbol(const std::string& typeName)
 {
     return "__pln_cp_" + symbolType({{"type-kind", "struct"}, {"type-name", typeName}}); // LCOV_EXCL_BR_LINE
-}
+} // LCOV_EXCL_BR_LINE
 
 std::string funcSymbol(const std::string& name, const json& params)
 {

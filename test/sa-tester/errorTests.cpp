@@ -1229,6 +1229,12 @@ TEST(sa_error, overload)
 		{"error_718_overload_no_match_no_args.pa", ":3:1: error: No function 'printf' takes (); there are printf(@int8, ...), printf(int32)."},
 		// A parameter is shown as written: '@[]T' is the same type as '@T'.
 		{"error_1046_overload_no_match_borrowed_array.pa", ":5:1: error: No function 'f' takes (@!T, T); there are f(@!T, @[]uint8), f(@!T, @[4]int32, [...]@[]uint8)."},
+		{"error_1048_overload_defaults_shown.pa", ":4:13: error: No function 'f' takes (@[2]int32); there are f(int32, bool = true, @[]uint8 = \"x\", Color = Color.GREEN, int32 = 3), f(@[]uint8, bool = false, Color = Color.RED)."},
+		{"error_1049_arg_count_with_defaults.pa", ":2:1: error: function 'f' takes 1 to 2 argument(s), but 3 given."},
+		{"error_1053_wide_char_int8.pa", ":1:10: error: character literal U+00E9 needs an integer type of 32 bits or more, not 'int8': no byte of UTF-8 text holds it."},
+		{"error_1054_wide_char_uint16.pa", ":1:12: error: character literal U+00E9 needs an integer type of 32 bits or more, not 'uint16': no byte of UTF-8 text holds it."},
+		{"error_1055_wide_char_bool.pa", ":1:10: error: character literal U+00E9 needs an integer type of 32 bits or more, not 'bool': no byte of UTF-8 text holds it."},
+		{"error_1056_variadic_too_few.pa", ":2:1: error: function 'f' takes at least 1 argument(s), but 0 given."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

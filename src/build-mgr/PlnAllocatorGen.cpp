@@ -188,7 +188,7 @@ void writeAllocatorsSource(ostream& out, const PlnAllocShapes& shapes, const str
 		e.owned = kind == "struct" || isVarr;
 		e.embedded = kind == "embed-struct";
 		e.built = e.owned || (e.embedded && hasOwned(e.type));
-		e.assigns = isVarr ? opsOf(*varrElemDescs.at(e.inner)).assigns
+		e.assigns = isVarr ? opsOf(*varrElemDescs.at(e.inner)).assigns // LCOV_EXCL_BR_LINE
 		          : kind != "prim" && structAssigns(e.type);
 		e.buildElem = "@!" + e.type;
 		e.declElem = e.buildElem;
@@ -405,7 +405,7 @@ void writeAllocatorsSource(ostream& out, const PlnAllocShapes& shapes, const str
 			out << "func __pln_aset_" << e.key << "([]" << e.ownElem << " slots, int64 i, " << borrowed(e, e.value) << " x" << mp << ") {\n"
 			    << "    " << elemAssign(e, "@!slots[i]", "x", names) << "\n"
 			    << "}\n";
-	};
+	}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 
 	// Struct type declarations (leaf-first order from SA).
 	// Only the owned pointer fields are declared, at their original

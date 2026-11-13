@@ -1,0 +1,2 @@
+type T { int32 a; };
+func ->(@[2]int32 src, @![2]int32 dst) { }

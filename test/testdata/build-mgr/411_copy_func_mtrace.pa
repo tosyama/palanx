@@ -14,7 +14,12 @@ type E { $T t; $F f; $[2]$F fs; int32 n; };
 // Its arrays of T are laid out before T's '->' is registered.
 type K { int32 x; int32 keep; };
 func ->(@K src, @!K dst) { src.x -> dst.x; printf("K%d ", dst.keep); }
-type G { [+]T a; $[+]T b; [2]T c; [2][+]T e; [+]K ks; [+]$[2]K rows; };
+// Written by its parts' '->', and its initializers.
+type H { K k; int32 n = 5; [2]int32 r = [1, 2]; };
+type L { int32 x; };
+type LA = L;
+func ->(@LA src, @!LA dst) { printf("L%d ", dst.x); src.x -> dst.x; }
+type G { [+]T a; $[+]T b; [2]T c; [2][+]T e; [+]K ks; [+]$[2]K rows; [+]H hs; [+]$K es; [+]L ls; };
 
 func mk(int32 m) -> T t { m -> t.mode; t.v.push(m); }
 func show(T t) -> int32 { return t.mode; }
@@ -71,8 +76,13 @@ mtrace();
 	// The row g2 gains is copied whole.
 	g1.rows.resize(2); g2.rows.resize(1); 3 -> g1.rows[1][1].x; 4 -> g1.rows[1][1].keep; 8 -> g2.rows[0][1].keep;
 	g1 -> g2; printf("| %d %d %d %d\n", g2.ks[0].x, g2.ks[0].keep, g2.rows[1][1].x, g2.rows[1][1].keep);
+	g1.hs.resize(1); g2.hs.resize(1); 6 -> g1.hs[0].k.x; 7 -> g1.hs[0].n; 9 -> g1.hs[0].r[1]; 1 -> g2.hs[0].k.keep;
+	g1.es.resize(1); g2.es.resize(1); 2 -> g1.es[0].x; 3 -> g2.es[0].keep;
+	g1.ls.resize(1); g2.ls.resize(1); 4 -> g1.ls[0].x; 5 -> g2.ls[0].x;
+	g1 -> g2; printf("| %d %d %d %d %d\n", g2.hs[0].k.x, g2.hs[0].n, g2.hs[0].r[1], g2.es[0].x, g2.ls[0].x);
 
 	// A literal is a new value, which '->' then writes in.
 	[[1, 2], 0] -> a; printf("| %d %d\n", a.mode, a.v[1]);
+	H h; [5, 1] -> h.k; printf("| %d %d\n", h.k.x, h.k.keep);
 }
 muntrace();

@@ -1042,6 +1042,8 @@ TEST(gen_ast, code_point_literal) {
 		EXPECT_EQ(init["char"], true) << i;
 	}
 	ASSERT_EQ(stmts[4]["value"]["value"], "x€y😀\\x00");
+	// '\x' without two hex digits, or an unknown escape, is the letter itself.
+	ASSERT_EQ(stmts[5]["value"]["value"], "\\x07\\x08\\n\\r\\t\\x0B\\x00xZqJ");
 }
 
 TEST(gen_ast, copy_func)

@@ -164,10 +164,13 @@ func ->(@Inner src, @!Inner dst) { src.v -> dst.v; printf("I%d ", dst.keep); }
 export type T { int32 mode; Inner in; };
 func ->(@T src, @!T dst) { src.in -> dst.in; printf("T%d ", dst.mode); }
 export func mk(int32 m) -> T t { m -> t.mode; m -> t.in.keep; }
+type Unused { int32 x; };
+func ->(@Unused src, @!Unused dst) { }
 )");
 	ASSERT_EQ(execTestCommand("bin/palan --lib -o out/libs out/src/tx.pa"), "");
 	fs::remove_all("out/src");
 	string pai = fileText("out/libs/kit/tx.pai");
+	EXPECT_EQ(pai.find("Unused"), string::npos) << pai;
 	EXPECT_NE(pai.find("export func mk(int32 m) -> T t;\nfunc ->(@Inner src, @!Inner dst);\nfunc ->(@T src, @!T dst);\n"),
 		string::npos) << pai;
 	writeFile("out/app/main.pa", R"(libpath "../libs";

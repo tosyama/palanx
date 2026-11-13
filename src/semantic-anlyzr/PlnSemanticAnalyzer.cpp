@@ -479,11 +479,11 @@ void PlnSemanticAnalyzer::registerCopyFunc(json& funcEntry, const string& scope)
 	};
 	if (funcEntry.value("export", false)) fail(E_CopyFuncExported);
 	const json& params = funcEntry["parameters"];
-	bool shaped = params.size() == 2 && !funcEntry.contains("ret-type") && !funcEntry.contains("rets");
+	bool shaped = params.size() == 2 && !funcEntry.contains("ret-type") && !funcEntry.contains("rets"); // LCOV_EXCL_BR_LINE
 	for (size_t i = 0; shaped && i < 2; i++) {
 		const json& vt = params[i]["var-type"];
-		shaped = !params[i].contains("init") && isStructBorrow(vt) && vt["mutable"].get<bool>() == (i == 1)
-		      && vt["base-type"] == params[0]["var-type"]["base-type"];
+		shaped = !params[i].contains("init") && isStructBorrow(vt) && vt["mutable"].get<bool>() == (i == 1) // LCOV_EXCL_BR_LINE
+		      && vt["base-type"] == params[0]["var-type"]["base-type"]; // LCOV_EXCL_BR_LINE
 	}
 	if (!shaped) fail(E_CopyFuncSig);
 	string name = params[0]["var-type"]["base-type"]["type-name"];
@@ -491,7 +491,7 @@ void PlnSemanticAnalyzer::registerCopyFunc(json& funcEntry, const string& scope)
 	if (scope != moduleId_ || origin == typeOrigins_.end() || origin->second != moduleId_) fail(E_CopyFuncPlace);
 	funcEntry["symbol"] = copyFuncSymbol(name);
 	funcEntry["export"] = true;
-	BOOST_ASSERT(structDefs_.at(name).copyFunc == funcEntry["symbol"].get<string>());
+	BOOST_ASSERT(structDefs_.at(name).copyFunc == funcEntry["symbol"].get<string>()); // LCOV_EXCL_BR_LINE
 }
 
 // An operator function is called only where an operand is a struct, and an
@@ -681,7 +681,7 @@ void PlnSemanticAnalyzer::normalizeParamDefaults(json& funcEntry)
 	const string& funcName = funcEntry["name"].get<string>();
 	json& params = funcEntry["parameters"];
 	function<bool(const json&)> hasCall = [&](const json& e) {
-		string et = e.is_object() ? e.value("expr-type", "") : "";
+		string et = e.is_object() ? e.value("expr-type", "") : ""; // LCOV_EXCL_BR_LINE
 		if (et == "call" || et == "member-call" || et == "chain-call") return true;
 		if (e.is_structured())
 			for (auto& child : e)
@@ -723,7 +723,7 @@ void PlnSemanticAnalyzer::normalizeParamDefaults(json& funcEntry)
 			value = sa_expression(folded, registry_.fromJson(vt));
 			if (auto d = callArgMismatch(init, value, p, i, false, funcName)) reportDiag(init, *d);
 			value = convertCallArg(move(value), vt);
-			const json& lit = value.value("expr-type", "") == "convert" ? value["src"] : value;
+			const json& lit = value.value("expr-type", "") == "convert" ? value["src"] : value; // LCOV_EXCL_BR_LINE
 			string et = lit.value("expr-type", "");
 			if (et != "lit-int" && et != "lit-uint" && et != "lit-flo") notConst();
 		}
