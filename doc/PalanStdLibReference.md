@@ -102,7 +102,7 @@ or `@[]uint8` operand as its bytes.
 | `remove(@!utf8 s, int64 start, int64 end) -> @!utf8` | removes the characters from `start` up to `end` |
 | `trim(@!utf8 s) -> @!utf8` | removes the 25 characters of Unicode's White_Space at both ends |
 | `slice(@utf8 s, int64 start, int64 end) -> utf8` | the characters from `start` up to `end` |
-| `split(@utf8 s, @utf8 sep) -> [+]utf8` | the parts between each `sep`, empty ones included (`"a,,b"` gives `"a"`, `""`, `"b"`); an empty `sep` gives the whole text, and an empty text one empty part |
+| `split(@utf8 s, @utf8 sep) -> [+]utf8` | the parts between each `sep`, empty ones included (`"a,,b"` gives `"a"`, `""`, `"b"`); an empty `sep` gives each character (none for an empty text), and an empty text with a non-empty `sep` one empty part |
 | `join(@[+]utf8 parts, @utf8 sep) -> utf8` | the parts with `sep` between them (`parts -> join(", ")`); no parts give empty text |
 
 The functions changing `s` return it, so they chain: `s.replace("\t", " ").trim();`. `s -> s`

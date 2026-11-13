@@ -435,13 +435,21 @@ export func slice(@utf8 s, int64 start, int64 end) -> utf8
 	return part(s, b, e);
 }
 
-// The parts between each sep, empty ones included; the whole text if sep is empty.
+// The parts between each sep, empty ones included; each character if sep is empty.
 export func split(@utf8 s, @utf8 sep) -> [+]utf8 parts
 {
 	int64 sn = byteLen(sep);
 	int64 start = 0;
 	int64 pos = 0;
-	while sn > 0 && pos < byteLen(s) {
+	if sn == 0 {
+		while pos < byteLen(s) {
+			step(s, pos) -> start;
+			parts.push(part(s, pos, start));
+			start -> pos;
+		}
+		return;
+	}
+	while pos < byteLen(s) {
 		if at(s, pos, sep) {
 			parts.push(part(s, start, pos));
 			pos + sn -> pos;
@@ -692,12 +700,19 @@ func testMakeFrom()
 	[+]utf8 q = ds -> split("--");
 	if len(@q) != 3 { fail("split sep count"); }
 	expectText(@q[2], "", false, "split last empty");
-	[+]utf8 whole = ds -> split("");
-	if len(@whole) != 1 { fail("split empty sep"); }
-	expectText(@whole[0], "a--b--", false, "split whole");
+	utf8 cc = "aé-";
+	[+]utf8 chars = cc -> split("");
+	if len(@chars) != 3 { fail("split empty sep"); }
+	expectText(@chars[1], "é", false, "split char");
+	expectText(@chars[2], "-", false, "split last char");
 	utf8 e;
 	[+]utf8 none = e -> split(",");
 	if len(@none) != 1 { fail("split empty text"); }
+	[+]utf8 nochars = e -> split("");
+	if len(@nochars) != 0 { fail("split empty text by empty sep"); }
+	[+]utf8 kc = k -> split("");
+	if len(@kc) != 3 { fail("split kept chars"); }
+	expectText(@kc[0], "\xFF", true, "split kept char");
 	[+]utf8 kp = k -> split("a");
 	if kp[0].mode != utf8mode.KEEP_INVALID { fail("split mode"); }
 	expectText(@kp[0], "\xFF", true, "split kept");
