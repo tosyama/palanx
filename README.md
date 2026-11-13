@@ -64,10 +64,23 @@ printf("%.1f\n", len(@v));  // 5.0
 ```
 
 Other features include variable-length arrays (`[+]T` with `len`/`push`/`resize`/`pop`),
-`for copy a, i in arr` loops, command-line arguments as `args`, function overloading, multiple named
-return values, method-form calls (`c.add(1)` for `add(@!c, 1)`), function pointers, enums,
-field initializers, modules (`import`/`export`), libraries (`palan --lib`, `import <...>`), a
-standard library starting with `std/utf8`, and raw Linux syscalls.
+`for copy a, i in arr` loops, command-line arguments as `args`, function overloading, default and
+variadic arguments, multiple named return values, method-form calls (`c.add(1)` for `add(@!c, 1)`),
+function pointers, enums, field initializers, Unicode character literals, modules
+(`import`/`export`), libraries (`palan --lib`, `import <...>`), and raw Linux syscalls. A library
+type can be used like a built-in one: it defines operators (`+`, `==`, `<`, `<<`), its own copy
+`->`, iteration with `for`, conversion from a string literal, and fields hidden or read only outside
+its module, as the standard library's `std/utf8` does:
+
+```palan
+cinclude <stdio.h>;
+import <std/utf8>;
+
+utf8 s = "h\u{E9}llo";
+s << ", " << "w\u{F6}rld";
+for copy c in s { printf("U+%04X ", c); }
+if s -> startsWith("h\u{E9}", "H\u{E9}") { printf("\n%s\n", s -> cstr()); }
+```
 See the [Palan Language Reference](doc/PalanReference.md) for the whole language, and the
 [Palan Standard Library Reference](doc/PalanStdLibReference.md) for `std`.
 
@@ -140,7 +153,7 @@ of the `release` workflow's run (and attached to the GitHub Release when one is 
 level is the installed layout, so it unpacks into a prefix as `cmake --install` would:
 
 ```bash
-tar -xzf palan-0.2.4-x86_64-linux-gnu.tar.gz -C ~/.local
+tar -xzf palan-0.2.5-x86_64-linux-gnu.tar.gz -C ~/.local
 ~/.local/bin/palan hello.pa
 ```
 
