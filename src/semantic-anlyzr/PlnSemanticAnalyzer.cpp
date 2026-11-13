@@ -491,7 +491,7 @@ void PlnSemanticAnalyzer::registerCopyFunc(json& funcEntry, const string& scope)
 	if (scope != moduleId_ || origin == typeOrigins_.end() || origin->second != moduleId_) fail(E_CopyFuncPlace);
 	funcEntry["symbol"] = copyFuncSymbol(name);
 	funcEntry["export"] = true;
-	structDefs_.at(name).copyFunc = funcEntry["symbol"];
+	BOOST_ASSERT(structDefs_.at(name).copyFunc == funcEntry["symbol"].get<string>());
 }
 
 // An operator function is called only where an operand is a struct, and an
@@ -871,9 +871,10 @@ void PlnSemanticAnalyzer::beginModule(const json& ast)
 // top-level imports bring in, so function signatures pre-registered in
 // step 1 see fully-resolved types, not alias names. A const whose value
 // names a variable is left to step 2.
-void PlnSemanticAnalyzer::prescanTypes(const json& stmts)
+void PlnSemanticAnalyzer::prescanTypes(const json& stmts, const json& funcs)
 {
 	indexTopDecls(stmts);
+	indexCopyFuncs(funcs);
 	// Imports first, so a type they hide is known as hidden by the time a
 	// declaration here writes it.
 	for (auto& stmt : stmts)
@@ -883,6 +884,27 @@ void PlnSemanticAnalyzer::prescanTypes(const json& stmts)
 	for (auto& stmt : stmts) {
 		auto d = topDecls_.find(stmt.value("name", ""));
 		if (d != topDecls_.end() && d->second.stmt == &stmt) ensureTypeName(d->first, false);
+	}
+}
+
+// A '->' names its type as written; one written by an alias, of this module, is
+// for the struct the alias names. registerCopyFunc checks the rest.
+void PlnSemanticAnalyzer::indexCopyFuncs(const json& funcs)
+{
+	for (auto& f : funcs) {
+		if (f["name"] != "->" || !f.contains("parameters") || f["parameters"].empty()) continue;
+		const json& vt = f["parameters"][0]["var-type"];
+		if (vt.value("type-kind", "") != "pntr") continue;
+		const json* written = &vt["base-type"];
+		for (int hops = 0; hops <= (int)topDecls_.size(); hops++) {
+			if (written->value("type-kind", "") != "prim" || !written->contains("type-name")) break;
+			auto d = topDecls_.find((*written)["type-name"].get<string>());
+			if (d == topDecls_.end()) break;
+			const json& decl = *d->second.stmt;
+			if (decl["stmt-type"] == "struct-def") { copyFuncStructs_.insert(&decl); break; }
+			if (decl["stmt-type"] != "type-alias") break;
+			written = &decl["type"];
+		}
 	}
 }
 
@@ -1169,7 +1191,7 @@ void PlnSemanticAnalyzer::analysis(const json &ast, const string& astPath)
 	program_->workRoot = workRootOf(astPath, ast["original"]);
 	beginModule(ast);
 	if (ast["ast"].contains("statements")) {
-		prescanTypes(ast["ast"]["statements"]);
+		prescanTypes(ast["ast"]["statements"], ast["ast"].value("functions", json::array()));
 		noteImplicitArgs(ast["ast"]["statements"]);
 	}
 	// 1. Pre-register Palan functions so calls can resolve them
@@ -1412,9 +1434,7 @@ PlnSemanticAnalyzer& PlnSemanticAnalyzer::importTypeContext(json impAst)
 	program_->imported.push_back(move(sub));
 	if (mod.moduleAst_["ast"].contains("statements"))
 		mod.indexTopDecls(mod.moduleAst_["ast"]["statements"]);
-	// Before any of its types is adopted, so that each carries its '->'.
-	for (auto& f : mod.moduleAst_["ast"].value("functions", json::array()))
-		if (f["name"] == "->") mod.normalizeFuncSig(f, mod.moduleId_);
+	mod.indexCopyFuncs(mod.moduleAst_["ast"].value("functions", json::array()));
 	return mod;
 }
 

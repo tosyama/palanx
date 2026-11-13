@@ -1060,6 +1060,7 @@ json PlnSemanticAnalyzer::sa_struct_def(const json& stmt)
 		if (leaf->value("type-kind", "") == "func") *leaf = deepNormalizePrimToStruct(stmt, *leaf);
 	}
 	StructDef def = buildStructDef(name, fields, stmt);
+	if (copyFuncStructs_.count(&stmt)) def.copyFunc = copyFuncSymbol(name);
 	for (auto& f : fields) {
 		if (!f.contains("access")) continue;
 		if (!stmt.value("export", false)) {

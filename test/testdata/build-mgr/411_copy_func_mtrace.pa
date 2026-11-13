@@ -11,6 +11,10 @@ type F { int32 x; int32 keep; };
 func ->(@F src, @!F dst) { src.x -> dst.x; printf("F%d ", dst.keep); }
 type Q { T t; int32 n; };
 type E { $T t; $F f; $[2]$F fs; int32 n; };
+// Its arrays of T are laid out before T's '->' is registered.
+type K { int32 x; int32 keep; };
+func ->(@K src, @!K dst) { src.x -> dst.x; printf("K%d ", dst.keep); }
+type G { [+]T a; $[+]T b; [2]T c; [2][+]T e; [+]K ks; };
 
 func mk(int32 m) -> T t { m -> t.mode; t.v.push(m); }
 func show(T t) -> int32 { return t.mode; }
@@ -57,6 +61,14 @@ mtrace();
 	[+][2]$F ra; ra.resize(1); 1 -> ra[0][0].x; 2 -> ra[0][1].x;
 	[+][2]$F rb; rb.resize(2); 3 -> rb[0][0].keep; 4 -> rb[0][1].keep;
 	ra -> rb; printf("| %d %ld\n", rb[0][1].x, len(@rb));
+
+	G g1; G g2;
+	g1.a.resize(1); g2.a.resize(1); 1 -> g2.a[0].mode;
+	g1.b.resize(1); g2.b.resize(1); 2 -> g2.b[0].mode;
+	3 -> g2.c[1].mode;
+	g1.e[0].resize(1); g2.e[0].resize(1); 4 -> g2.e[0][0].mode;
+	g1.ks.resize(1); g2.ks.resize(1); 5 -> g1.ks[0].x; 7 -> g2.ks[0].keep;
+	g1 -> g2; printf("| %d %d\n", g2.ks[0].x, g2.ks[0].keep);
 
 	// A literal is a new value, which '->' then writes in.
 	[[1, 2], 0] -> a; printf("| %d %d\n", a.mode, a.v[1]);

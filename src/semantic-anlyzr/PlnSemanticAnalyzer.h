@@ -267,6 +267,10 @@ class PlnSemanticAnalyzer {
 		string deferredBy;    // a const left to its statement: the name its value waits for
 	};
 	map<string, TopDecl>   topDecls_;
+	// The top-level struct declarations a '->' of this module is written for.
+	// Whether a type has a '->' decides how it is laid out and copied, which a
+	// type declaration may ask before any function is registered.
+	set<const json*>       copyFuncStructs_;
 	// A top-level variable, whose type a const's value may need before the
 	// statements are analyzed.
 	struct TopVar {
@@ -374,8 +378,9 @@ class PlnSemanticAnalyzer {
 
 	json sa_statements(const json& stmts);
 	void beginModule(const json& ast);
-	void prescanTypes(const json& stmts);
+	void prescanTypes(const json& stmts, const json& funcs);
 	void indexTopDecls(const json& stmts);
+	void indexCopyFuncs(const json& funcs);
 	json loadImportAst(const json& stmt) const;
 	// The imported module's type context, shared program-wide; its types are
 	// resolved only as they are needed.
