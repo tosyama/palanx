@@ -3,18 +3,25 @@ library std;
 cinclude <string.h>;
 
 // What a utf8 does with bytes that are not valid UTF-8, when it is made or added to.
+// Looser first: the result of '+' or 'join' takes the loosest mode of its operands.
 export type utf8mode enum {
 	KEEP_INVALID,       // keeps them as they are
-	EMPTY_ON_INVALID,   // becomes empty, and stays empty
-	REPLACE_INVALID     // replaces each invalid part with U+FFFD
+	REPLACE_INVALID,    // replaces each invalid part with U+FFFD
+	DELETE_INVALID      // drops each invalid part
 };
 
 // UTF-8 text. `bytes` ends with a NUL, so the text can be given to C as it is.
-// `hadInvalid` tells that an invalid part was met: kept, rejected or replaced, as `mode` says.
+// `hadInvalid` tells that an invalid part was met in making the text, including in the texts it
+// was made from; it is never cleared, only replaced by `->`.
 export type utf8 {
-	$[+]uint8 bytes = [0];
-	bool hadInvalid = false;
-	utf8mode mode = utf8mode.KEEP_INVALID;
+	private $[+]uint8 bytes = [0];
+	readonly bool hadInvalid = false;
+	readonly utf8mode mode = utf8mode.REPLACE_INVALID;
+};
+
+export type utf8iter {
+	private @utf8 s;
+	private int64 pos = 0;
 };
 
 // The length of the valid UTF-8 sequence at b[i], or minus the length of the invalid part there:
@@ -44,75 +51,104 @@ func scan(@[]uint8 b, int64 i, int64 n) -> int64
 	return k;
 }
 
-func allValid(@[]uint8 b, int64 n) -> bool
+func looser(utf8mode a, utf8mode b) -> utf8mode
 {
-	int64 i = 0;
-	while i < n {
-		int64 k = scan(b, i, n);
-		if k < 0 { return false; }
-		i + k -> i;
-	}
-	return true;
+	if a < b { return a; }
+	return b;
 }
 
-func pushReplacement(@!utf8 s)
+func pushBytes(@!utf8 s, @[]uint8 b, int64 i, int64 k)
 {
-	s.bytes.push(239);
-	s.bytes.push(191);
-	s.bytes.push(189);
-	true -> s.hadInvalid;
+	int64 j = 0;
+	while j < k { s.bytes.push(b[i + j]); j + 1 -> j; }
 }
 
-func reject(@!utf8 s)
+// Adds b[from] to b[end - 1] by the rules of s's mode.
+func takeIn(@!utf8 s, @[]uint8 b, int64 from, int64 end)
 {
-	s.bytes.resize(1);
-	0 -> s.bytes[0];
-	true -> s.hadInvalid;
-}
-
-// Adds n bytes by the rules of s's mode.
-func appendBytes(@!utf8 s, @[]uint8 b, int64 n)
-{
-	int64 len0 = len(@s.bytes) - 1;
+	if from >= end { return; }
 	int64 data = int64(cstr(s));
-	if int64(b) >= data && int64(b) <= data + len0 {
+	if int64(b) >= data && int64(b) <= data + byteLen(s) {
 		// b lies in s's own bytes, which growing them may move.
 		[+]uint8 copied;
-		copied.resize(n);
-		memcpy(@!copied, b, n);
-		appendBytes(s, @copied, n);
+		copied.resize(end - from);
+		memcpy(@!copied, @b[from], end - from);
+		takeIn(s, @copied, 0, end - from);
 		return;
 	}
-	if s.mode == utf8mode.EMPTY_ON_INVALID {
-		if s.hadInvalid { return; }
-		if !allValid(b, n) { reject(s); return; }
-	}
 	s.bytes.pop();
-	int64 i = 0;
-	while i < n {
-		int64 k = scan(b, i, n);
-		if k < 0 && s.mode == utf8mode.REPLACE_INVALID {
-			pushReplacement(s);
-			i - k -> i;
+	int64 i = from;
+	while i < end {
+		int64 k = scan(b, i, end);
+		if k > 0 {
+			pushBytes(s, b, i, k);
+			i + k -> i;
 			continue;
 		}
-		if k < 0 { 0 - k -> k; true -> s.hadInvalid; }
-		int64 j = 0;
-		while j < k { s.bytes.push(b[i + j]); j + 1 -> j; }
-		i + k -> i;
+		true -> s.hadInvalid;
+		if s.mode == utf8mode.KEEP_INVALID {
+			pushBytes(s, b, i, 0 - k);
+		} else if s.mode == utf8mode.REPLACE_INVALID {
+			s.bytes.push(239);
+			s.bytes.push(191);
+			s.bytes.push(189);
+		}
+		i - k -> i;
 	}
 	s.bytes.push(0);
-	// A sequence cut at the end of s may be completed by the first bytes added.
-	if s.mode == utf8mode.KEEP_INVALID && s.hadInvalid {
-		!allValid(cstr(s), byteLen(s)) -> s.hadInvalid;
+}
+
+// The byte position after the character at byte position i.
+func step(@utf8 s, int64 i) -> int64
+{
+	int64 k = scan(cstr(s), i, byteLen(s));
+	if k < 0 { return i - k; }
+	return i + k;
+}
+
+// The byte position of the character position cp, kept within the text.
+func bytePos(@utf8 s, int64 cp) -> int64
+{
+	int64 pos = 0;
+	int64 k = 0;
+	while k < cp && pos < byteLen(s) {
+		step(s, pos) -> pos;
+		k + 1 -> k;
 	}
+	return pos;
+}
+
+// Whether x's bytes are at byte position i of s.
+func at(@utf8 s, int64 i, @utf8 x) -> bool
+{
+	int64 n = byteLen(x);
+	if i + n > byteLen(s) { return false; }
+	return memcmp(@s.bytes[i], cstr(x), n) == 0;
+}
+
+// The bytes b[from] to b[end - 1] of s, as a text in s's mode.
+func part(@utf8 s, int64 from, int64 end) -> utf8 r
+{
+	s.mode -> r.mode;
+	takeIn(@!r, cstr(s), from, end);
+	if s.hadInvalid { true -> r.hadInvalid; }
 }
 
 // Makes a utf8 of the NUL-terminated bytes cs, by the rules of mode m.
-export func toUtf8(@[]uint8 cs, utf8mode m) -> utf8 u
+export func utf8(@[]uint8 cs, utf8mode m = utf8mode.REPLACE_INVALID) -> utf8 u
 {
 	m -> u.mode;
-	u.append(cs);
+	takeIn(@!u, cs, 0, int64(strlen(cs)));
+}
+
+// dst keeps its mode: src's text is taken in by it.
+func ->(@utf8 src, @!utf8 dst)
+{
+	if int64(src) == int64(dst) { return; }
+	dst.bytes.resize(1);
+	0 -> dst.bytes[0];
+	takeIn(dst, cstr(src), 0, byteLen(src));
+	src.hadInvalid -> dst.hadInvalid;
 }
 
 // The text as NUL-terminated bytes, to give to C. Adding to s may move them.
@@ -122,7 +158,7 @@ export func cstr(@utf8 s) -> @[]uint8 { return @s.bytes; }
 export func byteLen(@utf8 s) -> int64 { return len(@s.bytes) - 1; }
 
 // The code point at the byte position pos, moving pos to the next one; -1 for an invalid part.
-export func nextChar(@utf8 s, @!int64 pos) -> int32
+func nextChar(@utf8 s, @!int64 pos) -> int32
 {
 	int64 i = pos[0];
 	int64 k = scan(cstr(s), i, byteLen(s));
@@ -149,39 +185,57 @@ export func charCount(@utf8 s) -> int64 n
 {
 	int64 pos = 0;
 	while pos < byteLen(s) {
-		nextChar(s, @!pos);
+		step(s, pos) -> pos;
 		n + 1 -> n;
 	}
 }
 
-// Adds t by the rules of s's mode.
-export func append(@!utf8 s, @utf8 t)
+export func iter(@utf8 s) -> utf8iter it
 {
-	appendBytes(s, cstr(t), byteLen(t));
+	s -> it.s;
+}
+
+// The next code point; -1 for an invalid part.
+export func next(@!utf8iter it) -> bool ok, int32 c
+{
+	if it.pos >= byteLen(it.s) { return; }
+	nextChar(it.s, @!it.pos) -> c;
+	true -> ok;
+}
+
+// Adds t by the rules of s's mode.
+export func append(@!utf8 s, @utf8 t) -> @!utf8
+{
+	bool had = t.hadInvalid;
+	takeIn(s, cstr(t), 0, byteLen(t));
+	if had { true -> s.hadInvalid; }
+	return s;
 }
 
 // Adds the NUL-terminated bytes cs by the rules of s's mode.
-export func append(@!utf8 s, @[]uint8 cs)
+export func append(@!utf8 s, @[]uint8 cs) -> @!utf8
 {
-	appendBytes(s, cs, int64(strlen(cs)));
+	takeIn(s, cs, 0, int64(strlen(cs)));
+	return s;
 }
 
+export func <<(@!utf8 s, @utf8 t) -> @!utf8 { return append(s, t); }
+export func <<(@!utf8 s, @[]uint8 cs) -> @!utf8 { return append(s, cs); }
+
 // Adds the code point c. One that is not a character (a surrogate, beyond U+10FFFF, or negative)
-// is an invalid part: kept as nothing, rejected or replaced, as s's mode says.
-export func appendChar(@!utf8 s, int32 c)
+// is an invalid part, which KEEP_INVALID has no bytes to keep for.
+export func appendChar(@!utf8 s, int32 c) -> @!utf8
 {
-	if s.mode == utf8mode.EMPTY_ON_INVALID && s.hadInvalid { return; }
 	if c < 0 || c > 1114111 || (c >= 55296 && c <= 57343) {
+		true -> s.hadInvalid;
 		if s.mode == utf8mode.REPLACE_INVALID {
 			s.bytes.pop();
-			pushReplacement(s);
+			s.bytes.push(239);
+			s.bytes.push(191);
+			s.bytes.push(189);
 			s.bytes.push(0);
-		} else if s.mode == utf8mode.EMPTY_ON_INVALID {
-			reject(s);
-		} else {
-			true -> s.hadInvalid;
 		}
-		return;
+		return s;
 	}
 	s.bytes.pop();
 	if c < 128 {
@@ -200,14 +254,215 @@ export func appendChar(@!utf8 s, int32 c)
 		s.bytes.push(uint8(128 | (c & 63)));
 	}
 	s.bytes.push(0);
+	return s;
 }
 
-// A copy of s with each invalid part replaced with U+FFFD, in REPLACE_INVALID mode.
-export func replaced(@utf8 s) -> utf8 r
+export func +(@utf8 a, @utf8 b) -> utf8 r
 {
-	utf8mode.REPLACE_INVALID -> r.mode;
-	r.append(s);
-	s.hadInvalid -> r.hadInvalid;
+	looser(a.mode, b.mode) -> r.mode;
+	takeIn(@!r, cstr(a), 0, byteLen(a));
+	takeIn(@!r, cstr(b), 0, byteLen(b));
+	if a.hadInvalid || b.hadInvalid { true -> r.hadInvalid; }
+}
+
+export func +(@utf8 a, @[]uint8 cs) -> utf8 r
+{
+	a.mode -> r.mode;
+	takeIn(@!r, cstr(a), 0, byteLen(a));
+	takeIn(@!r, cs, 0, int64(strlen(cs)));
+	if a.hadInvalid { true -> r.hadInvalid; }
+}
+
+export func +(@[]uint8 cs, @utf8 b) -> utf8 r
+{
+	b.mode -> r.mode;
+	takeIn(@!r, cs, 0, int64(strlen(cs)));
+	takeIn(@!r, cstr(b), 0, byteLen(b));
+	if b.hadInvalid { true -> r.hadInvalid; }
+}
+
+func bytesEq(@[]uint8 a, int64 na, @[]uint8 b, int64 nb) -> bool
+{
+	return na == nb && memcmp(a, b, na) == 0;
+}
+
+// Byte order, which is code point order.
+func bytesLess(@[]uint8 a, int64 na, @[]uint8 b, int64 nb) -> bool
+{
+	int64 n = na;
+	if nb < n { nb -> n; }
+	int32 c = memcmp(a, b, n);
+	if c != 0 { return c < 0; }
+	return na < nb;
+}
+
+// A literal or @[]uint8 operand is compared as its bytes, not converted.
+export func ==(@utf8 a, @utf8 b) -> bool { return bytesEq(cstr(a), byteLen(a), cstr(b), byteLen(b)); }
+export func ==(@utf8 a, @[]uint8 cs) -> bool { return bytesEq(cstr(a), byteLen(a), cs, int64(strlen(cs))); }
+export func ==(@[]uint8 cs, @utf8 b) -> bool { return bytesEq(cs, int64(strlen(cs)), cstr(b), byteLen(b)); }
+export func <(@utf8 a, @utf8 b) -> bool { return bytesLess(cstr(a), byteLen(a), cstr(b), byteLen(b)); }
+export func <(@utf8 a, @[]uint8 cs) -> bool { return bytesLess(cstr(a), byteLen(a), cs, int64(strlen(cs))); }
+export func <(@[]uint8 cs, @utf8 b) -> bool { return bytesLess(cs, int64(strlen(cs)), cstr(b), byteLen(b)); }
+
+export func startsWith(@utf8 s, [...]@utf8 xs) -> bool
+{
+	for copy x in xs {
+		if at(s, 0, x) { return true; }
+	}
+	return false;
+}
+
+export func endsWith(@utf8 s, [...]@utf8 xs) -> bool
+{
+	for copy x in xs {
+		int64 i = byteLen(s) - byteLen(x);
+		if i >= 0 && at(s, i, x) { return true; }
+	}
+	return false;
+}
+
+// The character position of the first x at or after the character position from; -1 if none.
+export func find(@utf8 s, @utf8 x, int64 from = 0) -> int64
+{
+	int64 pos = 0;
+	int64 k = 0;
+	while k < from && pos < byteLen(s) {
+		step(s, pos) -> pos;
+		k + 1 -> k;
+	}
+	if k < from { return -1; }
+	while pos + byteLen(x) <= byteLen(s) {
+		if at(s, pos, x) { return k; }
+		step(s, pos) -> pos;
+		k + 1 -> k;
+	}
+	return -1;
+}
+
+export func contains(@utf8 s, [...]@utf8 xs) -> bool
+{
+	for copy x in xs {
+		if find(s, x) >= 0 { return true; }
+	}
+	return false;
+}
+
+// Replaces every `from` with `to`.
+export func replace(@!utf8 s, @utf8 from, @utf8 to) -> @!utf8
+{
+	int64 fn = byteLen(from);
+	if fn == 0 { return s; }
+	utf8 r;
+	s.mode -> r.mode;
+	int64 start = 0;
+	int64 pos = 0;
+	while pos < byteLen(s) {
+		if at(s, pos, from) {
+			takeIn(@!r, cstr(s), start, pos);
+			takeIn(@!r, cstr(to), 0, byteLen(to));
+			if to.hadInvalid { true -> r.hadInvalid; }
+			pos + fn -> pos;
+			pos -> start;
+			continue;
+		}
+		step(s, pos) -> pos;
+	}
+	takeIn(@!r, cstr(s), start, byteLen(s));
+	if s.hadInvalid { true -> r.hadInvalid; }
+	r -> s[0];
+	return s;
+}
+
+// Inserts x before the character position pos.
+export func insert(@!utf8 s, int64 pos, @utf8 x) -> @!utf8
+{
+	int64 b = bytePos(s, pos);
+	utf8 r = part(s, 0, b);
+	r.append(x);
+	takeIn(@!r, cstr(s), b, byteLen(s));
+	r -> s[0];
+	return s;
+}
+
+// Removes the characters from the position start up to, not including, end.
+export func remove(@!utf8 s, int64 start, int64 end) -> @!utf8
+{
+	int64 b = bytePos(s, start);
+	int64 e = bytePos(s, end);
+	if b >= e { return s; }
+	utf8 r = part(s, 0, b);
+	takeIn(@!r, cstr(s), e, byteLen(s));
+	r -> s[0];
+	return s;
+}
+
+// The 25 characters of Unicode's White_Space property.
+func isSpace(int32 c) -> bool
+{
+	return (c >= 9 && c <= 13) || c == 32 || c == 133 || c == 160 || c == 5760
+		|| (c >= 8192 && c <= 8202) || c == 8232 || c == 8233 || c == 8239 || c == 8287
+		|| c == 12288;
+}
+
+// Removes white space at both ends.
+export func trim(@!utf8 s) -> @!utf8
+{
+	int64 b = -1;
+	int64 e = 0;
+	int64 pos = 0;
+	while pos < byteLen(s) {
+		int64 i = pos;
+		int32 c = nextChar(s, @!pos);
+		if !isSpace(c) {
+			if b < 0 { i -> b; }
+			pos -> e;
+		}
+	}
+	if b < 0 { 0 -> b; }
+	if b == 0 && e == byteLen(s) { return s; }
+	utf8 r = part(s, b, e);
+	r -> s[0];
+	return s;
+}
+
+// The characters from the position start up to, not including, end.
+export func slice(@utf8 s, int64 start, int64 end) -> utf8
+{
+	int64 b = bytePos(s, start);
+	int64 e = bytePos(s, end);
+	if e < b { b -> e; }
+	return part(s, b, e);
+}
+
+// The parts between each sep, empty ones included; the whole text if sep is empty.
+export func split(@utf8 s, @utf8 sep) -> [+]utf8 parts
+{
+	int64 sn = byteLen(sep);
+	int64 start = 0;
+	int64 pos = 0;
+	while sn > 0 && pos < byteLen(s) {
+		if at(s, pos, sep) {
+			parts.push(part(s, start, pos));
+			pos + sn -> pos;
+			pos -> start;
+			continue;
+		}
+		step(s, pos) -> pos;
+	}
+	parts.push(part(s, start, byteLen(s)));
+}
+
+// The parts with sep between them, in the loosest mode of the parts.
+export func join(@[+]utf8 parts, @utf8 sep) -> utf8 r
+{
+	for @p, i in parts {
+		if i == 0 { p.mode -> r.mode; }
+		looser(r.mode, p.mode) -> r.mode;
+	}
+	for @p, i in parts {
+		if i > 0 { r.append(sep); }
+		r.append(@p);
+	}
 }
 
 cinclude <stdio.h>;
@@ -231,103 +486,229 @@ func testMake()
 {
 	utf8 e;
 	expectText(@e, "", false, "declared");
-	if e.mode != utf8mode.KEEP_INVALID { fail("declared mode"); }
+	if e.mode != utf8mode.REPLACE_INVALID { fail("declared mode"); }
 
-	utf8 a = toUtf8("h\xC3\xA9llo \xE2\x82\xAC \xF0\x9F\x98\x80", utf8mode.KEEP_INVALID);
-	expectText(@a, "h\xC3\xA9llo \xE2\x82\xAC \xF0\x9F\x98\x80", false, "valid");
+	utf8 l = "h\u{E9}llo \u{20AC} \u{1F600}";
+	expectText(@l, "h\xC3\xA9llo \xE2\x82\xAC \xF0\x9F\x98\x80", false, "literal");
+	if l.mode != utf8mode.REPLACE_INVALID { fail("literal mode"); }
+	utf8 lb = "a\xFF";
+	expectText(@lb, "a\xEF\xBF\xBD", true, "invalid literal");
 
 	// E2 82 is the start of a 3-byte sequence cut short: one invalid part.
-	utf8 k = toUtf8("A\xE2\x82B\xFF", utf8mode.KEEP_INVALID);
+	utf8 k = utf8("A\xE2\x82B\xFF", utf8mode.KEEP_INVALID);
 	expectText(@k, "A\xE2\x82B\xFF", true, "keep");
-	utf8 r = toUtf8("A\xE2\x82B\xFF", utf8mode.REPLACE_INVALID);
+	if k.mode != utf8mode.KEEP_INVALID { fail("keep mode"); }
+	utf8 r = utf8("A\xE2\x82B\xFF");
 	expectText(@r, "A\xEF\xBF\xBDB\xEF\xBF\xBD", true, "replace");
-	utf8 m = toUtf8("A\xE2\x82B", utf8mode.EMPTY_ON_INVALID);
-	expectText(@m, "", true, "empty");
-	if m.mode != utf8mode.EMPTY_ON_INVALID { fail("mode kept"); }
+	utf8 d = utf8("A\xE2\x82B\xFF", utf8mode.DELETE_INVALID);
+	expectText(@d, "AB", true, "delete");
 
 	// Overlong, surrogate and beyond U+10FFFF forms are invalid byte by byte.
-	utf8 o = toUtf8("\xC0\xAF\xED\xA0\x80\xF4\x90\x80\x80", utf8mode.REPLACE_INVALID);
-	if charCount(@o) != 9 { fail("invalid forms"); }
+	utf8 o = utf8("\xC0\xAF\xED\xA0\x80\xF4\x90\x80\x80");
+	if o -> charCount() != 9 { fail("invalid forms"); }
 }
 
 func testRead()
 {
-	utf8 s = toUtf8("a\xC3\xA9\xE2\x82\xAC\xF0\x9F\x98\x80\xE2\x82z", utf8mode.KEEP_INVALID);
+	utf8 s = utf8("a\xC3\xA9\xE2\x82\xAC\xF0\x9F\x98\x80\xE2\x82z", utf8mode.KEEP_INVALID);
 	[6]int32 expected = [97, 233, 8364, 128512, -1, 122];
-	int64 pos = 0;
-	int64 i = 0;
-	while pos < byteLen(@s) {
-		if s -> nextChar(@!pos) != expected[i] { fail("nextChar"); }
-		i + 1 -> i;
+	int64 n = 0;
+	for copy c, i in s {
+		if c != expected[i] { fail("for"); }
+		n + 1 -> n;
 	}
-	if i != 6 || pos != byteLen(@s) { fail("nextChar end"); }
-	if s -> charCount() != 6 { fail("charCount"); }
+	if n != 6 || s -> charCount() != 6 { fail("charCount"); }
+	utf8 flag = "\u{1F1EF}\u{1F1F5}";
+	if flag -> charCount() != 2 { fail("code points"); }
+	utf8 e;
+	for copy c in e { fail("empty for"); }
+}
+
+func testCopy()
+{
+	utf8 k = utf8("a\xFF", utf8mode.KEEP_INVALID);
+	utf8 r;
+	k -> r;
+	expectText(@r, "a\xEF\xBF\xBD", true, "copy replaces");
+	if r.mode != utf8mode.REPLACE_INVALID { fail("copy keeps dst's mode"); }
+	expectText(@k, "a\xFF", true, "source kept");
+
+	// hadInvalid is the source's, though the bytes taken in are valid.
+	utf8 d = utf8("x", utf8mode.DELETE_INVALID);
+	r -> d;
+	expectText(@d, "a\xEF\xBF\xBD", true, "copy keeps hadInvalid");
+	"" -> r;
+	expectText(@r, "", false, "copy clears");
+	k -> k;
+	expectText(@k, "a\xFF", true, "copy to itself");
+
+	utf8 c = k;
+	if c.mode != utf8mode.KEEP_INVALID { fail("initialized whole"); }
+	expectText(@c, "a\xFF", true, "initialized");
 }
 
 func testAppend()
 {
-	utf8 k = toUtf8("ab\xE2\x82", utf8mode.KEEP_INVALID);
-	expectText(@k, "ab\xE2\x82", true, "cut");
-	k.append("\xAC!");
-	expectText(@k, "ab\xE2\x82\xAC!", false, "completed across the seam");
-	k.append("\xFF");
-	expectText(@k, "ab\xE2\x82\xAC!\xFF", true, "keep append");
+	// A sequence cut at the end stays counted, even when completed later.
+	utf8 k = utf8("ab\xE2\x82", utf8mode.KEEP_INVALID);
+	k << "\xAC!";
+	expectText(@k, "ab\xE2\x82\xAC!", true, "completed across the seam");
 
-	utf8 r = toUtf8("x", utf8mode.REPLACE_INVALID);
-	r.append(@k);
-	expectText(@r, "xab\xE2\x82\xAC!\xEF\xBF\xBD", true, "replace append");
+	utf8 r = "x";
+	r << @k;
+	expectText(@r, "xab\xE2\x82\xAC!", true, "hadInvalid taken from the added");
 
-	utf8 m = toUtf8("ok", utf8mode.EMPTY_ON_INVALID);
-	m.append(" fine");
-	expectText(@m, "ok fine", false, "empty append");
-	m.append("\x80");
-	expectText(@m, "", true, "rejected");
-	m.append("more");
-	expectText(@m, "", true, "stays rejected");
+	utf8 c = "ok";
+	c << " fine" << @c;
+	expectText(@c, "ok fineok fine", false, "chained and itself");
+	c.append(c -> cstr());
+	expectText(@c, "ok fineok fineok fineok fine", false, "own bytes");
 
-	utf8 s = toUtf8("ab", utf8mode.KEEP_INVALID);
-	s.append(@s);
-	s.append(s -> cstr());
-	expectText(@s, "abababab", false, "itself");
-}
+	utf8 d = utf8("a", utf8mode.DELETE_INVALID);
+	d.append("\x80b");
+	expectText(@d, "ab", true, "delete append");
 
-func testAppendChar()
-{
 	utf8 s;
-	s.appendChar(65);
-	s.appendChar(233);
-	s.appendChar(8364);
-	s.appendChar(128512);
+	s.appendChar(65).appendChar(233).appendChar(8364).appendChar(128512);
 	expectText(@s, "A\xC3\xA9\xE2\x82\xAC\xF0\x9F\x98\x80", false, "appendChar");
-	s.appendChar(55296);
-	expectText(@s, "A\xC3\xA9\xE2\x82\xAC\xF0\x9F\x98\x80", true, "keep non-character");
-
-	utf8 r = toUtf8("", utf8mode.REPLACE_INVALID);
-	r.appendChar(-1);
-	r.appendChar(1114112);
-	expectText(@r, "\xEF\xBF\xBD\xEF\xBF\xBD", true, "replace non-character");
-
-	utf8 m = toUtf8("a", utf8mode.EMPTY_ON_INVALID);
-	m.appendChar(57343);
-	m.appendChar(98);
-	expectText(@m, "", true, "reject non-character");
+	s.appendChar(55296).appendChar(-1);
+	expectText(@s, "A\xC3\xA9\xE2\x82\xAC\xF0\x9F\x98\x80\xEF\xBF\xBD\xEF\xBF\xBD", true, "replace non-character");
+	utf8 ks = utf8("", utf8mode.KEEP_INVALID);
+	ks.appendChar(1114112).appendChar(98);
+	expectText(@ks, "b", true, "keep non-character");
+	utf8 ds = utf8("", utf8mode.DELETE_INVALID);
+	ds.appendChar(57343);
+	expectText(@ds, "", true, "delete non-character");
 }
 
-func testReplaced()
+func testOperators()
 {
-	utf8 k = toUtf8("a\xFF", utf8mode.KEEP_INVALID);
-	utf8 r = k -> replaced();
-	expectText(@r, "a\xEF\xBF\xBD", true, "replaced");
-	if r.mode != utf8mode.REPLACE_INVALID { fail("replaced mode"); }
-	expectText(@k, "a\xFF", true, "original kept");
+	utf8 a = utf8("a\xFF", utf8mode.KEEP_INVALID);
+	utf8 b = "b";
+	utf8 ab = a + b;
+	expectText(@ab, "a\xFFb", true, "+");
+	if ab.mode != utf8mode.KEEP_INVALID { fail("+ loosest mode"); }
+	utf8 bc = b + "c";
+	expectText(@bc, "bc", false, "+ literal");
+	if bc.mode != utf8mode.REPLACE_INVALID { fail("+ literal mode"); }
+	// A literal has no mode: it is taken in by the other operand's.
+	utf8 lb = "\xFF" + b;
+	expectText(@lb, "\xEF\xBF\xBDb", true, "literal +");
+	utf8 al = a + "\xFE";
+	expectText(@al, "a\xFF\xFE", true, "+ kept literal");
 
-	utf8 m = toUtf8("\xFF", utf8mode.EMPTY_ON_INVALID);
-	utf8 rm = m -> replaced();
-	expectText(@rm, "", true, "replaced rejected");
+	utf8 x = "abc";
+	if !(x == "abc") || x != "abc" || x == "abd" || x == "ab" || !("abc" == x) { fail("=="); }
+	if !(x < "abd") || !("ab" < x) || x < "abc" || !(x > "ab") { fail("<"); }
+	if !(x <= "abc") || !(x >= "abc") || x >= "abd" { fail("<= >="); }
+	utf8 ff = "\u{FF}";
+	if !(ff < "\u{100}") || !(ff < "\u{10000}") { fail("code point order"); }
+	// A literal is compared as its bytes.
+	if !(a == "a\xFF") || !("a\xFF" == a) || a < "a\xFF" || !("a" < a) || !(a > "a\xFE") { fail("literal bytes"); }
+	if !(a == utf8("a\xFF", utf8mode.KEEP_INVALID)) || a == utf8("a\xFF") { fail("== converted"); }
+}
+
+func testSearch()
+{
+	utf8 s = "h\u{E9}llo w\u{F6}rld";
+	if !(s -> startsWith("h\u{E9}")) || !(s -> startsWith("x", "h")) || s -> startsWith("e") { fail("startsWith"); }
+	if s -> startsWith() || !(s -> startsWith("")) { fail("startsWith none, empty"); }
+	if !(s -> endsWith("ld")) || s -> endsWith("x") || !(s -> endsWith("")) { fail("endsWith"); }
+	if !(s -> contains("zz", "o w")) || s -> contains("zz") || !(s -> contains("")) { fail("contains"); }
+
+	if s -> find("l") != 2 || s -> find("l", 4) != 9 || s -> find("l", 10) != -1 { fail("find"); }
+	if s -> find("w\u{F6}") != 6 || s -> find("h", -3) != 0 || s -> find("x") != -1 { fail("find chars"); }
+	if s -> find("") != 0 || s -> find("", 3) != 3 || s -> find("", 11) != 11 || s -> find("", 12) != -1 {
+		fail("find empty");
+	}
+}
+
+func testChange()
+{
+	utf8 s = "a,b,,c";
+	s.replace(",", ", ").replace("b", "\u{E9}\u{E9}");
+	expectText(@s, "a, \xC3\xA9\xC3\xA9, , c", false, "replace");
+	s.replace("", "x").replace("zz", "y");
+	expectText(@s, "a, \xC3\xA9\xC3\xA9, , c", false, "replace nothing");
+	s.replace(", ", "");
+	expectText(@s, "a\xC3\xA9\xC3\xA9c", false, "replace shorter");
+	utf8 bad = "\xFF";
+	utf8 t = "a-b";
+	t.replace("-", @bad);
+	expectText(@t, "a\xEF\xBF\xBDb", true, "replace takes hadInvalid");
+
+	utf8 h = "h\u{E9}llo";
+	h.insert(2, "X").insert(-5, "<").insert(100, ">");
+	expectText(@h, "<h\xC3\xA9Xllo>", false, "insert");
+	h.remove(1, 3).remove(4, 2);
+	expectText(@h, "<Xllo>", false, "remove");
+	h.remove(-2, 100);
+	expectText(@h, "", false, "remove all");
+
+	utf8 w = "\u{3000} \t a b \u{A0}\n";
+	w.trim();
+	expectText(@w, "a b", false, "trim");
+	utf8 sp = " \u{2028}\u{205F} ";
+	sp.trim();
+	expectText(@sp, "", false, "trim all");
+	utf8 kw = utf8(" \xFF\u{85}", utf8mode.KEEP_INVALID);
+	kw.trim().trim();
+	expectText(@kw, "\xFF", true, "trim invalid");
+}
+
+func testMakeFrom()
+{
+	utf8 s = "h\u{E9}llo";
+	utf8 a = s -> slice(1, 3);
+	expectText(@a, "\xC3\xA9l", false, "slice");
+	utf8 b = s -> slice(-1, 2);
+	expectText(@b, "h\xC3\xA9", false, "slice negative");
+	utf8 c = s -> slice(3, 1);
+	expectText(@c, "", false, "slice empty");
+	utf8 d = s -> slice(2, 100);
+	expectText(@d, "llo", false, "slice beyond");
+	utf8 k = utf8("\xFFab", utf8mode.KEEP_INVALID);
+	utf8 ka = k -> slice(1, 3);
+	expectText(@ka, "ab", true, "slice of kept");
+	if ka.mode != utf8mode.KEEP_INVALID { fail("slice mode"); }
+
+	utf8 cs = "a,,b";
+	[+]utf8 p = cs -> split(",");
+	if len(@p) != 3 { fail("split count"); }
+	expectText(@p[0], "a", false, "split 0");
+	expectText(@p[1], "", false, "split 1");
+	expectText(@p[2], "b", false, "split 2");
+	utf8 ds = "a--b--";
+	[+]utf8 q = ds -> split("--");
+	if len(@q) != 3 { fail("split sep count"); }
+	expectText(@q[2], "", false, "split last empty");
+	[+]utf8 whole = ds -> split("");
+	if len(@whole) != 1 { fail("split empty sep"); }
+	expectText(@whole[0], "a--b--", false, "split whole");
+	utf8 e;
+	[+]utf8 none = e -> split(",");
+	if len(@none) != 1 { fail("split empty text"); }
+	[+]utf8 kp = k -> split("a");
+	if kp[0].mode != utf8mode.KEEP_INVALID { fail("split mode"); }
+	expectText(@kp[0], "\xFF", true, "split kept");
+
+	utf8 j = p -> join(", ");
+	expectText(@j, "a, , b", false, "join");
+	kp.push(utf8("z", utf8mode.DELETE_INVALID));
+	utf8 kj = kp -> join("+");
+	expectText(@kj, "\xFF+b+z", true, "join kept");
+	if kj.mode != utf8mode.KEEP_INVALID { fail("join loosest mode"); }
+	[+]utf8 empty;
+	utf8 ej = empty -> join(",");
+	expectText(@ej, "", false, "join none");
+	if ej.mode != utf8mode.REPLACE_INVALID { fail("join none mode"); }
 }
 
 testMake();
 testRead();
+testCopy();
 testAppend();
-testAppendChar();
-testReplaced();
+testOperators();
+testSearch();
+testChange();
+testMakeFrom();

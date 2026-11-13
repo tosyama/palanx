@@ -782,8 +782,7 @@ plain data (`samples/raytracer/vecmath.pa`'s `vec3`).
 
 ### 3.9 std/utf8
 
-**Status.** What 0.2.5 reworks `std/utf8` into, on the features of 3.8; the module still has
-the 0.2.4 API.
+**Status.** What 0.2.5 reworks `std/utf8` into, on the features of 3.8; implemented.
 
 `utf8` stays an ordinary library type. A "character" is a code point: `"🇯🇵"` has 2. Positions
 are counted in characters, an invalid part counting as one, so finding a character position is a
@@ -802,14 +801,20 @@ export type utf8 {
 to: `KEEP_INVALID` keeps them, `REPLACE_INVALID` (the default) replaces each invalid part with
 U+FFFD, `DELETE_INVALID` drops it. `EMPTY_ON_INVALID` of 0.2.4 is removed: emptying the whole text
 for one bad part, and keeping it empty, is rarely wanted; whoever wants that checks `hadInvalid`.
-`hadInvalid` tells that an invalid part was met. Looseness orders the modes:
+`hadInvalid` tells that an invalid part was met in making the text or the texts it was made
+from: adding to text or making text of others ORs theirs in, and `x -> s` copies `x`'s, as
+initialization does. Taking in through a mode other than `KEEP_INVALID` leaves no invalid bytes, so
+judging by the bytes taken in would lose that one was replaced or deleted. It is never cleared:
+a sequence cut at the end of what was added stays counted when later bytes complete it (0.2.4
+checked the whole text again); a function checking again can be added when wanted. Looseness
+orders the modes:
 `KEEP_INVALID` > `REPLACE_INVALID` > `DELETE_INVALID`.
 
 | Where | Mode of the result |
 |-------|--------------------|
 | `utf8 s;`, `utf8 s = "abc";` | `REPLACE_INVALID` |
 | initialization from a value, a move, a `T` argument, a returned value | the value's own (copied or moved whole) |
-| `x -> s` | `s`'s: `x` is taken in by `s`'s mode; `hadInvalid` then tells about the new contents (to be confirmed when implemented) |
+| `x -> s` | `s`'s: `x` is taken in by `s`'s mode; `hadInvalid` is `x`'s |
 | `s << x` | `s`'s |
 | `a + b` and other operators making text | the loosest of the `utf8` operands'; a literal or `@[]uint8` operand has no mode |
 
@@ -822,9 +827,9 @@ goes.
 |-------|-----------|
 | make | `utf8 s = "abc";`, `utf8(@[]uint8 cs, utf8mode m = utf8mode.REPLACE_INVALID) -> utf8` (replaces `toUtf8`) |
 | read | `cstr`, `byteLen`, `charCount`; `s.hadInvalid`, `s.mode` |
-| compare, find | `==`, `<` (byte order, which is code point order) and those derived; `startsWith`, `endsWith`, `contains`, each true when any of its variadic candidates matches; `find(@utf8 s, @utf8 x, int64 from = 0) -> int64`, the character position or -1 |
+| compare, find | `==`, `<` (byte order, which is code point order) and those derived, each also with a literal or `@[]uint8` on either side, compared as bytes without converting it (converting made `s == "abc"` about 15 times slower); `startsWith`, `endsWith`, `contains`, each true when any of its variadic candidates matches; `find(@utf8 s, @utf8 x, int64 from = 0) -> int64`, the character position or -1 |
 | change | all in place: `append`, `appendChar`; `<<`; `replace(from, to)`, every occurrence; `insert(pos, x)`, `remove(start, end)`; `trim`, removing the 25 Unicode White_Space characters at both ends. Each returns `@!utf8` to chain, as every `<<` must |
-| make from | `+` (two `utf8`s, or one and a literal on either side); `slice(start, end) -> utf8`; `split(sep) -> [+]utf8`; `join(@[]utf8 parts, sep) -> utf8`, called `parts -> join(", ")` |
+| make from | `+` (two `utf8`s, or one and a literal on either side); `slice(start, end) -> utf8`; `split(sep) -> [+]utf8`; `join(@[+]utf8 parts, sep) -> utf8` (a `@[]T` has no length), called `parts -> join(", ")` |
 
 - A position out of range is clamped: a negative one is 0, `start >= end` gives empty text, and
   `find` from beyond the end gives -1.
