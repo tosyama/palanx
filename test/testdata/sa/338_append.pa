@@ -1,0 +1,14 @@
+type Acc { int64 sum; };
+func <<(@!Acc a, int64 x) -> @!Acc { a.sum + x -> a.sum; return a; }
+func <<(@!Acc a, @Acc b) -> @!Acc { a.sum + b.sum -> a.sum; return a; }
+func get(@!Acc a) -> @!Acc { return a; }
+type Box { Acc acc; };
+Acc a;
+Acc b;
+@!Acc p = @!a;
+Box bx;
+a << 1;
+a << b;
+p << 2 << 3;
+bx.acc << 4;
+get(@!a) << 5;

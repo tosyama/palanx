@@ -64,7 +64,7 @@ FieldChain PlnSemanticAnalyzer::resolveObjectChain(const json& obj, bool forWrit
 	}
 	FieldChain base = resolveObjectChain(obj["object"], forWrite);
 	string fn = obj["field"].get<string>();
-	const FieldLayout* it = &findFieldOrExit(base.structName, fn, obj);
+	const FieldLayout* it = &findFieldOrExit(base.structName, fn, obj, forWrite);
 	if (it->typeKind == "prim" || it->typeKind == "embed-varr" || (it->typeKind == "owned" && !isStructPntr(it->type))) {
 		cerr << locPrefix(obj) << PlnSaMessage::getMessage(E_FieldAccessOnNonStruct) << endl;
 		exit(1);
@@ -118,7 +118,14 @@ void PlnSemanticAnalyzer::requireOwnedBase(const json& saBase, const json& locNo
 	}
 }
 
-const FieldLayout& PlnSemanticAnalyzer::findFieldOrExit(const string& structName, const string& fieldName, const json& locNode)
+bool PlnSemanticAnalyzer::outsideTypeModule(const string& structName) const
+{
+	auto origin = typeOrigins_.find(structName);
+	return origin != typeOrigins_.end() && origin->second != moduleId_;
+}
+
+const FieldLayout& PlnSemanticAnalyzer::findFieldOrExit(const string& structName, const string& fieldName, const json& locNode,
+                                                        bool forWrite)
 {
 	const StructDef& def = requireCompleteStruct(structName, locNode);
 	auto it = find_if(def.fields.begin(), def.fields.end(), [&](const FieldLayout& f){ return f.name == fieldName; });
@@ -128,6 +135,11 @@ const FieldLayout& PlnSemanticAnalyzer::findFieldOrExit(const string& structName
 	}
 	if (!it->unsupported.empty()) {
 		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_UnsupportedCFieldType, structName, fieldName, it->unsupported) << endl;
+		exit(1);
+	}
+	if ((it->access == "private" || (it->access == "readonly" && forWrite)) && outsideTypeModule(structName)) {
+		cerr << locPrefix(locNode) << PlnSaMessage::getMessage(it->access == "private" ? E_PrivateField : E_ReadonlyField,
+			PlnSaMessage::writtenTypeName(structName), fieldName) << endl;
 		exit(1);
 	}
 	return *it;
@@ -178,7 +190,8 @@ json PlnSemanticAnalyzer::storageBorrowType(const string& name, const json& varT
 		vt["mutable"] = isMutable;
 		return vt;
 	}
-	if (isOwnedVar(name) || varType.contains("arr-size"))
+	// A variadic parameter is sized at run time but owned by no one in the function.
+	if (isOwnedVar(name) || varType.contains("arr-size") || varType.value("run-size", false))
 		return withArrPermission(varType, isMutable);
 	return nullptr;
 }
@@ -233,7 +246,7 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 	if (obj_type == "field-access") {
 		FieldChain chain = resolveObjectChain(obj["object"], /*forWrite=*/isMutable);
 		string fn = obj["field"].get<string>();
-		const FieldLayout& fld = findFieldOrExit(chain.structName, fn, obj);
+		const FieldLayout& fld = findFieldOrExit(chain.structName, fn, obj, isMutable);
 		bool isOwned = fld.typeKind == "owned";
 		bool isArrField = (isOwned && isArrLevel(fld.type)) || fld.typeKind == "embed-arr";
 		if (fld.typeKind != "prim" && fld.typeKind != "embed" && fld.typeKind != "embed-varr" && !isOwned && !isArrField) {
@@ -302,6 +315,10 @@ json PlnSemanticAnalyzer::sa_expr_addr_of(const json& expr)
 
 	// A call operand is accepted only as a call argument (sa_call_borrow_arg):
 	// elsewhere nothing would release the returned struct.
+	if (obj.contains("converts-to")) {
+		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_ConvertedLiteralToBorrow, obj["name"]) << endl;
+		exit(1);
+	}
 	if (isCallBorrow(expr) && isExpiringOwned(sa_expression(obj))) {
 		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_ExpiringStructToBorrow) << endl;
 		exit(1);
@@ -314,10 +331,28 @@ void PlnSemanticAnalyzer::checkIntLiteralRange(const json& lit)
 {
 	const PlnType* t = registry_.fromJson(lit["value-type"]);
 	if (!isIntegerPrim(t)) return;
+	rejectWideCharLit(lit, lit["value-type"]);
 	string value = lit["value"];
 	if (intLiteralFits(value, static_cast<const PrimType*>(t)->name)) return;
 	cerr << locPrefix(lit) << PlnSaMessage::getMessage(E_IntLiteralOutOfRange,
 		value, typeDisplayName(lit["value-type"])) << endl;
+	exit(1);
+}
+
+// A character of 128 or more is never a byte of UTF-8 text, so a narrower
+// type would silently hold, or compare against, something no text has.
+void PlnSemanticAnalyzer::rejectWideCharLit(const json& lit, const json& type)
+{
+	if (!lit.value("char", false) || stol(lit["value"].get<string>()) < 128) return; // LCOV_EXCL_BR_LINE
+	const PlnType* t = registry_.fromJson(type);
+	if (!isIntegerPrim(t)) return;
+	auto pn = static_cast<const PrimType*>(t)->name;
+	if (pn != PrimType::Name::Int8 && pn != PrimType::Name::Int16 && pn != PrimType::Name::Uint8
+	    && pn != PrimType::Name::Uint16 && pn != PrimType::Name::Bool)
+		return;
+	char cp[16];
+	snprintf(cp, sizeof(cp), "U+%04lX", stol(lit["value"].get<string>()));
+	cerr << locPrefix(lit) << PlnSaMessage::getMessage(E_WideCharLitNarrowType, cp, typeDisplayName(type)) << endl;
 	exit(1);
 }
 
@@ -377,10 +412,9 @@ json PlnSemanticAnalyzer::foldConstExpr(const json& expr)
 	return lit;
 } // LCOV_EXCL_BR_LINE
 
-// `len(@a)`, `len(h)` of a borrow h, or `a -> len()` of an array whose size
-// is a constant: like sizeof, it needs only a's type, so an `a` with a call to
-// evaluate is left to the call's analysis.
-optional<int64_t> PlnSemanticAnalyzer::constArrLen(const json& expr)
+// The array of `len(@a)`, `len(h)` of a borrow h, or `a -> len()`, when it is a
+// location: an `a` with a call to evaluate is left to the call's analysis.
+const json* PlnSemanticAnalyzer::lenOperand(const json& expr)
 {
 	auto lenCall = [&](const json& call, size_t argc) {
 		return call.value("expr-type", "") == "call" && call["name"] == "len"
@@ -395,11 +429,11 @@ optional<int64_t> PlnSemanticAnalyzer::constArrLen(const json& expr)
 	const json* arr;
 	bool borrowed = true;
 	if (expr["expr-type"] == "call") {
-		if (!lenCall(expr, 1)) return nullopt;
+		if (!lenCall(expr, 1)) return nullptr;
 		arr = &expr["args"][0];
 		borrowed = arr->value("expr-type", "") == "addr-of" || namesArrBorrow(*arr);
 	} else {
-		if (!lenCall(expr["call"], 0)) return nullopt;
+		if (!lenCall(expr["call"], 0)) return nullptr;
 		arr = &expr["value"];
 	}
 	if (arr->value("expr-type", "") == "addr-of") {
@@ -410,18 +444,35 @@ optional<int64_t> PlnSemanticAnalyzer::constArrLen(const json& expr)
 			exit(1);
 		}
 	}
-	if (!isLocationExpr(*arr) || hasCall(*arr)) return nullopt;
-	json vt = operandValueType(*arr);
-	if (!isArrLevel(vt)) return nullopt;
+	if (!isLocationExpr(*arr) || hasCall(*arr)) return nullptr;
+	if (!isArrLevel(operandValueType(*arr))) return nullptr;
 	// Without '@' it is a call; one of the user's functions may take the array.
 	if (!borrowed) {
 		vector<Callee> cands = findCallees("len");
 		if (any_of(cands.begin(), cands.end(), [](const Callee& c) { return !(*c.def).value("inline", false); }))
-			return nullopt;
+			return nullptr;
 		cerr << locPrefix(expr) << PlnSaMessage::getMessage(E_ArrLenNeedsAddrOf) << endl;
 		exit(1);
 	}
+	return arr;
+}
+
+// Like sizeof, a constant length needs only the array's type.
+optional<int64_t> PlnSemanticAnalyzer::constArrLen(const json& expr)
+{
+	const json* arr = lenOperand(expr);
+	if (!arr) return nullopt;
+	json vt = operandValueType(*arr);
+	if (vt.value("run-size", false)) return nullopt;
 	return constArrSizeOrExit(vt, expr);
+}
+
+// A length known only at run time is read where the array keeps it.
+json PlnSemanticAnalyzer::runtimeArrLen(const json& expr)
+{
+	const json* arr = lenOperand(expr);
+	if (!arr || !operandValueType(*arr).value("run-size", false)) return json(); // LCOV_EXCL_BR_LINE
+	return arrLenOf(sa_expression(*arr), expr);
 }
 
 int64_t PlnSemanticAnalyzer::constArrSizeOrExit(const json& arrType, const json& locNode)
@@ -438,6 +489,11 @@ json PlnSemanticAnalyzer::arrLenOf(const json& saArr, const json& locNode)
 {
 	const json& vt = saArr["value-type"];
 	if (isVarrPntr(vt)) return varrLen(saArr);
+	if (vt.value("run-size", false)) {
+		const json& location = saArr["expr-type"] == "addr-of" ? saArr["object"] : saArr;
+		auto [root, depth] = arrRoot(location);
+		return wrapConvert(runtimeLen(*root, depth), {{"type-kind","prim"},{"type-name","int64"}}); // LCOV_EXCL_BR_LINE
+	}
 	return lenLit(constArrSizeOrExit(vt, locNode));
 }
 
@@ -636,10 +692,12 @@ json PlnSemanticAnalyzer::sa_expr_maybe_void(const json &rawExpr, const PlnType*
 		if (expr.contains("value-type")) {
 			resolveCTypeRefs(sa_expr["value-type"]);
 		} else {
+			// A character literal without a type to take is an int, as in C.
 			if (expectedType && expectedType->kind == PlnType::Kind::Prim)
 				sa_expr["value-type"] = registry_.toJson(expectedType);
 			else
-				sa_expr["value-type"] = registry_.toJson(registry_.prim(PrimType::Name::Int64));
+				sa_expr["value-type"] = registry_.toJson(registry_.prim(
+					expr.value("char", false) ? PrimType::Name::Int32 : PrimType::Name::Int64));
 			// A float constant has exactly one form, lit-flo, so codegen never
 			// sees an integer literal that must be materialized as a float.
 			if (isFloatPrim(expectedType))
@@ -682,7 +740,7 @@ json PlnSemanticAnalyzer::sa_expr_maybe_void(const json &rawExpr, const PlnType*
 		}
 		sa_expr["label"] = strLiteralLabels[value];
 		sa_expr.erase("value");
-		sa_expr["value-type"] = {{"type-kind", "pntr"}, {"base-type", {{"type-kind", "prim"}, {"type-name", "uint8"}}}}; // LCOV_EXCL_BR_LINE
+		sa_expr["value-type"] = strLitType();
 
 	} else if (expr_type == "id") {
 		const json* varType = lookupVar(expr["name"].get<string>(), expr);
@@ -708,6 +766,9 @@ json PlnSemanticAnalyzer::sa_expr_maybe_void(const json &rawExpr, const PlnType*
 	} else if (expr_type == "shl" || expr_type == "shr") {
 		return sa_expr_shift(expr, expectedType);
 
+	} else if (expr_type == "append") {
+		return sa_expr_append(expr);
+
 	} else if (expr_type == "neg") {
 		json operand = sa_expression(expr["operand"], expectedType);
 		if (isStructPntr(operand["value-type"]))
@@ -727,23 +788,7 @@ json PlnSemanticAnalyzer::sa_expr_maybe_void(const json &rawExpr, const PlnType*
 		sa_expr["value-type"] = operand["value-type"];
 
 	} else if (expr_type == "cmp") {
-		rejectArrowOperand(expr, expr["op"].get<string>());
-		json left  = promoteOperand(sa_expression(expr["left"]));
-		json right = promoteOperand(sa_expression(expr["right"]));
-		const PlnType* leftType  = registry_.fromJson(left["value-type"]);
-		const PlnType* rightType = registry_.fromJson(right["value-type"]);
-		// A pointer/struct pair (usualArithConv returns nullptr) is left
-		// unconverted -- pointer comparison (`p == NULL`, `p == q`) is a valid
-		// use of `==`/`!=` that has no common numeric type to convert to.
-		const PlnType* promoted = usualArithConv(leftType, rightType);
-		if (promoted) {
-			if (leftType != promoted)  left  = wrapConvert(left,  registry_.toJson(promoted));
-			if (rightType != promoted) right = wrapConvert(right, registry_.toJson(promoted));
-		}
-		sa_expr["op"]         = expr["op"];
-		sa_expr["left"]       = left;
-		sa_expr["right"]      = right;
-		sa_expr["value-type"] = {{"type-kind", "prim"}, {"type-name", "bool"}}; // LCOV_EXCL_BR_LINE
+		return sa_expr_cmp(expr);
 
 	} else if (expr_type == "logical-and" || expr_type == "logical-or") {
 		rejectArrowOperand(expr, expr_type == "logical-and" ? "&&" : "||");
@@ -774,6 +819,9 @@ json PlnSemanticAnalyzer::sa_expr_maybe_void(const json &rawExpr, const PlnType*
 		return sa_expr_cast(expr);
 
 	} else if (expr_type == "call") {
+		if (expr.contains("converts-to")) return sa_expr_call(expr);
+		json len = runtimeArrLen(expr);
+		if (!len.is_null()) return len;
 		const string& callName = expr["name"].get<string>();
 		if (findCallees(callName).empty()) {
 			json cast = aliasCast(expr, callName);
@@ -806,6 +854,8 @@ json PlnSemanticAnalyzer::sa_expr_maybe_void(const json &rawExpr, const PlnType*
 		return sa_expr_call_ptr(expr, move(callee), funcName);
 
 	} else if (expr_type == "chain-call") {
+		json len = runtimeArrLen(expr);
+		if (!len.is_null()) return len;
 		return sa_expr_chain_call(expr);
 
 	} else if (expr_type == "transfer") {
@@ -932,6 +982,49 @@ json PlnSemanticAnalyzer::literalDefaultType(const json& rawExpr)
 	if (!isPureOperand(expr)) return json();
 	return sa_expression(expr)["value-type"];
 }
+
+// A struct operand makes a comparison a call of the type's '==' or '<'; a
+// comparison with NULL stays a pointer comparison, which the generated
+// allocators and C interop code rely on.
+json PlnSemanticAnalyzer::sa_expr_cmp(const json& expr)
+{
+	rejectArrowOperand(expr, expr["op"].get<string>());
+	json probes[2];
+	bool structOperand = false, nullOperand = false;
+	for (int i : {0, 1}) {
+		const json operand = foldConstExpr(expr[i ? "right" : "left"]);
+		if (isNullPtrLit(operand)) nullOperand = true;
+		if (isAggregateLit(operand) || operand.value("expr-type", "") == "lit-int") continue; // LCOV_EXCL_BR_LINE
+		probes[i] = sa_expression(expr[i ? "right" : "left"]);
+		structOperand = structOperand || isStructPntr(probes[i]["value-type"]);
+	}
+	if (structOperand && !nullOperand)
+		return sa_compare_call(expr, probes);
+
+	json left  = probes[0].is_null() ? sa_expression(expr["left"]) : move(probes[0]);
+	json right = probes[1].is_null() ? sa_expression(expr["right"]) : move(probes[1]);
+	// A literal here takes no type from the other operand, so a narrow one
+	// is checked against the literal directly.
+	rejectWideCharLit(left, right["value-type"]);
+	rejectWideCharLit(right, left["value-type"]);
+	left  = promoteOperand(move(left));
+	right = promoteOperand(move(right));
+	const PlnType* leftType  = registry_.fromJson(left["value-type"]);
+	const PlnType* rightType = registry_.fromJson(right["value-type"]);
+	// A pointer pair (usualArithConv returns nullptr) is left unconverted --
+	// pointer comparison (`p == NULL`, `p == q`) has no common numeric type
+	// to convert to.
+	const PlnType* promoted = usualArithConv(leftType, rightType);
+	if (promoted) {
+		if (leftType != promoted)  left  = wrapConvert(left,  registry_.toJson(promoted));
+		if (rightType != promoted) right = wrapConvert(right, registry_.toJson(promoted));
+	}
+	json sa_expr = expr;
+	sa_expr["left"]       = left;
+	sa_expr["right"]      = right;
+	sa_expr["value-type"] = {{"type-kind", "prim"}, {"type-name", "bool"}}; // LCOV_EXCL_BR_LINE
+	return sa_expr;
+} // LCOV_EXCL_BR_LINE
 
 json PlnSemanticAnalyzer::sa_expr_arith(const json& expr, const PlnType* expectedType)
 {
@@ -1370,7 +1463,13 @@ json PlnSemanticAnalyzer::sa_expr_field_access(const json& expr, bool forWrite)
 {
 	FieldChain chain = resolveObjectChain(expr["object"], forWrite);
 	string fn = expr["field"].get<string>();
-	return makeFieldAccess(chain, findFieldOrExit(chain.structName, fn, expr));
+	const FieldLayout& fld = findFieldOrExit(chain.structName, fn, expr, forWrite);
+	json out = makeFieldAccess(chain, fld);
+	// A read-only field's pointer, read outside, must not lend its pointee for writing.
+	if (fld.access == "readonly" && fld.typeKind == "raw-ptr" && outsideTypeModule(chain.structName))
+		for (json* t = &out["value-type"]; t->value("type-kind", "") == "pntr"; t = &(*t)["base-type"])
+			if (t->contains("mutable")) (*t)["mutable"] = false;
+	return out;
 } // LCOV_EXCL_BR_LINE
 
 json PlnSemanticAnalyzer::makeFieldAccess(const FieldChain& chain, const FieldLayout& fld)

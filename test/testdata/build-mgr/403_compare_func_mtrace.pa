@@ -1,0 +1,30 @@
+cinclude <stdio.h>;
+cinclude <mcheck.h>;
+type ver { int32 major; int32 minor; };
+func ==(@ver a, @ver b) -> bool { return a.major == b.major && a.minor == b.minor; }
+func <(@ver a, @ver b) -> bool {
+	if (a.major != b.major) { return a.major < b.major; }
+	return a.minor < b.minor;
+}
+func <(@ver a, int32 major) -> bool { return a.major < major; }
+func ==(ver a, int32 major) -> bool { return a.major == major; }
+func mk(int32 major, int32 minor) -> ver v { major -> v.major; minor -> v.minor; }
+func say(@ver v, int32 n) -> @ver { printf("%d ", n); return v; }
+mtrace();
+{
+	ver a = [1, 2];
+	ver b = [1, 2];
+	ver c = [1, 3];
+	// Equal contents compare equal: two values are never compared by address.
+	printf("%d %d %d\n", a == b, a != b, a == c);
+	printf("%d %d %d %d\n", a < c, a > c, a <= c, a >= c);
+	printf("%d %d %d %d\n", c < a, c > a, a <= b, a >= b);
+	printf("%d %d\n", a < 2, 0 > a);
+	printf("%d %d\n", mk(1, 2) == a, mk(2, 0) == 2);
+	@ver p = @a;
+	printf("%d %d\n", p == NULL, int64(p) == int64(@a));
+	// The left operand is evaluated first, even passed second.
+	printf("%d\n", say(@a, 1) > say(@c, 2));
+	printf("%d\n", say(@a, 3) <= say(@c, 4));
+}
+muntrace();

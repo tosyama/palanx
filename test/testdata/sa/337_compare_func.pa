@@ -1,0 +1,23 @@
+cinclude <stdlib.h>;
+type ver { int32 major; int32 minor; };
+func ==(@ver a, @ver b) -> bool { return a.major == b.major && a.minor == b.minor; }
+func <(@ver a, @ver b) -> bool {
+	if (a.major != b.major) { return a.major < b.major; }
+	return a.minor < b.minor;
+}
+func <(@ver a, int32 major) -> bool { return a.major < major; }
+func next(@!ver v) -> @!ver { v.minor + 1 -> v.minor; return v; }
+
+ver a = [1, 2];
+ver b = [1, 3];
+bool r1 = a == b;
+bool r2 = a != b;
+bool r3 = a < b;
+bool r4 = a > b;
+bool r5 = a <= b;
+bool r6 = a >= b;
+bool r7 = 2 > a;
+@ver p = @a;
+bool r8 = p == NULL;
+bool r9 = int64(p) == int64(@a);
+bool r10 = next(@!a) > b;

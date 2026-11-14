@@ -1,0 +1,2 @@
+cinclude <time.h>;
+func ->(@tm src, @!tm dst) { }

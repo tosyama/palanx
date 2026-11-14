@@ -15,6 +15,7 @@
 #include "PlnSemanticAnalyzer.h"
 #include "PlnSaMessage.h"
 #include "PlnSaInternal.h"
+#include "../common/PlnInterface.h"
 
 struct PlnSemanticAnalyzer::TypeProgram {
 	map<string, PlnSemanticAnalyzer*> modules;  // moduleId -> its type context, the root's included
@@ -369,7 +370,8 @@ void PlnSemanticAnalyzer::requireKnownTypeNames(const json& locNode, const json&
 // `func` is a function type as written, its names already resolved.
 void PlnSemanticAnalyzer::requireFuncSigTypes(const json& locNode, const json& func) const
 {
-	auto check = [&](const json& t, bool isRet) {
+	auto check = [&](const json& written, bool isRet) {
+		const json& t = isVariadicAstType(written) ? written["base-type"] : written;
 		string tk = t.value("type-kind","");
 		if (tk == "keep") {
 			cerr << locPrefix(locNode) << PlnSaMessage::getMessage(E_KeepOutsideCast) << endl;
@@ -449,8 +451,52 @@ void PlnSemanticAnalyzer::validateNativeSig(const json& funcDef)
 	}
 }
 
+void PlnSemanticAnalyzer::validateVariadicSig(const json& funcDef)
+{
+	const json& params = funcDef["parameters"];
+	if (!palanVariadicParam(params)) return;
+	const string& name = funcDef["name"].get<string>();
+	auto fail = [&](PlnSaMessageCode code) {
+		cerr << locPrefix(funcDef) << PlnSaMessage::getMessage(code, name) << endl;
+		exit(1);
+	};
+	if (funcDef.value("func-type", "") == "syscall") fail(E_SyscallVariadic);
+	if (operatorFuncNames().count(name)) fail(E_OperatorFuncVariadic);
+	if (any_of(params.begin(), params.end(), [](const json& p) { return p.contains("init"); }))
+		fail(E_VariadicWithDefault);
+}
+
+// A type's '->' is part of the type, as how it is freed is: every module
+// the StructDef reaches calls it, whether it sees the defining module's
+// functions or not, so the module defining the type alone defines it. Every
+// module's '->' passes through here, its own and an imported one alike.
+// It links from any module and from the generated allocators, so it is global.
+void PlnSemanticAnalyzer::registerCopyFunc(json& funcEntry, const string& scope)
+{
+	auto fail = [&](PlnSaMessageCode code) {
+		cerr << locPrefix(funcEntry) << PlnSaMessage::getMessage(code) << endl;
+		exit(1);
+	};
+	if (funcEntry.value("export", false)) fail(E_CopyFuncExported);
+	const json& params = funcEntry["parameters"];
+	bool shaped = params.size() == 2 && !funcEntry.contains("ret-type") && !funcEntry.contains("rets"); // LCOV_EXCL_BR_LINE
+	for (size_t i = 0; shaped && i < 2; i++) {
+		const json& vt = params[i]["var-type"];
+		shaped = !params[i].contains("init") && isStructBorrow(vt) && vt["mutable"].get<bool>() == (i == 1) // LCOV_EXCL_BR_LINE
+		      && vt["base-type"] == params[0]["var-type"]["base-type"]; // LCOV_EXCL_BR_LINE
+	}
+	if (!shaped) fail(E_CopyFuncSig);
+	string name = params[0]["var-type"]["base-type"]["type-name"];
+	auto origin = typeOrigins_.find(name);
+	if (scope != moduleId_ || origin == typeOrigins_.end() || origin->second != moduleId_) fail(E_CopyFuncPlace);
+	funcEntry["symbol"] = copyFuncSymbol(name);
+	funcEntry["export"] = true;
+	BOOST_ASSERT(structDefs_.at(name).copyFunc == funcEntry["symbol"].get<string>()); // LCOV_EXCL_BR_LINE
+}
+
 // An operator function is called only where an operand is a struct, and an
-// operand is never written with '@!' (see sa_operator_call).
+// operand is never written with '@!' (see sa_operator_call), but for the one
+// '<<' appends to.
 void PlnSemanticAnalyzer::validateOperatorSig(const json& funcDef)
 {
 	const string& name = funcDef["name"].get<string>();
@@ -463,13 +509,41 @@ void PlnSemanticAnalyzer::validateOperatorSig(const json& funcDef)
 		exit(1);
 	}
 	for (auto& p : params)
+		if (p.contains("init")) {
+			cerr << locPrefix(p["init"]) << PlnSaMessage::getMessage(
+				E_OperatorFuncDefault, name, p["name"].get<string>()) << endl;
+			exit(1);
+		}
+	// '<<' writes into its left operand, which sa_expr_append gives as '@!'.
+	if (name == "<<") {
+		const json& first = params[0]["var-type"];
+		if (!isStructBorrow(first) || !first.value("mutable", false)) {
+			cerr << locPrefix(params[0].contains("loc") ? params[0] : funcDef)
+			     << PlnSaMessage::getMessage(E_AppendFuncFirstParam) << endl;
+			exit(1);
+		}
+		const json* ret = funcDef.contains("ret-type") ? &funcDef["ret-type"] : nullptr;
+		if (!ret || !isStructBorrow(*ret) || !ret->value("mutable", false)
+		    || registry_.fromJson(*ret) != registry_.fromJson(first)) {
+			cerr << locPrefix(funcDef) << PlnSaMessage::getMessage(E_AppendFuncRet, typeDisplayName(first)) << endl;
+			exit(1);
+		}
+	}
+	for (size_t i = name == "<<" ? 1 : 0; i < n; i++) {
+		const json& p = params[i];
 		if (p["var-type"].value("mutable", false)) {
 			cerr << locPrefix(p.contains("loc") ? p : funcDef) << PlnSaMessage::getMessage(
 				E_OperatorFuncWritableParam, name, p["name"].get<string>()) << endl;
 			exit(1);
 		}
+	}
 	if (none_of(params.begin(), params.end(), [](const json& p) { return isStructPntr(p["var-type"]); })) {
 		cerr << locPrefix(funcDef) << PlnSaMessage::getMessage(E_OperatorFuncNoStruct, name) << endl;
+		exit(1);
+	}
+	if ((name == "==" || name == "<")
+	    && !(funcDef.contains("ret-type") && isBoolPrim(registry_.fromJson(funcDef["ret-type"])))) {
+		cerr << locPrefix(funcDef) << PlnSaMessage::getMessage(E_CompareFuncRet, name) << endl;
 		exit(1);
 	}
 }
@@ -598,6 +672,67 @@ void PlnSemanticAnalyzer::validateSyscallDecl(json& funcDef)
 	}
 }
 
+// A default is analyzed by the module declaring the function, so a caller
+// needs none of the names it was written with. A string literal stays
+// unanalyzed: its label belongs to the table of the module whose call uses it.
+void PlnSemanticAnalyzer::normalizeParamDefaults(json& funcEntry)
+{
+	if (!funcEntry.contains("parameters")) return;
+	const string& funcName = funcEntry["name"].get<string>();
+	json& params = funcEntry["parameters"];
+	function<bool(const json&)> hasCall = [&](const json& e) {
+		string et = e.is_object() ? e.value("expr-type", "") : ""; // LCOV_EXCL_BR_LINE
+		if (et == "call" || et == "member-call" || et == "chain-call") return true;
+		if (e.is_structured())
+			for (auto& child : e)
+				if (hasCall(child)) return true;
+		return false;
+	};
+	bool defaulted = false;
+	for (size_t i = 0; i < params.size(); i++) {
+		json& p = params[i];
+		const string& name = p["name"].get<string>();
+		if (!p.contains("init")) {
+			if (defaulted) {
+				cerr << locPrefix(p.contains("loc") ? p : funcEntry)
+				     << PlnSaMessage::getMessage(E_ParamDefaultNotLast, name) << endl;
+				exit(1);
+			}
+			continue;
+		}
+		defaulted = true;
+		json init = move(p["init"]);
+		p.erase("init");
+		const json& vt = p["var-type"];
+		auto notConst = [&] {
+			cerr << locPrefix(init) << PlnSaMessage::getMessage(E_ParamDefaultNotConst, name) << endl;
+			exit(1);
+		};
+		ensureTypeRefs(init);
+		rejectDeferredConstRefs(init, init);
+		json folded = foldConstExpr(init);
+		if (firstNonConstName(folded) || hasCall(folded) || isStructStorage(vt) || isStructBorrow(vt))
+			notConst();
+		json value;
+		if (folded.value("expr-type", "") == "lit-str") {
+			value = {{"expr-type", "lit-str"}, {"value", folded["value"]}}; // LCOV_EXCL_BR_LINE
+			json probe = value;
+			probe["value-type"] = strLitType();
+			if (auto d = callArgMismatch(init, probe, p, i, false, funcName)) reportDiag(init, *d);
+		} else {
+			value = sa_expression(folded, registry_.fromJson(vt));
+			if (auto d = callArgMismatch(init, value, p, i, false, funcName)) reportDiag(init, *d);
+			value = convertCallArg(move(value), vt);
+			const json& lit = value.value("expr-type", "") == "convert" ? value["src"] : value; // LCOV_EXCL_BR_LINE
+			string et = lit.value("expr-type", "");
+			if (et != "lit-int" && et != "lit-uint" && et != "lit-flo") notConst();
+		}
+		value.erase("loc");
+		if (value.contains("src")) value["src"].erase("loc");
+		p["default"] = move(value);
+	}
+} // LCOV_EXCL_BR_LINE
+
 // gen-ast keeps a parameter or return it parses but does not implement in the
 // signature (see ASTSpec.md); every Palan signature, local or imported, is
 // checked here before anything reads its types.
@@ -605,13 +740,11 @@ void PlnSemanticAnalyzer::rejectNotImplSig(const json& f)
 {
 	for (auto& p : f["parameters"]) {
 		const json& at = p.contains("loc") ? p : f;
-		if (p.contains("init") || p.contains("untyped-var")) {
-			string name = p.contains("untyped-var") ? p["untyped-var"] : p["name"];
-			cerr << locPrefix(p.contains("init") ? p["init"] : at)
-			     << PlnSaMessage::getMessage(E_ParamDefaultNotImpl, name) << endl;
+		if (p.contains("untyped-var")) {
+			cerr << locPrefix(at) << PlnSaMessage::getMessage(E_VarTypeInferenceNotImpl, p["untyped-var"].get<string>()) << endl;
 			exit(1);
 		}
-		if (!p.contains("var-type")) {
+		if (!p.contains("var-type") || p.value("ownership-transfer", false)) {
 			cerr << locPrefix(at) << PlnSaMessage::getMessage(E_ParamNotImplemented) << endl;
 			exit(1);
 		}
@@ -642,13 +775,22 @@ json PlnSemanticAnalyzer::normalizeFuncSig(const json& f, const string& scope)
 	if (f.contains("ret-type")) ensureSigType(f["ret-type"]);
 
 	json funcEntry = resolveSigTypes(f);
+	// Diagnostics name a parameter as written: `@[]T` resolves to the same type as `@T`.
+	json written = json::array();
+	for (auto& p : f.value("parameters", json::array()))
+		written.push_back(writeType(p["var-type"]));
+	funcEntry["_written-params"] = written;
 	normalizeSig(funcEntry);
 	validateEmbeddedParams(funcEntry);
 	if (!funcEntry.contains("ret-type") && funcEntry.contains("rets") && funcEntry["rets"].size() == 1)
 		funcEntry["ret-type"] = funcEntry["rets"][0]["var-type"];
 	validateNativeSig(funcEntry);
+	validateVariadicSig(funcEntry);
 	validateOperatorSig(funcEntry);
-	if (funcEntry.value("func-type", "") == "syscall")
+	normalizeParamDefaults(funcEntry);
+	if (funcEntry["name"] == "->")
+		registerCopyFunc(funcEntry, scope);
+	else if (funcEntry.value("func-type", "") == "syscall")
 		validateSyscallDecl(funcEntry);
 	else
 		funcEntry["symbol"] = scope + ".."
@@ -729,9 +871,10 @@ void PlnSemanticAnalyzer::beginModule(const json& ast)
 // top-level imports bring in, so function signatures pre-registered in
 // step 1 see fully-resolved types, not alias names. A const whose value
 // names a variable is left to step 2.
-void PlnSemanticAnalyzer::prescanTypes(const json& stmts)
+void PlnSemanticAnalyzer::prescanTypes(const json& stmts, const json& funcs)
 {
 	indexTopDecls(stmts);
+	indexCopyFuncs(funcs);
 	// Imports first, so a type they hide is known as hidden by the time a
 	// declaration here writes it.
 	for (auto& stmt : stmts)
@@ -741,6 +884,27 @@ void PlnSemanticAnalyzer::prescanTypes(const json& stmts)
 	for (auto& stmt : stmts) {
 		auto d = topDecls_.find(stmt.value("name", ""));
 		if (d != topDecls_.end() && d->second.stmt == &stmt) ensureTypeName(d->first, false);
+	}
+}
+
+// A '->' names its type as written; one written by an alias, of this module, is
+// for the struct the alias names. registerCopyFunc checks the rest.
+void PlnSemanticAnalyzer::indexCopyFuncs(const json& funcs)
+{
+	for (auto& f : funcs) {
+		if (f["name"] != "->" || !f.contains("parameters") || f["parameters"].empty()) continue;
+		const json& vt = f["parameters"][0]["var-type"];
+		if (vt.value("type-kind", "") != "pntr") continue;
+		const json* written = &vt["base-type"];
+		for (int hops = 0; hops <= (int)topDecls_.size(); hops++) {
+			if (written->value("type-kind", "") != "prim" || !written->contains("type-name")) break;
+			auto d = topDecls_.find((*written)["type-name"].get<string>());
+			if (d == topDecls_.end()) break;
+			const json& decl = *d->second.stmt;
+			if (decl["stmt-type"] == "struct-def") { copyFuncStructs_.insert(&decl); break; }
+			if (decl["stmt-type"] != "type-alias") break;
+			written = &decl["type"];
+		}
 	}
 }
 
@@ -1027,7 +1191,7 @@ void PlnSemanticAnalyzer::analysis(const json &ast, const string& astPath)
 	program_->workRoot = workRootOf(astPath, ast["original"]);
 	beginModule(ast);
 	if (ast["ast"].contains("statements")) {
-		prescanTypes(ast["ast"]["statements"]);
+		prescanTypes(ast["ast"]["statements"], ast["ast"].value("functions", json::array()));
 		noteImplicitArgs(ast["ast"]["statements"]);
 	}
 	// 1. Pre-register Palan functions so calls can resolve them
@@ -1270,6 +1434,7 @@ PlnSemanticAnalyzer& PlnSemanticAnalyzer::importTypeContext(json impAst)
 	program_->imported.push_back(move(sub));
 	if (mod.moduleAst_["ast"].contains("statements"))
 		mod.indexTopDecls(mod.moduleAst_["ast"]["statements"]);
+	mod.indexCopyFuncs(mod.moduleAst_["ast"].value("functions", json::array()));
 	return mod;
 }
 
@@ -1290,6 +1455,8 @@ json PlnSemanticAnalyzer::interfaceSymbols(const json& ast)
 		json entry = sub.normalizeFuncSig(f, sub.moduleId_);
 		if (entry.contains("symbol")) symbols.push_back(entry["symbol"]);
 	}
+	for (auto& f : ast["ast"].value("functions", json::array()))
+		if (f["name"] == "->") symbols.push_back(sub.normalizeFuncSig(f, sub.moduleId_)["symbol"]);
 	return symbols;
 } // LCOV_EXCL_BR_LINE
 

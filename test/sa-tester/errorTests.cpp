@@ -854,13 +854,11 @@ TEST(sa_error, expr_not_implemented)
 // None of these functions is called: the signature alone must be rejected.
 TEST(sa_error, sig_not_implemented)
 {
-	const string defaultNotImpl = "has a default value; default values are not supported yet.";
+	const string untyped = "is declared without a type; type inference is not supported yet";
 	const pair<string, string> cases[] = {
-		{"error_544_param_untyped_default.pa", ":1:8: error: parameter 'x' " + defaultNotImpl},
-		{"error_545_param_typed_default.pa", ":1:18: error: parameter 'x' " + defaultNotImpl},
-		{"error_546_param_inherit_default.pa", ":1:21: error: parameter 'b' " + defaultNotImpl},
+		{"error_544_param_untyped_default.pa", ":1:8: error: variable 'x' " + untyped},
 		{"error_547_param_move_owner.pa", ":1:8: error: this parameter is not supported in this version."},
-		{"error_549_syscall_param_default.pa", ":1:11: error: parameter 'x' " + defaultNotImpl},
+		{"error_549_syscall_param_default.pa", ":1:11: error: variable 'x' " + untyped},
 		{"error_550_inner_func_param.pa", ":2:13: error: this parameter is not supported in this version."},
 		{"error_552_ret_untyped.pa", ":1:13: error: this return value is not supported in this version."},
 		{"error_941_take_undeclarable.pa", ":2:1: error: this statement is not supported in this version."},
@@ -1229,6 +1227,14 @@ TEST(sa_error, overload)
 		{"error_716_overload_no_match_chained_literal.pa", ":3:6: error: No function 'pp' takes (int64); there are pp(@int32), pp(@int64)."},
 		{"error_717_overload_no_match_aggregate.pa", ":3:1: error: No function 'f' takes (literal); there are f(int32), f(int64)."},
 		{"error_718_overload_no_match_no_args.pa", ":3:1: error: No function 'printf' takes (); there are printf(@int8, ...), printf(int32)."},
+		// A parameter is shown as written: '@[]T' is the same type as '@T'.
+		{"error_1046_overload_no_match_borrowed_array.pa", ":5:1: error: No function 'f' takes (@!T, T); there are f(@!T, @[]uint8), f(@!T, @[4]int32, [...]@[]uint8)."},
+		{"error_1048_overload_defaults_shown.pa", ":4:13: error: No function 'f' takes (@[2]int32); there are f(int32, bool = true, @[]uint8 = \"x\", Color = Color.GREEN, int32 = 3), f(@[]uint8, bool = false, Color = Color.RED)."},
+		{"error_1049_arg_count_with_defaults.pa", ":2:1: error: function 'f' takes 1 to 2 argument(s), but 3 given."},
+		{"error_1053_wide_char_int8.pa", ":1:10: error: character literal U+00E9 needs an integer type of 32 bits or more, not 'int8': no byte of UTF-8 text holds it."},
+		{"error_1054_wide_char_uint16.pa", ":1:12: error: character literal U+00E9 needs an integer type of 32 bits or more, not 'uint16': no byte of UTF-8 text holds it."},
+		{"error_1055_wide_char_bool.pa", ":1:10: error: character literal U+00E9 needs an integer type of 32 bits or more, not 'bool': no byte of UTF-8 text holds it."},
+		{"error_1056_variadic_too_few.pa", ":2:1: error: function 'f' takes at least 1 argument(s), but 0 given."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
@@ -1262,23 +1268,22 @@ TEST(sa_error, implicit_args)
 TEST(sa_error, for_loop)
 {
 	const pair<string, string> cases[] = {
-		{"error_838_for_not_array.pa", ":1:28: error: 'for' takes an array to iterate over."},
+		{"error_838_for_not_array.pa", ":1:28: error: 'for' takes an array, or a struct whose type has 'iter' and 'next', to iterate over."},
 		{"error_839_for_index_assign.pa", ":1:34: error: cannot assign to 'i': the index of a 'for' loop is read-only."},
 		{"error_840_for_index_addr_of.pa", ":1:46: error: cannot assign to 'i': the index of a 'for' loop is read-only."},
-		{"error_841_for_unsized.pa", ":1:35: error: 'len' takes a variable-length array or an array of constant size"},
-		{"error_842_for_runtime_size.pa", ":1:45: error: 'len' takes a variable-length array or an array of constant size"},
+		{"error_841_for_unsized.pa", ":1:35: error: 'len' cannot tell this array's length: an array declared with its size, or a variable-length array, keeps one, but a '[]T' does not."},
 		{"error_843_for_ro_write.pa", ":1:27: error: cannot bind a read-only pointer '@T' to a mutable pointer '@!T'."},
 		{"error_845_for_dup_name.pa", ":1:17: error: Variable 'a' is already declared."},
-		{"error_846_for_push.pa", ":1:37: error: cannot change the array a 'for' loop iterates over ('v')."},
-		{"error_847_for_copy_varr.pa", ":1:49: error: cannot change the array a 'for' loop iterates over ('v')."},
-		{"error_848_for_transfer_fixed.pa", ":1:43: error: cannot change the array a 'for' loop iterates over ('c')."},
-		{"error_849_for_transfer_source.pa", ":1:49: error: cannot change the array a 'for' loop iterates over ('v')."},
-		{"error_850_for_container_borrow.pa", ":3:30: error: cannot change the array a 'for' loop iterates over ('s.arr')."},
-		{"error_851_for_borrow_arg.pa", ":2:42: error: cannot change the array a 'for' loop iterates over ('p')."},
-		{"error_852_for_borrow_decl.pa", ":1:42: error: cannot change the array a 'for' loop iterates over ('p')."},
-		{"error_853_for_any_index.pa", ":1:39: error: cannot change the array a 'for' loop iterates over ('vv[]')."},
-		{"error_854_for_field_transfer.pa", ":2:33: error: cannot change the array a 'for' loop iterates over ('s.arr')."},
-		{"error_855_for_elem_copy.pa", ":1:51: error: cannot change the array a 'for' loop iterates over ('vv[]')."},
+		{"error_846_for_push.pa", ":1:37: error: cannot change what a 'for' loop iterates over ('v')."},
+		{"error_847_for_copy_varr.pa", ":1:49: error: cannot change what a 'for' loop iterates over ('v')."},
+		{"error_848_for_transfer_fixed.pa", ":1:43: error: cannot change what a 'for' loop iterates over ('c')."},
+		{"error_849_for_transfer_source.pa", ":1:49: error: cannot change what a 'for' loop iterates over ('v')."},
+		{"error_850_for_container_borrow.pa", ":3:30: error: cannot change what a 'for' loop iterates over ('s.arr')."},
+		{"error_851_for_borrow_arg.pa", ":2:42: error: cannot change what a 'for' loop iterates over ('p')."},
+		{"error_852_for_borrow_decl.pa", ":1:42: error: cannot change what a 'for' loop iterates over ('p')."},
+		{"error_853_for_any_index.pa", ":1:39: error: cannot change what a 'for' loop iterates over ('vv[]')."},
+		{"error_854_for_field_transfer.pa", ":2:33: error: cannot change what a 'for' loop iterates over ('s.arr')."},
+		{"error_855_for_elem_copy.pa", ":1:51: error: cannot change what a 'for' loop iterates over ('vv[]')."},
 		// '@a' is the element itself, written through a read-only view of the range.
 		{"error_869_for_ro_elem_write.pa", ":1:33: error: cannot write through read-only pointer '@T'"},
 		{"error_870_for_ro_elem_write_owned.pa", ":2:18: error: cannot write through read-only pointer '@T'"},
@@ -1331,6 +1336,38 @@ TEST(sa_error, unqualified_enumerator)
 		cleanTestEnv();
 		genModuleAst("../test/testdata/sa/lib_sa_types.pa");
 		string ast_out = moduleAstPath("../test/testdata/sa/" + file);
+		ASSERT_EQ(execTestCommand(
+			"palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, for_struct)
+{
+	const string iterShape = "error: 'for' over 'bag' needs 'func iter(@bag s) -> I' or 'func iter(@!bag s) -> I', "
+	                         "I a struct type, and 'func next(@!I it) -> bool ok, E'.";
+	const string nextShape = "error: 'for' needs 'func next(@!bagit it) -> bool ok, E' for the iterator 'bagit'.";
+	const string change = "error: cannot change what a 'for' loop iterates over ";
+	const pair<string, string> cases[] = {
+		{"error_1016_for_no_iter.pa", ":4:15: " + iterShape},
+		{"error_1017_for_iter_both.pa", ":6:15: error: 'for' over 'bag' finds both 'iter(@bag)' and 'iter(@!bag)'; a type has one of them."},
+		{"error_1018_for_no_next.pa", ":5:15: " + nextShape},
+		{"error_1019_for_next_shape.pa", ":6:15: " + nextShape},
+		{"error_1020_for_iter_prim.pa", ":5:15: " + iterShape},
+		{"error_1021_for_elem_value_borrow.pa", ":6:5: error: '@c' needs 'next' to return the element as a borrow '@E' or '@!E', but it returns 'int32'."},
+		{"error_1022_for_elem_ro_mut.pa", ":6:5: error: '@!c' needs 'next' to return the element as a borrow '@!E', but it returns '@int32'."},
+		{"error_1023_for_iter_mut_readonly.pa", ":8:18: error: cannot bind a read-only pointer '@T' to a mutable pointer '@!T'."},
+		{"error_1024_for_struct_borrow_arg.pa", ":9:23: " + change + "('g')."},
+		{"error_1025_for_struct_method.pa", ":9:19: " + change + "('g')."},
+		{"error_1026_for_struct_append.pa", ":9:19: " + change + "('g')."},
+		{"error_1027_for_struct_copy_into.pa", ":10:19: " + change + "('g')."},
+		{"error_1028_for_struct_move_out.pa", ":10:19: " + change + "('g')."},
+		{"error_1029_for_struct_field_range.pa", ":11:22: " + change + "('x.in')."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
 		ASSERT_EQ(execTestCommand(
 			"palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
 		string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
@@ -1436,6 +1473,52 @@ TEST(sa_error, give_and_take)
 		{"error_922_operator_func_ambiguous.pa", ":5:10: error: Ambiguous function call '-': it can mean -(@vec2), -(vec2)."},
 		{"error_923_operator_func_no_match.pa",
 		 ":4:10: error: No function '+' takes (vec2, flo64); there are +(@vec2, @vec2)."},
+		{"error_951_compare_func_ret.pa", ":2:1: error: operator function '==' must return 'bool'."},
+		{"error_952_compare_func_arity.pa", ":2:1: error: operator function '<' must take two parameters."},
+		{"error_953_compare_func_writable_param.pa",
+		 ":2:1: error: parameter 'a' of operator function '==' cannot be '@!': an operand is never passed for writing."},
+		{"error_954_compare_func_no_struct.pa",
+		 ":1:1: error: operator function '<' must take a struct ('T' or '@T') parameter."},
+		// Two structs once compared by address, silently.
+		{"error_955_struct_compare_no_func.pa", ":4:13: error: No operator function '==' takes (ver, ver)."},
+		// A derived '>' looks for '<' with the operands swapped.
+		{"error_956_derived_compare_no_func.pa", ":4:14: error: No operator function '<' takes (ver, int64)."},
+		{"error_957_c_struct_ptr_compare.pa",
+		 ":2:13: error: No operator function '==' takes (@!_IO_FILE, @!_IO_FILE)."},
+		{"error_958_wide_char_uint8.pa", ":1:11: error: character literal U+00E9 needs an integer type of 32 bits or more, not 'uint8': no byte of UTF-8 text holds it."},
+		// A comparison types no literal by the other operand, so it is checked there.
+		{"error_959_wide_char_compare_byte.pa", ":1:48: error: character literal U+00E9 needs an integer type of 32 bits or more, not 'uint8': no byte of UTF-8 text holds it."},
+		{"error_960_wide_char_int16_arg.pa", ":2:3: error: character literal U+20AC needs an integer type of 32 bits or more, not 'int16': no byte of UTF-8 text holds it."},
+		// A candidate fitting through its defaults is never ranked above another.
+		{"error_961_default_ambiguous.pa", ":3:1: error: Ambiguous function call 'f': it can mean f(int32), f(int32, int32 = 0)."},
+		{"error_962_default_ambiguous_widen.pa", ":3:1: error: Ambiguous function call 'f': it can mean f(int32, int32 = 0), f(int64)."},
+		{"error_963_default_not_last.pa", ":1:1: error: parameter 'c' needs a default value: it follows a parameter that has one, and parameters with default values come last."},
+		{"error_964_default_var.pa", ":2:18: error: the default value of parameter 'a' must be a compile-time constant: a number, 'true' or 'false', an enum value, a const, or a string literal."},
+		{"error_965_default_call.pa", ":2:18: error: the default value of parameter 'a' must be a compile-time constant: a number, 'true' or 'false', an enum value, a const, or a string literal."},
+		{"error_966_default_struct.pa", ":2:15: error: the default value of parameter 'p' must be a compile-time constant: a number, 'true' or 'false', an enum value, a const, or a string literal."},
+		{"error_967_operator_func_default.pa", ":2:21: error: parameter 'b' of operator function '+' cannot have a default value: an operator is always given its operands."},
+		{"error_968_default_too_few.pa", ":2:1: error: function 'f' takes 1 to 2 argument(s), but 0 given."},
+		{"error_969_default_too_many.pa", ":2:1: error: function 'f' takes 1 to 2 argument(s), but 3 given."},
+		{"error_970_default_out_of_range.pa", ":1:17: error: Integer literal '300' is out of range for type 'int8'."},
+		{"error_971_default_type.pa", ":1:18: error: cannot convert '[?]uint8' to 'int32'."},
+		// A function pointer's type has no defaults.
+		{"error_972_default_func_ptr.pa", ":3:1: error: function 'fp' takes 2 argument(s), but 1 given."},
+		{"error_973_default_narrowing.pa", ":1:18: error: Implicit conversion from 'flo64' to 'int32' is not allowed"},
+		{"error_974_variadic_elem_arr.pa", ":1:1: error: a variadic parameter's elements cannot be an array by value ('[n]T', '[]T', '[+]T') or '$T': each argument is given as a parameter is, so an array must be borrowed ('@[]T')."},
+		{"error_975_variadic_elem_embed.pa", ":1:1: error: a variadic parameter's elements cannot be an array by value ('[n]T', '[]T', '[+]T') or '$T': each argument is given as a parameter is, so an array must be borrowed ('@[]T')."},
+		{"error_976_variadic_with_default.pa", ":1:1: error: function 'f' cannot have both default values and a variadic parameter: an argument could be taken for either."},
+		{"error_977_operator_func_variadic.pa", ":2:1: error: operator function '+' cannot take a variadic parameter: an operator has fixed operands."},
+		{"error_978_syscall_variadic.pa", ":1:1: error: syscall 's' cannot take a variadic parameter."},
+		// A candidate fitting through its variadic parameter is never ranked above another.
+		{"error_979_variadic_ambiguous.pa", ":3:1: error: Ambiguous function call 'f': it can mean f(int32), f(int32, [...]int32)."},
+		{"error_980_variadic_too_few.pa", ":2:1: error: function 'f' takes at least 1 argument(s), but 0 given."},
+		{"error_981_variadic_elem_mismatch.pa", ":2:1: error: Implicit conversion from 'flo64' to 'int32' is not allowed"},
+		// The array is the caller's; only its elements are the function's.
+		{"error_982_variadic_move_array.pa", ":3:2: error: '->>' needs a source that owns its value: an owning variable, an owned field or element, a call result, or a pointer viewed as an owner ('p as T')."},
+		{"error_983_variadic_func_ptr.pa", ":2:1: error: cannot convert '@func([...]int64)' to '@func(@int64)'."},
+		{"error_984_variadic_c_callback.pa", ":4:1: error: cannot convert '@func(@void, [...]@void) -> int32' to '@func(@void, @void) -> int32'."},
+		{"error_985_variadic_temp_borrow.pa", ":5:1: error: a variadic argument of 'f' borrows a temporary value a call holds, which would be released before 'f' is called; keep the value in a variable first."},
+		{"error_986_variadic_take_array.pa", ":2:2: error: '<<=' needs a source that owns its value: an owning variable, an owned field or element, a call result, or a pointer viewed as an owner ('p as T')."},
 		{"error_924_keep_param_count_nested.pa",
 		 ":3:2: error: the cast's function type has 2 parameters, but '@func(int32)' has 1."},
 		{"error_925_given_twice.pa",

@@ -1,6 +1,6 @@
 # Palan Language Reference
 
-**Version:** v0.2.4
+**Version:** v0.2.5
 
 Palan is a compiled systems programming language designed as a simpler, safer, and more enjoyable alternative to C. It targets developers who want low-level control and direct access to C libraries, without the sharp edges of C syntax. Palan code compiles to native x86-64 binaries via AT&T assembly, with no runtime overhead.
 
@@ -50,7 +50,6 @@ printf("%ld %ld\n", ab, bc);   // 3 5
 11. [Modules and Program Structure](#11-modules-and-program-structure)
 12. [C Library Integration](#12-c-library-integration)
 13. [Raw Syscalls](#13-raw-syscalls)
-14. [Standard Library](#14-standard-library)
 
 ---
 
@@ -89,10 +88,17 @@ rejected. A minus sign directly on an integer literal is part of the value, so `
 is accepted. A constant expression (see [Constant Declarations](#constant-declarations)) is
 folded first, so its result is what must fit: `int8 x = 100 + 100;` is rejected.
 
-**Character literals:** `'a'` is an integer literal whose value is the character's ASCII code, so
-it follows the same rules as any other integer literal (`int8 c = 'a';` is accepted). Only
-printable ASCII characters and the escapes `\n` `\t` `\r` `\0` `\\` `\'` are allowed; an empty,
-multi-character, or non-ASCII literal is a compile error.
+**Character literals:** `'a'` is an integer literal whose value is the character's Unicode code
+point (`'a'` is 97, `'é'` is 233, `'😀'` is 128512), written as is or as `\u{X}` (`'\u{20AC}'` is
+`'€'`). The escapes `\n` `\t` `\r` `\0` `\\` `\'` are also allowed.
+
+- An ASCII character literal follows the rules of any other integer literal (`int8 c = 'a';`).
+- One of 128 or more takes only an integer type of 32 bits or more: `uint8 b = 'é';` and
+  `buf[i] == 'é'` for a `[]uint8 buf` are compile errors, since no byte of UTF-8 text holds it.
+- With no type to take (a C variadic argument, a comparison of two literals), it is an `int32`.
+- A literal holds one code point. An empty one, one of several code points (`e` followed by a
+  combining accent, a flag), or one that is not valid UTF-8 is a compile error; write a string
+  literal instead.
 
 **String literals:** `"..."` with the following escape sequences:
 
@@ -105,9 +111,11 @@ multi-character, or non-ASCII literal is a compile error.
 | `\\`   | backslash |
 | `\"`   | double quote |
 | `\xHH` | hex byte |
+| `\u{X}` | the UTF-8 bytes of code point `X` (1 to 6 hex digits; `"\u{20AC}"` is `E2 82 AC`) |
 
 A string literal holds bytes, not checked as UTF-8: `\xHH` may give any byte, and a byte written
-in the source is taken as it is.
+in the source is taken as it is. `\u{X}` (in a character literal too) must name a code point up to
+`10FFFF` that is not a surrogate (`D800` to `DFFF`).
 
 **Comments:** `// line comment`
 
@@ -264,9 +272,10 @@ adopts the destination's type instead of being checked for narrowing (this is wh
 `add(1, 2)` bind to `int32` parameters without a cast).
 
 A pointer or struct operand has no common type with anything under this rule: using one with
-`+ - * / % & | ^` is a compile error (Palan has no pointer arithmetic). A comparison is the
-exception — `p == NULL` and similar pointer comparisons are valid and leave both operands
-unconverted; a comparison's result is always `bool` regardless of operand type.
+`+ - * / % & | ^` is a compile error (Palan has no pointer arithmetic). A comparison of pointers
+is valid and leaves both operands unconverted (`p == NULL`); a comparison with a struct operand is
+a call of the type's comparison function (see [Operator Functions](#operator-functions)). A
+comparison's result is always `bool` regardless of operand type.
 
 ### Variadic Argument Promotion
 
@@ -489,6 +498,7 @@ func addOne(MyInt n) -> MyInt result {
 | Bitwise NOT | `~expr` | `~a` |
 | Left shift | `expr <<< expr` | `a <<< 3` |
 | Logical right shift | `expr >>> expr` | `a >>> 3` |
+| Append | `expr << expr` (a struct defines it, see [Operator Functions](#operator-functions)) | `s << "abc" << t` |
 | Grouping | `(expr)` | `-(a + b)` |
 | Comparison | `expr < expr`, `<=`, `>`, `>=`, `==`, `!=` | `x < 10` |
 | Function call | `name(args)` | `add(3, 4)` |
@@ -501,7 +511,7 @@ func addOne(MyInt n) -> MyInt result {
 | Assignment expression | `expr -> var` | `x + 1 -> x` |
 
 Operator precedence (high to low): unary minus / `!` / `~`, `as`, `* / % & | ^`, `+ -`,
-`<<< >>>`, `->` / `->>`, comparisons, `&&`, `||`. All binary operators are left-associative.
+`<<< >>> <<`, `->` / `->>`, comparisons, `&&`, `||`. All binary operators are left-associative.
 
 `->` sits below arithmetic, so `x + 1 -> x` stores the sum, and above comparisons, so a chained
 call can be compared: `i < a -> len()` is `i < (a -> len())`. To store a comparison or a logical
@@ -584,7 +594,7 @@ import "lib.pa";           // import Palan source file (see §11)
 if expr { ... }            // conditional (see §6)
 if expr { ... } else { ... }  // conditional with else (see §6)
 while expr { ... }         // loop (see §6)
-for copy a, i in arr { ... }  // loop over an array's elements (see §6)
+for copy a, i in arr { ... }  // loop over an array's elements, or a struct's (see §6)
 ```
 
 ### If / If-Else Statements
@@ -694,6 +704,45 @@ printf("\n");                          // 0:20 1:40 2:60
   `@!arr` are compile errors. Writing elements, changing an inner array (`m[0].push(1)` in
   `for copy r in m`) and `@arr` are fine. A change made through another borrow of `arr` is not
   detected.
+
+A struct can be iterated over when its type defines two functions, `iter` and `next`:
+
+```palan
+cinclude <stdio.h>;
+
+type bag { [+]int32 v; };
+type bagit { @bag b; int64 pos; };     // the iterator: where the loop is
+func iter(@bag b) -> bagit { bagit r; b -> r.b; return r; }
+func next(@!bagit it) -> bool ok, int32 c
+{
+    false -> ok;
+    if it.pos >= len(@it.b.v) { return; }
+    it.b.v[it.pos] -> c;
+    true -> ok;
+    it.pos + 1 -> it.pos;
+}
+
+bag g;
+g.v.push(10); g.v.push(20);
+for copy c, i in g { printf("%ld:%d ", i, c); }    // 0:10 1:20
+```
+
+- `for copy c in s` calls `iter(@s)` once to get an iterator, then calls `next` with it before
+  each iteration, running the body while `ok` is true. When `ok` is false the element is not used.
+- `iter` is `func iter(@T s) -> I` or `func iter(@!T s) -> I`, one of the two, where `I` is a
+  struct type returned by value; with `@!T`, `s` must be writable. `next` is
+  `func next(@!I it) -> bool ok, E`. Another shape, or a type without them, is a compile error
+  naming the shapes expected. They are found also in a module imported under an alias, since
+  `for` never writes their names.
+- What `next` returns decides the loop variable: an element `E` by value allows `copy` only (a
+  struct is received as returned, without a copy, and freed at the end of each iteration); `@E`
+  allows `copy` and `@`; `@!E` allows all three. With `@c` and `@!c`, `c` stands for the element
+  itself, as for an array.
+- `i` counts the iterations from 0. A type may be written for it, which is not checked to fit,
+  as for an array whose length is known only at run time.
+- `s` is evaluated once; a struct returned by a call is freed after the loop. The body cannot
+  change `s` itself: `->` or `->>` into or out of it, and passing `@!s` (also `s.f()` and
+  `s << x`), are compile errors. Reading `s` and writing its fields are fine.
 
 ### break / continue
 
@@ -832,6 +881,86 @@ func range(int32 from) -> int32 lo = from, int32 hi = from + 10 { }
 
 A struct-type named return is allocated at function entry and can't have an initializer. Declaring it again in the body is an error.
 
+### Default Arguments
+
+A parameter may have a default value, used when a call leaves the argument out. Parameters
+with defaults come last:
+
+```palan
+cinclude <stdio.h>;
+
+type Align enum { Left, Right };
+const WIDTH = 8;
+
+func pad(int32 n, int32 width = WIDTH, Align a = Align.Right, @[]uint8 mark = "|") {
+    int32 w = width;
+    if a == Align.Left { -width -> w; }
+    printf("%s%*d%s\n", mark, w, n, mark);
+}
+
+pad(42);                   // pad(42, 8, Align.Right, "|")
+pad(42, 4);                // pad(42, 4, Align.Right, "|")
+42 -> pad(3, Align.Left);  // chained and method-form calls use defaults too
+```
+
+- A default is a constant: a number, `true` or `false`, an enum value, a `const` (or an
+  expression of them, such as `WIDTH * 2`), or a string literal for a parameter taking one. A
+  variable, a function call, or a value for a struct parameter is a compile error.
+- The default is filled in where the function is called. When a module or library changes a
+  default, the programs calling the function are compiled again with the new value; the
+  function's own code does not change.
+- Leaving out an argument that has no default is a compile error.
+- An operator function (§7 [Operator Functions](#operator-functions)) cannot have defaults.
+- A function pointer type has no defaults: a call through a pointer gives every argument.
+- With [overloading](#overloading), see there for how a call that could use a default is chosen.
+
+### Variadic Arguments
+
+`[...]T` as the last parameter takes any number of arguments of type `T`, none included. In the
+function the parameter is an array whose length is the number of arguments:
+
+```palan
+cinclude <stdio.h>;
+
+func sum(int32 base, [...]int64 xs) -> int64 t {
+    base -> t;
+    for copy x in xs { t + x -> t; }
+}
+
+func say(@[]uint8 sep, [...]@[]uint8 words) {
+    for copy w, i in words {
+        if i > 0 { printf("%s", sep); }
+        printf("%s", w);
+    }
+    printf(" (%ld)\n", len(@words));
+}
+
+printf("%ld\n", sum(1, 2, 3));   // 6
+printf("%ld\n", sum(1));         // 1
+say(", ", "a", "b", "c");         // a, b, c (3)
+say(", ");                        //  (0)
+```
+
+- Each argument is given as it would be to a parameter of type `T`: converted the same way, a
+  struct `T` copied (or taken over from a call returning it), a borrow written `@x`. `T` may be a
+  primitive, an enum, a struct, a borrow (`@T`, `@!T`, `@[]uint8`), but not an array by value
+  (`[n]T`, `[]T`, `[+]T`) or `$T`.
+- In the function the parameter works as a local array sized at run time
+  (see [Sizes Known Only at Run Time](#sizes-known-only-at-run-time)): `len(@xs)`, `xs[i]`,
+  `for`, and `->` copying it to or from another array. Its elements may be written. The array
+  itself belongs to the call, so it cannot be moved out (`->>`, `<<=`) or given away.
+- Struct elements are the function's: those still there when it returns are freed, and one can
+  be taken out with `xs[i] ->> v`, which leaves NULL in its place.
+- A function cannot have both [default arguments](#default-arguments) and a variadic parameter.
+  An operator function and a `syscall` cannot be variadic.
+- A function pointer type can end with `[...]T` (`@func(int32, [...]int64) -> int64`) and is
+  called the same way. It is a different type from one taking `@[]T`, and a variadic function
+  cannot be given to a C function as a callback.
+- An existing array cannot be passed as the arguments: `sum(1, a)` for an array `a` is an
+  error.
+- An argument borrowing a temporary value held inside another call, such as `f(id(@mk()))` where
+  `id` returns the borrow it is given, is a compile error: keep the value in a variable first.
+
 ### Method-Form Calls
 
 A function whose first parameter is a writable borrow (`@!T`, `@![n]T`, or a C function's
@@ -941,7 +1070,8 @@ printf("%d\n", o.op(4));           // 8
 - A parameter or return type is a primitive, a borrowed pointer (`@T`/`@!T`, including another
   function pointer), or an owned struct or array (`T`, `[n]T` with a constant `n`, `[+]T`), which
   is passed and returned as a function passes it: the called function owns an owned argument and
-  frees it, and the caller owns an owned return value. A `$T` or `[]T` is not allowed.
+  frees it, and the caller owns an owned return value. A `$T` or `[]T` is not allowed. The last
+  parameter can be [variadic](#variadic-arguments) (`[...]T`).
 - A function becomes a function pointer by writing its name where a value is expected. This works
   for a Palan function returning nothing or one value (a single named return counts as one), an
   imported function, and a C function that is not variadic. A function with several return
@@ -998,6 +1128,14 @@ show(2.5);          // float 2.5
   written where no function pointer type is expected is a compile error.
 - Receiving several return values (`(a, b) = f(x)`) needs the functions returning that many to
   return the same types.
+- If one of several functions fitting the arguments fits only by using its
+  [defaults](#default-arguments) or its [variadic parameter](#variadic-arguments), the call is
+  ambiguous: with `f(int32)` and
+  `f(int32, int32 = 0)`, `f(1)` is a compile error, and `f(1, 0)` calls the second. A function
+  using defaults or a variadic parameter is called when it is the only one that fits.
+- A string literal [converts](#conversion-from-a-string-literal) to a struct parameter only when no
+  function fits without the conversion, so `f(@[]uint8)` is chosen over `f(@name)` for `f("Ann")`.
+  Among those needing it, the rules above apply, a converted argument counting as exact.
 
 ### Operator Functions
 
@@ -1033,7 +1171,72 @@ printf("%g %g %g\n", c.x, c.y, c.z);
   struct (`T` or `@T`), and none can be `@!`.
 - An operator over numbers only is the built-in one and cannot be defined.
 - A struct an operator returns can be borrowed as a call argument: `f(@(a + b))`.
-- Comparison operators cannot be defined.
+- `func ->` is not an operator function but part of a type: see
+  [A Type's Own Copy](#a-types-own-copy-func--).
+
+#### Comparison Functions
+
+A type defines `==` and `<`; `!=`, `>`, `<=` and `>=` are derived from them and cannot be
+defined:
+
+```palan
+cinclude <stdio.h>;
+
+type ver { int32 major; int32 minor; };
+
+func ==(@ver a, @ver b) -> bool { return a.major == b.major && a.minor == b.minor; }
+func <(@ver a, @ver b) -> bool {
+    if (a.major != b.major) { return a.major < b.major; }
+    return a.minor < b.minor;
+}
+
+ver a = [1, 2];
+ver b = [1, 3];
+printf("%d %d %d\n", a == b, a != b, a >= b);   // 0 1 0
+```
+
+- `a != b` is `!(a == b)`, `a > b` is `b < a`, `a <= b` is `!(b < a)` and `a >= b` is
+  `!(a < b)`. `a` is still evaluated before `b`. A type without an order defines only `==`.
+- A comparison function takes two parameters, at least one a struct (`T` or `@T`), none `@!`, and
+  returns `bool`. The two types may differ: `a == b` looks for `==(A, B)` only, never `==(B, A)`,
+  and `5 > s` looks for `<(S, int32)`.
+- A comparison with a struct operand — a struct variable, field, borrow or returned struct, of a
+  Palan type or a C one — calls these functions; with no function for the operands' types it is
+  a compile error. Two structs are never compared by address.
+- A comparison with `NULL` stays a pointer comparison: `p == NULL` for a borrow `@T p`. Whether
+  two borrows point to the same value is written `int64(a) == int64(b)`.
+
+#### Append
+
+A type defines `<<` to append to a value of it in place:
+
+```palan
+cinclude <stdio.h>;
+
+type tally { int64 sum; int32 count; };
+
+func <<(@!tally t, int64 x) -> @!tally {
+    t.sum + x -> t.sum;
+    t.count + 1 -> t.count;
+    return t;
+}
+
+tally t;
+t << 3 << 4 + 5;
+printf("%ld %d\n", t.sum, t.count);   // 12 2
+```
+
+- The function is `<<(@!T s, X x) -> @!T`: two parameters, the first a `@!` borrow of a struct, the
+  second anything but `@!`, and it returns `@!T` of the same `T`. By contract it returns `s`
+  itself, so that `s << a << b` appends both to `s`; the compiler cannot check that.
+- The left operand is what a method-form call's receiver may be (`s.f()`, see
+  [Method-Form Calls](#method-form-calls)), passed as `@!s` without writing `@!`: a variable, a field or an
+  element, or a `@!T` borrow; also a call returning `@!T`, which is how `s << a << b` continues.
+  A `@T` borrow is an error, and so is a struct a call or an operator returns: what is appended to
+  a temporary would be lost.
+- The right operand is passed as an operand of `+` is, and chooses among overloads the same way.
+- `<<` binds as the shifts do: `s << a + b` appends `a + b`, and `s << x -> f()` is `f(s << x)`.
+- `[+]T` has no `<<`; it uses `push`.
 
 ---
 
@@ -1072,8 +1275,12 @@ int64 n = 100;
 [n]int32 b <<= a;        // a is now NULL
 [n]int32 c;
 b -> c;                  // copies n elements
+int64 len_a = len(@a);   // n
+for copy x in c { }      // n times
 ```
 
+- `len` and `for` read the size kept, as for a row of the variable (`len(@m[0])`,
+  `for copy x in m[0]`).
 - A `[]T` parameter keeps no size, so it cannot be copied from into an array, and a `[+]T`
   cannot copy from an array whose size is known only at run time.
 - A parameter's or return value's sizes are known at compile time.
@@ -1330,6 +1537,38 @@ minos[0][3] -> mino[0];      // copy one struct element
 - A struct returned by a function is copied the same way, and then freed. A `[]T` return has
   no size known at compile time, so it cannot be copied into an array.
 
+#### A Type's Own Copy (`func ->`)
+
+A struct type can define what copying into an existing value of it does:
+
+```palan
+cinclude <stdio.h>;
+
+type Text { [+]uint8 bytes; int32 mode; };
+// Keeps dst's mode: only the bytes are copied.
+func ->(@Text src, @!Text dst) { src.bytes -> dst.bytes; }
+
+Text a; 1 -> a.mode;
+Text b; 2 -> b.mode;
+a -> b;            // calls ->(@a, @!b): b.mode stays 2
+Text c = a;        // a new value: copied whole, c.mode is 1
+```
+
+- The function is `func ->(@T src, @!T dst)`: two parameters of one struct type, no defaults and
+  no return value. It is part of the type: it is defined at the top level of the module defining
+  `T`, is not exported, and comes with `T` into every module `T` reaches, also one reaching `T`
+  only as a field of another type. A C struct has none.
+- It is called wherever a value of `T` that already exists is copied into, nested or not: `x -> v`,
+  a field of `T` when the struct holding it is copied into (`p -> q` calls it for `q.name` when
+  `name` is a `T`, `$T` or `[n]$T` field), each element of a `[n]T`, and each element a `[+]T`
+  already has. So `p -> q` and `p.name -> q.name` agree. The rest of a copy is as without it.
+- A new value is copied whole and never calls it: initializing a declaration (`T c = a;`), the
+  elements a `[+]T` gains by a copy, `->>` and `<<=`, an argument for a `T` parameter, and a
+  returned value.
+- An array or struct literal written into an existing value (`[[1, 2], 0] -> a`) is made as a new
+  value first, which is then copied in as above.
+- `src` and `dst` may be the same value (`s -> s`); the function must handle that.
+
 ### Ownership Transfer (`->>`)
 
 `val ->> arr[i]` transfers ownership of `val` into an owned element or row: a struct of a
@@ -1584,8 +1823,9 @@ printf("\n");                // 1 2 3
   a constant no less than the literal's length.
 - `$[+]T v` keeps the array's header in the stack frame; its elements are on the heap either way.
 - `len` also takes an array of constant size (`len(@a)` for `[4]int32 a` is 4), and is then a
-  constant: `const N = len(@a);`. An array whose size is known only at run time, or a `[]T`, has
-  no length to give and is a compile error.
+  constant: `const N = len(@a);`. For an array whose size is known only at run time it reads the
+  size the variable keeps (see [Sizes Known Only at Run Time](#sizes-known-only-at-run-time)),
+  which is not a constant. A `[]T` has no length to give and is a compile error.
 - A function with the same parameter types as a built-in one is a compile error.
 
 **Borrowing and passing.** `@[+]T` and `@![+]T` borrow the array, as for other arrays (see
@@ -1894,6 +2134,8 @@ with `->` first.
   With `$` (`$Point p;`) the struct is placed in the stack frame instead; see
   [Stack Structs](#stack-structs-t).
 - **Layout**: C ABI-compatible (natural alignment, padding, total size rounded up to max-field alignment). Matches System V AMD64 ABI struct layout.
+- **Visibility**: every field is public; an exported struct may hide fields from other files
+  (see [Hidden and Read-only Fields](#hidden-and-read-only-fields)).
 
 ### Stack Structs (`$T`)
 
@@ -2164,6 +2406,37 @@ own it. So is binding a pointer returned by a call that was given such a struct
 
 Returning a struct the function doesn't own — a parameter, a field, or an array element — returns
 a copy of it (including what it owns), which the caller owns.
+
+### Conversion from a String Literal
+
+A function named like a struct type, returning it and callable with a string literal alone (its
+other parameters have [defaults](#default-arguments) or are [variadic](#variadic-arguments)),
+converts a string literal to that type wherever a value of the type, or a `@T` of it, is expected:
+
+```palan
+type name { [+]uint8 bytes; };
+func name(@[]uint8 cs) -> name n { ... }
+func greet(@name who) { ... }
+
+name a = "Ann";          // name a = name("Ann");
+"Bob" -> a;              // name("Bob") -> a;
+greet("Cy");             // greet(@name("Cy"));
+```
+
+- It happens in a variable's initializer, the source of `->`, an argument (a variadic one too),
+  `return`, an element of an array literal, a field of a struct literal, and an operand of an
+  [operator function](#operator-functions) (`"Ann" == a`). It is the call written there: `T`
+  receives the returned struct as from any call, and a `@T` argument or operand borrows it until
+  the statement has been evaluated. Binding it to a `@T` variable, field or return is a compile
+  error, since nothing would own it: declare a `T` variable initialized with the literal and
+  borrow that.
+- Only a string literal converts. Another value is converted by calling the function
+  (`name(getenv("HOME"))`). Nothing converts for a `@!T`, and `"Ann" as name` is a compile error.
+- The functions are those of the name visible at the literal, including those of a module
+  imported with an alias (`import "names.pa" as N;` converts for `N.name`). If several can be
+  called with the literal alone, it is a compile error.
+- In an [overloaded](#overloading) call, a candidate needing a conversion is considered only when
+  no other fits.
 
 ### Declaration Order
 
@@ -2458,6 +2731,43 @@ flo32 l = len2(@p);
 - Two files may import each other and use each other's types anywhere, including in type
   declarations, as long as no type contains itself (see [Declaration order](#declaration-order)).
 
+### Hidden and Read-only Fields
+
+A field of an exported struct may start with `private` (not visible outside the file declaring the
+struct) or `readonly` (read only outside it). Unmarked fields are public. Inside the file, every
+field is used as usual.
+
+```palan
+// counter.pa
+export type Counter {
+    private [+]int64 log;
+    readonly int64 count = 0;
+};
+export func add(@!Counter c, int64 v) { c.log.push(v); c.count + 1 -> c.count; }
+```
+
+```palan
+// main.pa
+import "counter.pa";
+Counter c;
+c.add(3);
+int64 n = c.count;     // reading is fine
+3 -> c.count;          // compile error: read-only outside counter.pa
+int64 x = c.log[0];    // compile error: private
+```
+
+- Outside the file, a `readonly` field and whatever is reached through it are read only: `->`
+  into it, `@!c.count`, a method-form call or `push` on it, `<<=` out of it, and writing an
+  element, a field or a pointee through it are compile errors. A `readonly` pointer field is read
+  as a read-only pointer (`@T`). To let other files change it, the declaring file provides a function.
+- Operations on the whole value are allowed outside: copying, moving, `->`, passing `c` or `@!c`.
+- A struct literal written outside sets only public fields, by name: naming a hidden field, or a
+  positional literal of a struct having one, is a compile error. A hidden field without an
+  [initializer](#field-initializers) thus makes such a literal impossible outside.
+- `private` and `readonly` are not reserved words: they are names everywhere else. On a field of a
+  struct that is not exported, they are a compile error.
+- A library's interface lists hidden fields with their marks, since the struct's layout needs them.
+
 ### Module Names (`library`)
 
 A module's name comes from its file alone, not from where it is or what imports it. It is the file
@@ -2510,7 +2820,8 @@ Vec a = vec(3.0, 4.0);
 
 - The library's sources are not needed, only its `.pai` and `.a`.
 - A `libpath` may be written in any file and adds a place to look for the whole program.
-- `std` is found with the compiler, and a `libpath` cannot replace it.
+- `std` is found with the compiler, and a `libpath` cannot replace it. Its modules are described
+  in the [Palan Standard Library Reference](PalanStdLibReference.md).
 - A package found under two `libpath`s is an error, as is a library built by another version of
   Palan or for another target.
 - A library that imports another needs that one found too, through the program's `libpath`s.
@@ -3126,59 +3437,3 @@ syscall sys_write(int32 fd, @void buf, uint64 count) -> int64 = SYS_write;
 - `syscall` is a reserved word, so a cinclude'd `<unistd.h>`'s `syscall()` wrapper function
   cannot be called from a file that uses this feature.
 
----
-
-## 14. Standard Library
-
-The standard library is the library `std`, found with the compiler (see
-[Using a Library](#using-a-library)). Its modules are ordinary Palan; nothing in it is known to
-the compiler.
-
-### std/utf8
-
-```palan
-cinclude <stdio.h>;
-import <std/utf8>;
-
-utf8 s = toUtf8("h\xC3\xA9llo", utf8mode.KEEP_INVALID);
-s.append(", ");
-s.appendChar(8364);                         // U+20AC
-printf("%s %ld %ld\n", s -> cstr(), s -> byteLen(), s -> charCount());   // héllo, € 11 8
-
-int64 pos = 0;
-while pos < s -> byteLen() {
-    int32 c = s -> nextChar(@!pos);         // -1 for an invalid part
-    printf("U+%04X ", c);
-}
-```
-
-`utf8` is UTF-8 text held with a NUL at the end, so `cstr` gives it to C as it is. A declared
-`utf8` is empty. Its `mode` says what it does with bytes that are not valid UTF-8 when it is made
-or added to, and `hadInvalid` tells that such a part was met:
-
-| `utf8mode` | Invalid part |
-|------------|--------------|
-| `KEEP_INVALID` (a declared `utf8`'s) | kept as it is |
-| `EMPTY_ON_INVALID` | the text becomes empty, and stays empty whatever is added |
-| `REPLACE_INVALID` | replaced with U+FFFD |
-
-An invalid part is the longest start of a valid sequence, or else one byte, as Unicode
-recommends: `"A\xE2\x82B"` has one, which `REPLACE_INVALID` makes `"A\xEF\xBF\xBDB"`. Only a
-`KEEP_INVALID` text holds invalid bytes; `hadInvalid` is cleared only when adding to one
-completes a sequence cut at its end.
-
-| Function | Meaning |
-|----------|---------|
-| `toUtf8(@[]uint8 cs, utf8mode m) -> utf8` | the NUL-terminated bytes `cs`, made by the rules of `m` |
-| `cstr(@utf8 s) -> @[]uint8` | the NUL-terminated bytes, until `s` is added to |
-| `byteLen(@utf8 s) -> int64` | the number of bytes, without the NUL |
-| `nextChar(@utf8 s, @!int64 pos) -> int32` | the code point at byte `pos`, moving `pos` past it; `-1` for an invalid part |
-| `charCount(@utf8 s) -> int64` | the number of code points, an invalid part counting as one |
-| `append(@!utf8 s, @utf8 t)` | adds `t`, by the rules of `s`'s mode |
-| `append(@!utf8 s, @[]uint8 cs)` | adds the NUL-terminated bytes `cs`, by the rules of `s`'s mode |
-| `appendChar(@!utf8 s, int32 c)` | adds the code point `c`; a surrogate, a value beyond U+10FFFF or a negative one is an invalid part, which `KEEP_INVALID` keeps as nothing |
-| `replaced(@utf8 s) -> utf8` | a copy in `REPLACE_INVALID` mode with each invalid part replaced, keeping `hadInvalid` |
-
-A function that only reads is called as `s -> f()`, and one that changes `s` as `s.f()`.
-`bytes`, `hadInvalid` and `mode` are fields that can be read; writing them directly can break
-the NUL at the end or the meaning of `hadInvalid` (see doc/Issues.md).

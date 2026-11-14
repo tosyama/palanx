@@ -4,6 +4,7 @@
 /// @copyright 2026 YAMAGUCHI Toshinobu
 
 #include <algorithm>
+#include <cstdio>
 #include <map>
 #include <optional>
 #include <set>
@@ -21,18 +22,18 @@ class Writer {
 public:
 	Writer(const json& ast, const vector<string>& libs) : ast_(ast), libs_(libs) {}
 	string write();
+	string type(const json& t) const;
 
 private:
 	const json& ast_;
 	const vector<string>& libs_;
 
 	[[noreturn]] void fail(const json& node, const string& what) const;
-	string type(const json& t) const;
 	string expr(const json& e) const;
 	string operand(const json& e) const;
 	string args(const json& list) const;
-	string vars(const json& node, const json& list) const;
-	string funcDecl(const json& f) const;
+	string vars(const json& node, const json& list, bool isRets) const;
+	string funcDecl(const json& f, bool exported = true) const;
 	string statement(const json& s) const;
 };
 
@@ -73,7 +74,8 @@ string Writer::type(const json& t) const
 		return isVoid ? s : s + " -> " + type(ret);
 	}
 	// Only "arr" is left: the other kinds come from C headers, whose declarations are not written.
-	string mark = t["specifier"] == "fixed" ? "#" : t["specifier"] == "variable" ? "+" : "";
+	string mark = t["specifier"] == "fixed" ? "#" : t["specifier"] == "variable" ? "+"
+		: t["specifier"] == "variadic" ? "..." : "";
 	string size = t["size-expr"].is_null() ? "" : expr(t["size-expr"]);
 	return "[" + mark + size + "]" + (t.value("embedded", false) ? "$" : "") + type(t["base-type"]);
 }
@@ -106,6 +108,12 @@ string Writer::expr(const json& e) const
 	if (kind == "lit-int") {
 		bool isBool = e.contains("value-type") && e["value-type"].value("type-name", "") == "bool";
 		if (isBool) return e["value"] == "1" ? "true" : "false";
+		// Written as a character, it keeps the type restriction a character literal has.
+		if (e.value("char", false)) {
+			char esc[16];
+			snprintf(esc, sizeof(esc), "'\\u{%lX}'", stol(e["value"].get<string>()));
+			return string(esc);
+		}
 		return e["value"];
 	}
 	if (kind == "lit-uint") return e["value"].get<string>() + "u";
@@ -128,25 +136,26 @@ string Writer::expr(const json& e) const
 	fail(e, "this expression");
 }
 
-string Writer::vars(const json& node, const json& list) const
+// A parameter's default is filled in by the caller; a named return's initial value is run by the body.
+string Writer::vars(const json& node, const json& list, bool isRets) const
 {
 	string s;
 	const char* sep = "";
 	for (auto& v : list) {
 		if (!v.contains("var-type")) fail(v.contains("loc") ? v : node, "this parameter or return");
-		if (v.contains("init")) fail(v["init"], "a parameter's default value");
 		s += sep + type(v["var-type"]) + " " + v["name"].get<string>();
+		if (v.contains("init") && !isRets) s += " = " + expr(v["init"]);
 		sep = ", ";
 	}
 	return s;
 }
 
-string Writer::funcDecl(const json& f) const
+string Writer::funcDecl(const json& f, bool exported) const
 {
 	bool isSyscall = f["func-type"] == "syscall";
-	string s = string("export ") + (isSyscall ? "syscall " : "func ") + f["name"].get<string>()
-		+ "(" + vars(f, f["parameters"]) + ")";
-	if (f.contains("rets")) s += " -> " + vars(f, f["rets"]);
+	string s = string(exported ? "export " : "") + (isSyscall ? "syscall " : "func ") + f["name"].get<string>()
+		+ "(" + vars(f, f["parameters"], false) + ")";
+	if (f.contains("rets")) s += " -> " + vars(f, f["rets"], true);
 	else if (f.contains("ret-type")) s += " -> " + type(f["ret-type"]);
 	if (isSyscall) s += " = " + expr(f["syscall-number"]);
 	return s + ";\n";
@@ -171,7 +180,8 @@ string Writer::statement(const json& s) const
 	if (kind == "struct-def") {
 		string out = exported + "type " + name + " {\n";
 		for (auto& f : s["fields"])
-			out += "\t" + type(f["var-type"]) + " " + f["name"].get<string>()
+			out += "\t" + (f.contains("access") ? f["access"].get<string>() + " " : "") // LCOV_EXCL_BR_LINE
+				+ type(f["var-type"]) + " " + f["name"].get<string>()
 				+ (f.contains("init") ? " = " + expr(f["init"]) : "") + ";\n";
 		return out + "};\n";
 	}
@@ -318,6 +328,9 @@ string Writer::write()
 		}
 	}
 	for (auto& f : ast_.value("export", json::array())) out += funcDecl(f);
+	// A type's '->' comes with the type, unexported.
+	for (auto& f : ast_["ast"].value("functions", json::array()))
+		if (f["name"] == "->") out += funcDecl(f, false);
 	return out;
 }
 
@@ -553,8 +566,19 @@ json Merger::merged()
 			}
 		}
 	}
+	json copyFuncs = json::array();
+	for (int m = 0; m < modules_.size(); m++)
+		for (auto& f : (*modules_[m])["ast"].value("functions", json::array())) {
+			if (f["name"] != "->") continue;
+			auto key = find(m, f["parameters"][0]["var-type"]["base-type"]["type-name"].get<string>());
+			if (!key || !reached_.count(*key)) continue;
+			json decl = f;
+			decl.erase("block");
+			walk(decl["parameters"], m, true);
+			copyFuncs.push_back(move(decl));
+		} // LCOV_EXCL_BR_LINE
 	return {{"original", main["original"]}, {"module", main["module"]}, {"target", main["target"]},
-		{"ast", {{"statements", move(out)}}}, {"export", move(funcs)}};
+		{"ast", {{"statements", move(out)}, {"functions", move(copyFuncs)}}}, {"export", move(funcs)}}; // LCOV_EXCL_BR_LINE
 } // LCOV_EXCL_BR_LINE -- closing brace of a function with many local json/string temporaries; the branch coverpoints here are compiler-generated destructor dispatch, not source-level conditionals
 
 } // namespace
@@ -574,3 +598,10 @@ string writeLibraryInterface(const json& main, const vector<json>& internals)
 	json merged = Merger(main, internals).merged();
 	return Writer(merged, libs).write();
 }
+
+string writeType(const json& astType)
+{
+	static const json noModule = {{"original", ""}}; // LCOV_EXCL_BR_LINE
+	static const vector<string> noLibs; // LCOV_EXCL_BR_LINE
+	return Writer(noModule, noLibs).type(astType);
+} // LCOV_EXCL_BR_LINE

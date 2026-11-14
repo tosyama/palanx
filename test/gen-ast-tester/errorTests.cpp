@@ -56,6 +56,8 @@ TEST(gen_ast_error, interface_only_forms_in_source) {
 	struct { string source, expected; } cases[] = {
 		{"int32 x = 1;\nexport func f() -> int32;\n",
 		 "m.pa:2:1: error: a function without a body is accepted only in an interface file (.pai)."},
+		{"type T { int32 a; };\nfunc ->(@T src, @!T dst);\n",
+		 "m.pa:2:1: error: a function without a body is accepted only in an interface file (.pai)."},
 		{"link \"m\";\n", "m.pa:1:1: error: 'link' is accepted only in an interface file (.pai)."},
 		{"built \"0\";\n", "m.pa:1:1: error: 'built' is accepted only in an interface file (.pai)."},
 		{"foo \"m\";\n", "m.pa:1:1: error: syntax error, unexpected string after 'foo'."},
@@ -65,6 +67,29 @@ TEST(gen_ast_error, interface_only_forms_in_source) {
 		ofstream("out/m.pa") << c.source;
 		string out = execTestCommand("palan-gen-ast out/m.pa");
 		ASSERT_NE(out.find(c.expected), string::npos) << out;
+	}
+}
+
+TEST(gen_ast_error, variadic_not_last) {
+	const string message = "error: a variadic parameter ('[...]T') must be the last parameter.";
+	struct { string source, location; } cases[] = {
+		{"func f([...]int32 xs, int32 a) { }\n", "m.pa:1:8: "},
+		{"func f(int32 a, [...]int32 xs, int32 b) { }\n", "m.pa:1:17: "},
+		{"@func([...]int32, int32) fp;\n", "m.pa:1:7: "},
+		{"@func(int32, [...]int32, int32) fp;\n", "m.pa:1:14: "},
+	};
+	for (auto& c : cases) {
+		cleanTestEnv();
+		ofstream("out/m.pa") << c.source;
+		string out = execTestCommand("palan-gen-ast out/m.pa");
+		ASSERT_NE(out.find(c.location + message), string::npos) << c.source << out;
+	}
+	// Only a parameter is variadic.
+	for (string source : {"[...]int32 x;\n", "func f() -> [...]int32 { }\n"}) {
+		cleanTestEnv();
+		ofstream("out/m.pa") << source;
+		string out = execTestCommand("palan-gen-ast out/m.pa");
+		ASSERT_NE(out.find("syntax error"), string::npos) << source << out;
 	}
 }
 
@@ -111,7 +136,6 @@ TEST(gen_ast_error, cinclude_export_not_top_level) {
 
 TEST(gen_ast_error, interface_cannot_state) {
 	struct { string source, expected; } cases[] = {
-		{"export func f(int32 a = 1) { }\n", "error: an interface cannot state a parameter's default value."},
 		{"export func f($int32 a) { }\n", "error: an interface cannot state this parameter or return."},
 		{"export func f() -> $int32 { }\n", "error: an interface cannot state this type."},
 		{"const N = {x: 1};\n", "error: an interface cannot state this expression."},
@@ -248,14 +272,37 @@ TEST(gen_ast_error, invalid_char_literal) {
 	cleanTestEnv();
 	const char* cases[][2] = {
 		{"error_009_char_literal_empty.pa", ":2:11: error: Invalid character literal ''."},
-		{"error_010_char_literal_multi.pa", ":2:11: error: Invalid character literal 'ab'."},
+		{"error_010_char_literal_multi.pa",
+		 ":2:11: error: Character literal 'ab' holds more than one code point; write it as a string literal."},
 		{"error_011_char_literal_escape.pa", ":2:11: error: Invalid character literal '\\q'."},
-		{"error_012_char_literal_nonascii.pa", ":2:11: error: Invalid character literal '\xC3\xA9'."},
+		{"error_012_char_literal_invalid_utf8.pa",
+		 ":2:11: error: Character literal is not valid UTF-8; write bytes in a string literal with '\\xHH'."},
+		{"error_028_char_literal_combining.pa",
+		 ":2:11: error: Character literal 'e\xCC\x81' holds more than one code point; write it as a string literal."},
 	};
 	for (auto& c : cases) {
 		string out = execTestCommand(string("palan-gen-ast ../test/testdata/gen-ast/") + c[0]);
 		EXPECT_EQ(out.rfind("return1::", 0), 0u) << out;
 		EXPECT_NE(out.find(c[1]), string::npos) << out;
+	}
+}
+
+TEST(gen_ast_error, invalid_code_point_escape) {
+	const string rule = "': '\\u{X}' takes 1 to 6 hex digits, up to 10FFFF and not a surrogate (D800 to DFFF).";
+	const pair<string, string> cases[] = {
+		{"error_029_code_point_surrogate.pa", ":1:11: error: Invalid code point escape '\\u{D800}" + rule},
+		{"error_030_code_point_too_large.pa", ":1:11: error: Invalid code point escape '\\u{110000}" + rule},
+		{"error_031_code_point_no_digits.pa", ":1:11: error: Invalid code point escape '\\u{}" + rule},
+		{"error_032_code_point_seven_digits.pa", ":1:11: error: Invalid code point escape '\\u{0000041}" + rule},
+		{"error_033_code_point_unclosed.pa", ":1:11: error: Invalid code point escape '\\u{41" + rule},
+		{"error_034_code_point_no_brace.pa", ":1:11: error: Invalid code point escape '\\u" + rule},
+		{"error_035_field_marker.pa", ":1:17: error: Expected 'private' or 'readonly' before the field's type, but found 'publik'."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string out = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/" + file);
+		EXPECT_EQ(out.rfind("return1::", 0), 0u) << out;
+		EXPECT_NE(out.find(expected), string::npos) << out;
 	}
 }
 
@@ -301,6 +348,22 @@ TEST(gen_ast_error, for_elem_mode) {
 	const pair<string, string> cases[] = {
 		{"error_022_for_bare_elem.pa", ":1:5: error: The loop variable 'a' needs 'copy', '@' or '@!': 'copy a' copies each element, '@a'/'@!a' is the element itself."},
 		{"error_023_for_expected_copy.pa", ":1:5: error: Expected 'copy', '@' or '@!' before the loop variable, but found 'cpy'."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string out = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/" + file);
+		EXPECT_EQ(out.rfind("return1::", 0), 0u) << out;
+		EXPECT_NE(out.find(expected), string::npos) << out;
+	}
+}
+
+// Only '==' and '<' are defined; the other comparisons are derived from them.
+TEST(gen_ast_error, derived_compare_func) {
+	const pair<string, string> cases[] = {
+		{"error_024_derived_compare_func_ne.pa", ":2:6: error: '!=' cannot be defined: it is derived from '=='."},
+		{"error_025_derived_compare_func_ge.pa", ":2:6: error: '>=' cannot be defined: it is derived from '<'."},
+		{"error_026_derived_compare_func_gt.pa", ":2:6: error: '>' cannot be defined: it is derived from '<'."},
+		{"error_027_derived_compare_func_le.pa", ":2:6: error: '<=' cannot be defined: it is derived from '<'."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

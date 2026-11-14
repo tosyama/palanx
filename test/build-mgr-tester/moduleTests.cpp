@@ -115,6 +115,13 @@ TEST(build_mgr, alias_import) {
 	ASSERT_EQ(output, "9\n8\n");
 }
 
+// An alias does not hide a conversion, which is never written qualified.
+TEST(build_mgr, literal_conversion_alias) {
+	cleanTestEnv();
+	string output = execTestCommand("bin/palan ../test/testdata/build-mgr/409_literal_conversion_alias.pa");
+	ASSERT_EQ(output, "alias\narg\n");
+}
+
 // An operator cannot be written qualified, so an alias import brings it
 // unqualified; a selective import names it.
 TEST(build_mgr, operator_func_import) {
@@ -194,6 +201,19 @@ TEST(build_mgr, import_symlink_file) {
 	writeModule("out/a/main.pa", "import \"link.pa\";\n" + printF);
 	fs::create_symlink("../b/real.pa", "out/a/link.pa");
 	ASSERT_EQ(execTestCommand("bin/palan out/a/main.pa"), "7\n");
+}
+
+// A type's '->' comes with the type: main.pa reaches T only through Q, and
+// copying a Q into an existing one still calls it.
+TEST(build_mgr, copy_func_reaches_with_its_type) {
+	cleanTestEnv();
+	writeModule("out/t.pa", "cinclude <stdio.h>;\nexport type T { [+]int32 v; int32 mode; };\n"
+		"func ->(@T src, @!T dst) { src.v -> dst.v; printf(\"keeps %d \", dst.mode); }\n");
+	writeModule("out/q.pa", "import \"t.pa\";\nexport type Q { T t; int32 n; };\n"
+		"export func mkq(int32 m) -> Q q { m -> q.t.mode; m -> q.n; }\n");
+	writeModule("out/main.pa", "cinclude <stdio.h>;\nimport \"q.pa\";\n"
+		"Q p = mkq(1); Q q = mkq(2);\np -> q;\np.t -> q.t;\nprintf(\"%d %d\\n\", q.t.mode, q.n);\n");
+	ASSERT_EQ(execTestCommand("bin/palan out/main.pa"), "keeps 2 keeps 2 2 1\n");
 }
 
 TEST(build_mgr, import_symlink_dir) {
@@ -642,6 +662,20 @@ TEST(build_mgr, reuse_indirect_import_changed) {
 	EXPECT_NE(after.c, before.c);
 }
 
+// The caller holds the default, so changing it compiles the caller again.
+TEST(build_mgr, reuse_default_changed) {
+	cleanReuseEnv();
+	writeOldSource("c.pa", "export func c(int32 k = 1) -> int32 { return k; }\n");
+	writeOldSource("b.pa", "import \"c.pa\";\nexport func b() -> int32 { return c(); }\n");
+	writeOldSource("a.pa", "cinclude <stdio.h>;\nimport \"b.pa\";\nprintf(\"%d\\n\", b());\n");
+	ASSERT_EQ(execTestCommand("bin/palan out/a.pa"), "1\n");
+	ChainTimes before;
+	ofstream("out/c.pa") << "export func c(int32 k = 5) -> int32 { return k; }\n";
+	ASSERT_EQ(execTestCommand("bin/palan out/a.pa"), "5\n");
+	ChainTimes after;
+	EXPECT_NE(after.b, before.b);
+}
+
 TEST(build_mgr, reuse_mutual_import) {
 	cleanReuseEnv();
 	writeOldSource("m1.pa", "cinclude <stdio.h>;\nimport \"m2.pa\";\nexport func f1() -> int32 { return 1; }\nprintf(\"%d\\n\", f2());\n");
@@ -824,6 +858,14 @@ TEST(build_mgr, lib_local_header_used_only_in_bodies) {
 		"library demo;\nbuilt \"" PALAN_VERSION "\";\ntarget \"" PALAN_TARGET "\";\nexport func one() -> int32;\n");
 }
 
+// A named return's initial value belongs to the body, not the interface.
+TEST(build_mgr, lib_named_return_initial_value) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(libBuild("named_ret_init.pa")), "");
+	EXPECT_EQ(fileText(string(libOut) + "demo/named_ret_init.pai"),
+		"library demo;\nbuilt \"" PALAN_VERSION "\";\ntarget \"" PALAN_TARGET "\";\nexport func count() -> int32 n;\n");
+}
+
 // The other module's array stays for the const its public type is sized by; the unused one does not.
 TEST(build_mgr, lib_const_from_an_array_through_a_selective_import) {
 	cleanTestEnv();
@@ -834,6 +876,19 @@ TEST(build_mgr, lib_const_from_an_array_through_a_selective_import) {
 		"[3]int32 table;\nconst K = len(@table);\n"
 		"export type Rows {\n\t[K]int32 a;\n};\n"
 		"export func first(@Rows r, Color c) -> int32;\n");
+}
+
+// Another module's const of the same name gives way, as it does for a type's size.
+TEST(build_mgr, lib_parameter_defaults) {
+	cleanTestEnv();
+	ASSERT_EQ(execTestCommand(libBuild("defaults.pa")), "");
+	EXPECT_EQ(fileText(string(libOut) + "demo/defaults.pai"),
+		"library demo;\nbuilt \"" PALAN_VERSION "\";\ntarget \"" PALAN_TARGET "\";\n"
+		"const K = 2;\n"
+		"const __m1_K = 3;\n"
+		"export type Mode enum {\n\tFast,\n\tSlow,\n};\n"
+		"export type Box {\n\t[__m1_K]int32 a;\n};\n"
+		"export func put(@!Box b, int32 v = K * 10, Mode m = Mode.Slow, @[]uint8 tag = \"none\");\n");
 }
 
 TEST(build_mgr, lib_library_module_has_its_own_allocators) {

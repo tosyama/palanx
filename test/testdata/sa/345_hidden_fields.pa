@@ -1,0 +1,11 @@
+import "lib_sa_hidden.pa";
+box b;
+box c;
+tag t = {w: 3};
+int64 n = b.n;
+@int64 r = @b.n;
+int64 k = b.items[0] + b.at.x + b.p.x;
+3 -> b.open;
+setN(@!b, 2);
+b -> c;
+box d = b;

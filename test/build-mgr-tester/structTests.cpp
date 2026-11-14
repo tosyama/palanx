@@ -1386,6 +1386,36 @@ TEST(build_mgr, operator_func_mtrace) {
 		"1.5 2.5 3.5\n0.5 1.5 2.5\n-1 -2 -3\n-1.5 -2.5 -3.5\n1.5 3 4.5\n0 -1 -2\n3\n2.5 4.5 6.5\n", 4);
 }
 
+// '<<' chains through the borrow each call returns; a returned or converted
+// right operand is released after the statement.
+TEST(build_mgr, append_mtrace) {
+	expectMtraceRun("410_append_mtrace", "abcde\nabcderetT\nabcderetT!?\nabcderetT!?x\nfg\n", 24);
+}
+
+TEST(build_mgr, copy_func_mtrace) {
+	expectMtraceRun("411_copy_func_mtrace",
+		"->2 | 2 1\n->2 ->1 | 1 1\n->2 | self 1\n->2 | 3\nnew 2 2 4\n->7 ->8 | 8 6 5\n->8 | field\n->1 ->2 | 9\n"
+		"->8 | 8 2 2\n->5 ->6 | 5 6 2\n->7 F4 F5 F6 | 11 4 1 7 42 3\nF3 F4 | 4 2\nF4 | 4 9 2\nF3 F4 | 2 1\n"
+		"->1 ->2 ->0 ->3 ->4 K7 K0 K8 | 5 7 3 4\n->1 ->2 ->0 ->3 ->4 K7 K0 K8 K0 K4 K1 K3 L5 | 6 7 9 2 4\n->1 | 1 2\nK0 | 5 0\n", 169);
+}
+
+TEST(build_mgr, compare_func_mtrace) {
+	expectMtraceRun("403_compare_func_mtrace",
+		"1 0 0\n1 0 1 0\n0 1 1 1\n1 0\n1 1\n0 1\n1 2 0\n3 4 1\n", 4);
+}
+
+// Struct elements are copies the callee owns: those left are released at its
+// exit, one moved out is not, and the caller releases none of them.
+TEST(build_mgr, variadic_struct_mtrace) {
+	expectMtraceRun("407_variadic_struct_mtrace", "10\n5 1 2\n8\n12\n", 29);
+}
+
+// Each converted literal is released where a struct the call returns would be.
+TEST(build_mgr, literal_conversion_mtrace) {
+	expectMtraceRun("408_literal_conversion_mtrace",
+		"init copy borrow owned v1 v2 ret cmp gt chained opret field field2 e2 e1 \n", 64);
+}
+
 TEST(build_mgr, chain_ahead_of_receiver_mtrace) {
 	expectMtraceRun("386_chain_ahead_of_receiver_mtrace", "5\n1 4\n1 4\n1 5\n4\n4\n4\n", 10);
 }

@@ -1,0 +1,2 @@
+func f([...]int64 xs) {}
+@func(@int64) fp = f;

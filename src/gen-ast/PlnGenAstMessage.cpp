@@ -9,7 +9,7 @@
 #include "../common/PlnDefs.h"
 #include <boost/assert.hpp>
 
-string PlnGenAstMessage::getMessage(PlnMessageCode msg_code, string arg1)
+string PlnGenAstMessage::getMessage(PlnMessageCode msg_code, string arg1, string arg2)
 {
 	switch (msg_code) {
 		case M_Help:
@@ -95,6 +95,13 @@ string PlnGenAstMessage::getMessage(PlnMessageCode msg_code, string arg1)
 			BOOST_ASSERT(arg1 != "\x01");
 			return "Invalid number literal '" + arg1 + "'.";
 
+		case E_VariadicNotLast:
+			return "a variadic parameter ('[...]T') must be the last parameter.";
+
+		case E_UnknownFieldMarker:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "Expected 'private' or 'readonly' before the field's type, but found '" + arg1 + "'.";
+
 		case E_SyscallNamedReturn:
 			return "a syscall must declare its return with '-> type'; named and multiple "
 			       "return values are not supported.";
@@ -111,6 +118,23 @@ string PlnGenAstMessage::getMessage(PlnMessageCode msg_code, string arg1)
 		case E_ExpectedCopyKeyword:
 			BOOST_ASSERT(arg1 != "\x01");
 			return "Expected 'copy', '@' or '@!' before the loop variable, but found '" + arg1 + "'.";
+
+		case E_CharLitSeveralCodePoints:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "Character literal " + arg1 + " holds more than one code point; write it as a string literal.";
+
+		case E_CharLitInvalidUtf8:
+			return "Character literal is not valid UTF-8; write bytes in a string literal with '\\xHH'.";
+
+		case E_InvalidCodePointEscape:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "Invalid code point escape '" + arg1 + "': '\\u{X}' takes 1 to 6 hex digits, "
+			       "up to 10FFFF and not a surrogate (D800 to DFFF).";
+
+		case E_DerivedCompareFunc:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "'" + arg1 + "' cannot be defined: it is derived from '" + arg2 + "'.";
 
 		default:
 			BOOST_ASSERT(false);

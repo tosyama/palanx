@@ -1,0 +1,16 @@
+export type pt { int64 x; };
+export type box {
+	private int64 secret = 7;
+	readonly int64 n = 0;
+	readonly [+]int64 items;
+	readonly pt at;
+	readonly @!pt p;
+	int64 open;
+};
+export func setN(@!box b, int64 v) {
+	v -> b.n;
+	b.secret + 1 -> b.secret;
+	b.items.push(v);
+	box c = [1, 2, [3], [4], b.p, 5];
+}
+export type tag { private int64 id = 1; readonly int64 v = 2; int64 w; };

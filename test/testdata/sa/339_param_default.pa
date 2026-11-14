@@ -1,0 +1,13 @@
+type Color enum { Red, Blue };
+const N = 4;
+type P { int32 x; };
+func f(int32 a, int64 b = N * 2, Color c = Color.Blue, flo64 d = 1, @[]uint8 s = "hi") { }
+func m(@!P p, int32 k = 3) { }
+func unused(@[]uint8 s = "never") { }
+f(1);
+f(1, 5, Color.Red, 2.5, "x");
+P p = {x: 0};
+p.m();
+1 -> f();
+func h(int32 a, b = 2) { }
+h(1);

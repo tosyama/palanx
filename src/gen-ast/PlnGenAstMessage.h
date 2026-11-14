@@ -33,12 +33,18 @@ enum PlnMessageCode {
 	E_UnexpectedString,		// the identifier before it
 	E_LibpathInInterface,
 	E_BadLibraryImport,		// the path as written
+	E_DerivedCompareFunc,	// operator, the operator it is derived from
+	E_CharLitSeveralCodePoints,	// literal text
+	E_CharLitInvalidUtf8,
+	E_InvalidCodePointEscape,	// the escape as written
+	E_VariadicNotLast,
+	E_UnknownFieldMarker,	// the word before the field's type
 };
 
 class PlnGenAstMessage
 {
 public:
-	static string getMessage(PlnMessageCode msg_code, string arg1="\x01");
+	static string getMessage(PlnMessageCode msg_code, string arg1="\x01", string arg2="\x01");
 	static string locatedError(const string& file, int line, int column, const string& msg);
 };
 

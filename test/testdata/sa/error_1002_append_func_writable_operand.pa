@@ -1,0 +1,2 @@
+type A { int64 s; };
+func <<(@!A a, @!A x) -> @!A { return a; }

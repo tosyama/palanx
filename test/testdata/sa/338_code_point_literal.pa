@@ -1,0 +1,7 @@
+cinclude <stdio.h>;
+int32 e = 'é';
+uint32 smile = '😀';
+uint8 a = 'a';
+int64 wide = '€';
+func f(@[]int32 cs) -> bool { return cs[0] == 'é'; }
+printf("%d %d\n", 'é', 'a');

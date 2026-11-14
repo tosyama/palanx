@@ -1,7 +1,7 @@
 Palan Semantic Analyzer JSON Specification
 ==========================================
 
-ver. 0.2.4
+ver. 0.2.5
 
 Output of palan-sa. Extends the AST JSON format (see ASTSpec.md) with resolved
 type information and pre-collected literal tables.
@@ -70,7 +70,10 @@ Root
   **Arr entry** (`[n]T` whose element owns storage, a variable or an owned field; a row is such
   an element): build-mgr generates `__pln_alloc_arr_E(n)`, `__pln_init_arr_E(outer, n)`,
   `__pln_free_arr_E(pts, n)`, `__pln_fini_arr_E(pts, n)` and `__pln_copy_arr_E(dst, src, n)`,
-  `E` being the element's `key`, each followed by the lengths below it
+  and with an element holding a type with its own `->`, `__pln_assign_arr_E(dst, src, n)`, which
+  writes into the existing elements as the struct entry's `assigns` says. An array of structs
+  laid out in place (`[n]$T`), copied as bytes, has only `__pln_assign_arr_E(@!T dst, @T src, n)`.
+  `E` is the element's `key`, each function's arguments followed by the lengths below it
   (`[2][3][4]int32` is `__pln_alloc_arr_PPint32(2, 3, 4)`). Levels laid out in place in the
   array itself are one run of their elements: with `S` owning fields, `[2]$[3]S` is
   `__pln_alloc_arr_P1S(6)`:
@@ -86,7 +89,9 @@ Root
   `__pln_push_varr_T(@!hdr h, T x)`,
   `__pln_resize_varr_T(@!hdr h, int64 n)` and `__pln_pop_varr_T(@!hdr h) -> T`, and
   `__pln_copy_varr_T(@!hdr h, @T src, int64 n)` (grows as needed, then sets the length to `n`
-  and copies `n` elements from `src`, which may be `h`'s own). Growing
+  and copies `n` elements from `src`, which may be `h`'s own), and with an element holding a type
+  with its own `->`, `__pln_assign_varr_T` taking the same, which writes into the elements `h`
+  has and copies those it gains as `copy` does. Growing
   reallocates `data` to max(needed, cap × 2, 4) elements; shrinking keeps the capacity, and
   the elements `resize` adds are undefined. An empty `pop` or a negative `resize` calls `abort()`.
   With a struct `T` (elem kind `"struct"`), `data` is `@!@!T`, an array of owned slots, of
@@ -123,7 +128,7 @@ Root
   - shape-name\* - `__pln_B<n>`
   - total-size\* - `n`
 
-  **Struct entry** (a struct owning fields):
+  **Struct entry** (a struct owning fields, or holding a type with its own `->`):
   - shape-kind\* - "struct"
   - shape-name\* - Struct name string
   - total-size\* - Total size in bytes (C ABI layout)
@@ -135,7 +140,8 @@ Root
     of its elements' slots. A `$[+]U field` is its header laid out in the struct, built empty
     with it (`__pln_init_varr_U(h, 0, 0)`), released with `__pln_fini_varr_U` and copied with
     `__pln_copy_varr_U`. A `$T field` of a struct owning fields lists `T`'s owned fields in
-    place of itself, at their offsets in the outer struct and named by their path (`name.bytes`):
+    place of itself, at their offsets in the outer struct and named by their path (`name.bytes`),
+    unless `T` holds a type with its own `->` (see `runs`):
     - name\* - Field name string, or the path to it through structs laid out in the struct
     - offset\* - Byte offset within the struct
     - elem\* - The element, as in the arr and varr entries (`"struct"` for `T`, `"varr"` for
@@ -162,6 +168,20 @@ Root
     array laid out in one block (`[n]$P`, `[m]$[n]$P`); the generated helpers call it wherever
     elements laid out in place come into use (`[+]$P`'s resize, a row block of `$P`).
 
+  - runs - Structs laid out in the struct (`$T`, `$[n]$T`) whose type holds one with its own `->`,
+    each kept whole and handled by its type's functions (`__pln_init/fini/copy_T`, and its `->`
+    or `__pln_assign_T` when written into); omitted when none:
+    - offset\* - Byte offset within the struct
+    - name\* - The struct
+    - count\* - How many of it lie there in a row (1 for `$T`)
+  - copy-func - The symbol of the struct's own `->`, which `__allocators.h` declares as
+    `void <symbol>(const void *src, void *dst);`
+  - assigns - `true` when the struct holds a type with its own `->`, itself or in a field or
+    element at any depth. build-mgr then also generates `__pln_assign_T(@!T dst, @T src)` (unless
+    it has `copy-func`, which is called instead), which writes into an existing `dst`: as
+    `__pln_copy_T`, but writing the parts of such types through their `->`. Such a struct is never
+    reduced to a bytes entry.
+
   Non-owned fields are deliberately not described: build-mgr re-declares the struct in the
   generated allocator module with only the owned fields at their offsets and opaque padding
   elsewhere, because the full layout cannot always be re-expressed as Palan source (C unions,
@@ -183,6 +203,7 @@ SA-annotated statements.
 
 - name\* - Symbol name of the function (see "Symbol names" below), not the written name
 - func-type\* - "palan"
+- export - `true` for an exported function and for a type's `->`, which codegen makes global
 - parameters\* - Parameter list (Palan parameter: name, var-type; empty array when no parameters)
 - ret-type - Return variable type (single-return functions only)
 - rets - Return value list (multi-return functions only)
@@ -219,9 +240,13 @@ A function defined inside another one has the enclosing function's symbol in pla
 among such blocks of the enclosing function or of the top level (`util..a.v..b1..f.v`,
 `util..b1..f.v`).
 
+A type's `->` (SpecAndDesign.md 3.8) is `__pln_cp_` and the struct as a `<param>` writes it
+(`__pln_cp_4utf8`): a type has one, so the type alone names it, and the generated allocators
+declare it in C, which takes no `.`.
+
 - `<name>`: the function's name; an operator function's is a word that starts with a digit, so that
-  no written name can be it: `0add` `0sub` `0mul` `0div` `0mod` for `+ - * / %`
-  (`vecmath..0sub.R4vec3.R4vec3`).
+  no written name can be it: `0add` `0sub` `0mul` `0div` `0mod` `0eq` `0lt` `0app` for
+  `+ - * / % == < <<` (`vecmath..0sub.R4vec3.R4vec3`).
 - `<module>`: the `module` of ast.json: the source file's name without `.pa`, with each byte outside
   `[A-Za-z0-9_]` and each `_` followed by two lowercase hex digits written `_` and two lowercase hex
   digits, and `_` in front of a leading digit (`001_hello.pa` → `_001_hello`), after the name of the
@@ -363,8 +388,10 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   reject an invalid one
 - `len(@a)` / `len(@!a)` / `a -> len()` of an array level with `arr-size` (a variable, row, field or
   borrowed array, whose expression has no call) folds to that `arr-size`, so it is no call and
-  no candidate. Of an array level without `arr-size` (`[]T` parameter, run-time size) it is
-  E_ArrLenNotConst; without `@`, E_ArrLenNeedsAddrOf unless a user function named `len` exists
+  no candidate. Of a `run-size` level it is the length kept for it (`__<name>_d<k>` of the
+  location's root variable, converted to int64), which is not folded; of a level with neither
+  (`[]T` parameter) it is E_ArrLenNotConst; without `@`, E_ArrLenNeedsAddrOf unless a user
+  function named `len` exists
 - not-impl statements (ASTSpec.md) are rejected, never emitted: `E_VarTypeInferenceNotImpl` when
   the statement carries `untyped-var`, `E_StmtNotImplemented` otherwise; a not-impl expression in
   value position is rejected as `E_ExprNotImplemented`
@@ -583,7 +610,9 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   including an array field's value-type. It is absent for a size known only at run time, where
   an owned variable's level (and so its rows') has `"run-size": true` instead, the size being
   kept in `__<name>_d<k>`; a `[]T` parameter's level has neither. Both are only used by SA for
-  borrowed-array, ownership and copy checks; codegen ignores them. A copy or a free of an array
+  borrowed-array, ownership, copy and length checks; codegen ignores them. A `for` over a
+  `run-size` array declares the lengths again for the variable it copies the range into, as
+  `__<copy>_d<k>`. A copy or a free of an array
   takes its lengths from the location receiving or releasing it, and a `run-size` level matches
   any size.
 
@@ -659,6 +688,24 @@ Same structure as AST statements (see ASTSpec.md) with the following differences
   `->` into it (allowed into a fixed-length range), and a writable borrow of it (`@!v`,
   method-form push/pop/resize, or a `@!` borrow passed on or bound as is). Indices on the path
   are not compared, so any index counts as the iterated one.
+
+  Over a struct `s` (`for copy c, i in s`), SA lowers it to a `block` holding, in order:
+  - the iterator `__pin_N` that the call `iter(@s)` (or `iter(@!s)`) returns. When `s` is a value
+    a call returns, it is first held in a `__pin_N` of its own, which the block frees if it owns it.
+    `iter` and `next` are those visible under any alias whose shape fits
+    (`iter(@T s) -> I` or `iter(@!T s) -> I`, with `I` a struct; `next(@!I it) -> bool ok, E`);
+    none is E_ForIterShape or E_ForNextShape, both `iter(@T)` and `iter(@!T)` E_ForIterAmbiguous.
+  - the `int64` index, as for an array.
+  - a `while` on a `bool` literal 1 whose body begins with a `tapple-decl` receiving
+    `next(@!__pin_N)` into `__for_ok_N` and the element, then an `if` on `!__for_ok_N` holding
+    `break`. A `copy c` of an element `E` returned by value receives it as `c`; otherwise it is
+    received into `__for_e_N` (read-only for `@c`), and `copy c` is then declared from
+    `__for_e_N[0]` (`__for_e_N` for an array). For `@c`/`@!c`, each `c` in `body` is replaced by
+    `__for_e_N[0]` as for an array's element. `@c` over a returned `E`, or `@!c` over `@E`, is
+    E_ForElemForm. The typed index and the step are as for an array.
+  - the release of the iterator, and of the held `s` when the block owns it.
+  When `s` is a location, the same E_ChangeForRange checks apply to it, with every change to `s`
+  itself counted, also `->` into it and rebinding it.
 
 - **break** - exit the innermost while loop
   - stmt-type\*: "break"
@@ -772,7 +819,8 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
 - value-type - Resolved Variable type object (same structure as var-type in ASTSpec.md).
   Present on all expression kinds except bare call with no return type.
   - lit-int: the expected type when used in a typed context (e.g. `int32 x = 10;` → int32);
-    defaults to int64 when no expected type is available. Exception: an AST `lit-int` that
+    defaults to int64 when no expected type is available (int32 for a character literal, one with
+    `char`). Exception: an AST `lit-int` that
     already carries a `value-type` (ASTSpec.md's `lit-int` entry — `true`/`false`, or gen-ast's
     in-place substitute for a cinclude'd macro-constant reference) keeps that type as-is; the
     context's expected type never overrides it, since it was fixed by the literal or the C
@@ -789,6 +837,10 @@ Same structure as AST expressions (see ASTSpec.md) with the following additions:
     is rejected with `E_IntLiteralOutOfRange`. A literal operand of a binary operator is typed only
     once -- from the other operand's type when that has one, else from the expected type -- so the
     check never runs against a provisional type. For `bool` the range is 0..1.
+  - Character literal of 128 or more (`char`): an integer type under 32 bits (`int8` `int16`
+    `uint8` `uint16` `bool`) is rejected with `E_WideCharLitNarrowType`, both where the literal
+    takes the type and where it is compared with an operand of that type (a comparison types no
+    literal by the other operand). `char` stays on the node in sa.json; codegen ignores it.
   - lit-flo: adopts flo32 or flo64 when used in a float-typed context (e.g. `flo32 y = 1.5;` → flo32);
     defaults to flo64 when no expected float type is available
   - lit-str: {"type-kind": "pntr", "base-type": {"type-kind": "prim", "type-name": "uint8"}}
@@ -1193,9 +1245,17 @@ operand's, and the count is wrapped in a `convert` to that type when it differs.
 must be integers (`E_BitwiseOpNotInteger`). Codegen takes the count modulo the width.
 
 A pointer or struct operand (non-Prim) has no common type: `usualArithConv` returns none, and
-an arithmetic operator diagnoses E_ArithOpNotNumeric. A comparison instead leaves both operands
-unconverted (pointer comparison, e.g. `p == NULL`, is valid and has no numeric common type); the
-comparison's own result type is always `bool` regardless.
+an arithmetic operator diagnoses E_ArithOpNotNumeric. A comparison of pointers instead leaves both
+operands unconverted (`p == NULL`); the comparison's own result type is always `bool` regardless.
+
+An operator with a struct operand is instead a `call` of the operator function (`0add` .. `0lt`).
+A comparison is so unless the other operand is `NULL`, which stays a `cmp`. `!=` `>` `<=` `>=`
+call `0eq` or `0lt`: `>` and `<=` with the operands swapped, `!=` `<=` `>=` inside a
+`logical-not`. When swapped and either operand has a call, the call is a `temp` whose body
+evaluates the left operand into a `__pin_N` first.
+An `append` (`a << b`) is always a `call` of `0app`, its first argument the left operand as a
+method-form receiver is given (`addr-of` with `mutable`, or as it is when it is a `@!T` borrow or a
+call returning one).
 
 Float promotion rules (subsumed by usual arithmetic conversions above, restated for clarity):
 
@@ -1274,7 +1334,8 @@ A name with one candidate is bound to it directly, with the diagnostics of an ar
 not fit it. With several, each argument is analyzed once without a parameter type, then:
 
 - A candidate fits when the argument count matches (at least the fixed parameters for a C
-  variadic function) and every argument passes the parameter's checks; an argument matches
+  variadic function; from the parameters without defaults to all of them for a function with
+  defaults) and every argument passes the parameter's checks; an argument matches
   exactly when its type is the parameter's, including `mutable` on every pointer level (through
   pointers and a `[+]T`'s elements).
 - An argument whose type comes only from its parameter is matched by what it can become: an
@@ -1286,13 +1347,67 @@ not fit it. With several, each argument is analyzed once without a parameter typ
 - A chained value fits as `@v` where the parameter would take it so, and as `v` otherwise.
 - The one fitting candidate is chosen; of several, the one every argument matches exactly
   (and no variadic argument is passed), or else the one every argument matches exactly but for
-  a writable outermost pointer given to a read-only parameter. Otherwise E_NoMatchingFunc (the argument types and
-  the candidates) or E_AmbiguousCall (the candidates that fit).
+  a writable outermost pointer given to a read-only parameter. When one of several fitting
+  candidates needs a default to fit, none is preferred. Otherwise E_NoMatchingFunc (the argument
+  types and the candidates) or E_AmbiguousCall (the candidates that fit, a default shown as
+  `int32 = 0`).
 - Receiving several values (`(a, b) = f(x)`) considers only the candidates returning that many,
   which must agree on what they return, since the receivers are declared before the arguments
   choose one (E_AmbiguousCall).
 - A function name used as a value takes the function whose `@func` type is the expected one (a
   variable's, field's or parameter's): none is E_FuncNameNeedsType, several E_AmbiguousCall.
+
+### Default arguments
+
+A parameter's default (its AST `init`) is analyzed where the function's signature is taken in, by
+the module declaring it, so a caller needs none of the names it was written with: after
+constants are folded it must be a number, `bool` or enum value typed and converted as an argument
+for that parameter would be, or a string literal (E_ParamDefaultNotConst otherwise, including for
+a struct parameter). Parameters with defaults come last (E_ParamDefaultNotLast); an operator
+function has none (E_OperatorFuncDefault). A call omitting arguments is given the defaults, so a
+`call`'s `args` always has one argument per parameter; a string default is analyzed at the call,
+so its `str-literals` entry is in the calling module's table and only when used. A function
+definition in `functions` keeps no defaults, and a function pointer type has none.
+
+### Variadic arguments
+
+An AST `[...]E` parameter (ASTSpec `specifier: "variadic"`) is normalized where any signature
+type is (`sigType`), to `{"type-kind":"pntr","variadic":true,"base-type":<E as a parameter type>}`;
+E as an array by value, `$T` or `_` is E_VariadicElemType. A variadic function cannot be a
+syscall (E_SyscallVariadic), an operator function (E_OperatorFuncVariadic) or have defaults
+(E_VariadicWithDefault). The key travels with the type: a function pointer type's parameter keeps
+it, the registry's function type compares it (so a C callback type never matches), it is shown as
+`[...]E`, and a symbol encodes the parameter as `X<E>`.
+
+- A call fits a variadic candidate with at least its other parameters' count of arguments, each
+  argument past them fitting E as a parameter of that type. Fitting so (with no argument for it
+  too) leaves the candidate unranked, as a default does: E_AmbiguousCall when another fits.
+- The arguments for it are bound as for a parameter of type E (a struct is copied into a block
+  the callee owns; a literal or a call's result is a `temp`), then laid out in the `temp` of a
+  frame array `__va_<n>` (`frame-alloc` of the arguments' count times the element's slot, then
+  one `arr-assign` each). An argument's own `temp` is opened into the array's, so what it
+  releases outlives the call; one still holding a call's temporary within a borrow is
+  E_VariadicArgTempBorrow. The call passes that array (`lit-int` 0 of type `@void` for none) and
+  the count as a `uint64` `lit-int`: a call has one argument more than the signature's parameters.
+- In `functions` the parameter is two: `xs`, typed as an array sized at run time
+  (`{"type-kind":"pntr","run-size":true,"base-type":E}`), and `__xs_d0` (`uint64`), the length
+  `len`, `for` and copies read as for a local `[n]E`. `xs` is no owner: its elements owning blocks
+  are released at exit by the array helper's `fini`, as a frame array's are, and the array itself
+  cannot be moved or taken (E_TransferFromNonOwner).
+
+### String literal conversion
+
+A `lit-str` where the expected type is a struct `T` or `@T` (not `@!T`) is analyzed as the call
+`T(lit)` or `@T(lit)` written there, when a conversion function exists: one visible by `T`'s
+written name, unqualified or under any alias, returning `T` and fitting a call with the literal as
+its only argument (its first parameter not a struct). The output has no node of its own: the call
+is placed as any call returning a struct is at that position (`ret-dest` into the variable, a
+`__cpy_<n>` copied from, a `__tmp_<n>` or `__arg_<n>` `temp`). With no such function the literal
+is checked as before. Several such functions make the call E_AmbiguousCall. Borrowing it anywhere
+but as an argument or operand (`@T` variable, field, return) is E_ConvertedLiteralToBorrow. In overload
+resolution a literal fits a parameter it would convert for only as a last resort: such candidates
+are ranked, by the same rules and with the converted argument exact, only when no candidate fits
+without a conversion.
 
 ### Chained calls
 

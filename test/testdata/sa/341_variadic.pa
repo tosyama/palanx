@@ -1,0 +1,7 @@
+type P { int32 x; [+]int32 t; };
+func sum(int32 base, [...]int64 xs) -> int64 { return len(@xs); }
+func total([...]P ps) { }
+sum(1, 2, 3);
+sum(1);
+P p;
+total(p);

@@ -17,3 +17,6 @@ std::string writeInterface(const nlohmann::json& ast);
 // other modules it reaches. Also throws std::runtime_error on a public declaration
 // needing a local header.
 std::string writeLibraryInterface(const nlohmann::json& main, const std::vector<nlohmann::json>& internals);
+
+// An AST type as Palan source writes it (`@[]uint8`, `[...]@utf8`).
+std::string writeType(const nlohmann::json& astType);

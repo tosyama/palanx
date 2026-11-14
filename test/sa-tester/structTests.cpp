@@ -1850,3 +1850,44 @@ TEST(sa, frame_scope_exit)
 	ASSERT_EQ(funcName(body[4]["body"]["name"]), "__pln_fini_Q");
 	ASSERT_EQ(body[5]["stmt-type"], "return");
 }
+
+TEST(sa, literal_conversion)
+{
+	cleanTestEnv();
+	json jout = written(run_sa("../test/testdata/sa/342_literal_conversion.pa"));
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	auto isConversion = [](const json& call) {
+		return call["expr-type"] == "call" && funcName(call["name"]) == "text"
+		    && call["args"][0]["expr-type"] == "lit-str" && call["args"][1]["value"] == "0";
+	};
+	// Initialization: the conversion returns into the variable.
+	ASSERT_TRUE(isConversion(stmts[1]["body"]));
+	ASSERT_EQ(stmts[1]["body"]["ret-dest"]["name"], "s");
+	// '->': returned into a temp copied from.
+	ASSERT_TRUE(isConversion(stmts[2]["body"][1]["body"]));
+	// '@T' argument: a temp released after the call; 'T' argument: the callee's.
+	const auto& borrowed = stmts[3]["body"]["args"][0];
+	ASSERT_EQ(borrowed["expr-type"], "temp");
+	ASSERT_TRUE(isConversion(borrowed["body"][1]["body"]));
+	ASSERT_EQ(borrowed["release"].size(), 1);
+	const auto& owned = stmts[4]["body"]["args"][0];
+	ASSERT_TRUE(isConversion(owned["body"][1]["body"]));
+	ASSERT_EQ(owned["release"].size(), 0);
+	// An overload taking the literal as it is wins over a conversion.
+	ASSERT_EQ(funcName(stmts[5]["vars"][0]["init"]["name"]), "bytes");
+	ASSERT_EQ(stmts[5]["vars"][0]["init"]["args"][0]["expr-type"], "lit-str");
+	// Variadic elements and an operator's operand.
+	ASSERT_TRUE(isConversion(stmts[6]["body"]["args"][0]["body"][2]["body"]));
+	const auto& eq = stmts[7]["vars"][0]["init"];
+	ASSERT_EQ(funcName(eq["name"]), "0eq");
+	ASSERT_TRUE(isConversion(eq["args"][0]["body"][1]["body"]));
+	// A struct literal's field.
+	ASSERT_TRUE(isConversion(stmts[9]["body"][1]["body"]));
+	// return.
+	ASSERT_TRUE(isConversion(jout["functions"][6]["body"][1]["body"]));
+	// A variadic parameter takes the literal alone too.
+	const auto& words = stmts[12]["body"];
+	ASSERT_EQ(funcName(words["name"]), "words");
+	ASSERT_EQ(words["ret-dest"]["name"], "w");
+}

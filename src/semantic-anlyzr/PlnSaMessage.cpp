@@ -29,10 +29,20 @@ string PlnSaMessage::localTypeName(const string& moduleId, int seq, const string
 	return localTypePrefix + string(hex) + "_" + (seq ? to_string(seq) + "_" : "") + name;
 }
 
+static const regex& localTypePart()
+{
+	static const regex part(string(localTypePrefix) + "[0-9a-f]{16}_([0-9]+_)?"); // LCOV_EXCL_BR_LINE
+	return part;
+}
+
+string PlnSaMessage::writtenTypeName(const string& typeName)
+{
+	return regex_replace(typeName, localTypePart(), "");
+}
+
 string PlnSaMessage::getMessage(PlnSaMessageCode msg_code, string arg1, string arg2, string arg3)
 {
-	static const regex localTypePart(string(localTypePrefix) + "[0-9a-f]{16}_([0-9]+_)?");
-	return regex_replace(format(msg_code, arg1, arg2, arg3), localTypePart, "");
+	return regex_replace(format(msg_code, arg1, arg2, arg3), localTypePart(), "");
 }
 
 string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2, string arg3)
@@ -376,11 +386,6 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 		case E_ExprNotImplemented:
 			return "this expression is not supported in this version.";
 
-		case E_ParamDefaultNotImpl:
-			BOOST_ASSERT(arg1 != "\x01");
-			return "parameter '" + arg1 + "' has a default value; default values are not "
-			       "supported yet.";
-
 		case E_ParamNotImplemented:
 			return "this parameter is not supported in this version.";
 
@@ -391,6 +396,12 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");
 			return "Integer literal '" + arg1 + "' is out of range for type '" + arg2 + "'.";
+
+		case E_WideCharLitNarrowType:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "character literal " + arg1 + " needs an integer type of 32 bits or more, not '" + arg2
+			       + "': no byte of UTF-8 text holds it.";
 
 		case E_ArrLitContext:
 			return "an array literal can only be used as an array or struct variable's initializer, "
@@ -471,10 +482,10 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			       "'(a " + arg1 + " b) -> c'.";
 
 		case E_ArrLenNotConst:
-			return "'len' takes a variable-length array or an array of constant size; this array's size is not known at compile time.";
+			return "'len' cannot tell this array's length: an array declared with its size, or a variable-length array, keeps one, but a '[]T' does not.";
 
 		case E_ForRangeNotArray:
-			return "'for' takes an array to iterate over.";
+			return "'for' takes an array, or a struct whose type has 'iter' and 'next', to iterate over.";
 
 		case E_GlobalNotReplaceable:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -516,7 +527,7 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 
 		case E_ChangeForRange:
 			BOOST_ASSERT(arg1 != "\x01");
-			return "cannot change the array a 'for' loop iterates over ('" + arg1 + "').";
+			return "cannot change what a 'for' loop iterates over ('" + arg1 + "').";
 
 		case E_ForIndexNotInteger:
 			BOOST_ASSERT(arg1 != "\x01");
@@ -621,6 +632,12 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			return "a struct or array returned by a call has no owner to borrow from; receive "
 			       "it into a variable with '->' and borrow it with '@name' or '@!name' (only a call "
 			       "argument can borrow it directly, as '@f()' or '@!f()').";
+
+		case E_ConvertedLiteralToBorrow:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "a string literal converted to '" + arg1 + "' is a temporary value with no owner to "
+			       "borrow from; declare a '" + arg1 + "' variable initialized with it and borrow that "
+			       "(only a call argument or an operator's operand can borrow it directly).";
 
 		case E_BorrowOfTempEscapes:
 			return "a borrow returned by a call given a temporary struct may point to that struct, "
@@ -836,6 +853,10 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			return "parameter '" + arg2 + "' of operator function '" + arg1
 			       + "' cannot be '@!': an operand is never passed for writing.";
 
+		case E_CompareFuncRet:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "operator function '" + arg1 + "' must return 'bool'.";
+
 		case E_NoOperatorFunc:
 			BOOST_ASSERT(arg1 != "\x01");
 			BOOST_ASSERT(arg2 != "\x01");
@@ -854,6 +875,123 @@ string PlnSaMessage::format(PlnSaMessageCode msg_code, string arg1, string arg2,
 			BOOST_ASSERT(arg1 != "\x01");
 			return "field '" + arg1 + "' cannot have an initializer in this version: only a primitive field "
 			       "or a one-dimensional array of primitives can.";
+
+		case E_ParamDefaultNotConst:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "the default value of parameter '" + arg1 + "' must be a compile-time constant: a number, "
+			       "'true' or 'false', an enum value, a const, or a string literal.";
+
+		case E_ParamDefaultNotLast:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "parameter '" + arg1 + "' needs a default value: it follows a parameter that has one, "
+			       "and parameters with default values come last.";
+
+		case E_OperatorFuncDefault:
+			BOOST_ASSERT(arg1 != "\x01");
+			BOOST_ASSERT(arg2 != "\x01");
+			return "parameter '" + arg2 + "' of operator function '" + arg1
+			       + "' cannot have a default value: an operator is always given its operands.";
+
+		case E_VariadicElemType:
+			return "a variadic parameter's elements cannot be an array by value ('[n]T', '[]T', '[+]T') or "
+			       "'$T': each argument is given as a parameter is, so an array must be borrowed ('@[]T').";
+
+		case E_VariadicWithDefault:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "function '" + arg1 + "' cannot have both default values and a variadic parameter: "
+			       "an argument could be taken for either.";
+
+		case E_OperatorFuncVariadic:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "operator function '" + arg1 + "' cannot take a variadic parameter: an operator has fixed operands.";
+
+		case E_SyscallVariadic:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "syscall '" + arg1 + "' cannot take a variadic parameter.";
+
+		case E_VariadicArgTempBorrow:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "a variadic argument of '" + arg1 + "' borrows a temporary value a call holds, which would be "
+			       "released before '" + arg1 + "' is called; keep the value in a variable first.";
+
+		case E_AppendFuncFirstParam:
+			return "the first parameter of operator function '<<' must be a writable borrow '@!T' of a struct.";
+
+		case E_AppendFuncRet:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "operator function '<<' must return '" + arg1 + "', the type of its first parameter, "
+			       "so that '<<' chains.";
+
+		case E_AppendNotStruct:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'<<' appends to a struct, not to '" + arg1 + "'; the left shift is '<<<'.";
+
+		case E_AppendReadOnly:
+			return "'<<' cannot append through a read-only borrow '@T'.";
+
+		case E_AppendLeftOperand:
+			return "the left operand of '<<' must be a variable, a field or an element, a '@!' borrow, "
+			       "or a call returning '@!T': a value a call or an operator returns is a temporary, "
+			       "and what is appended to it would be lost.";
+
+		case E_CopyFuncSig:
+			return "'->' must be 'func ->(@T src, @!T dst)' of one struct T, with no defaults and no return value.";
+
+		case E_CopyFuncPlace:
+			return "'->' is part of its type's definition: it is defined at the top level of the module "
+			       "defining the struct, not of a C struct or of another module's.";
+
+		case E_CopyFuncExported:
+			return "'->' is not exported: it comes with its type wherever the type goes.";
+
+		case E_ForIterShape:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'for' over '" + arg1 + "' needs 'func iter(@" + arg1 + " s) -> I' or 'func iter(@!" + arg1
+			       + " s) -> I', I a struct type, and 'func next(@!I it) -> bool ok, E'.";
+
+		case E_ForIterAmbiguous:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'for' over '" + arg1 + "' finds both 'iter(@" + arg1 + ")' and 'iter(@!" + arg1
+			       + ")'; a type has one of them.";
+
+		case E_ForNextShape:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'for' needs 'func next(@!" + arg1 + " it) -> bool ok, E' for the iterator '" + arg1 + "'.";
+
+		case E_ForElemForm:
+			BOOST_ASSERT(arg1 != "\x01" && arg2 != "\x01");
+			return "'" + arg1 + "' needs 'next' to return the element as a borrow"
+			       + string(arg1.rfind("@!", 0) == 0 ? " '@!E'" : " '@E' or '@!E'")
+			       + ", but it returns '" + arg2 + "'.";
+
+		case E_FieldAccessNotExported:
+			BOOST_ASSERT(arg1 != "\x01" && arg2 != "\x01");
+			return "'" + arg1 + "' on the field '" + arg2 + "' needs an exported struct ('export type'): "
+			       "the boundary is the module defining it.";
+
+		case E_PrivateField:
+			BOOST_ASSERT(arg1 != "\x01" && arg2 != "\x01");
+			return "the field '" + arg2 + "' of '" + arg1 + "' is private to the module defining '" + arg1 + "'.";
+
+		case E_ReadonlyField:
+			BOOST_ASSERT(arg1 != "\x01" && arg2 != "\x01");
+			return "the field '" + arg2 + "' of '" + arg1 + "' is read-only outside the module defining '" + arg1
+			       + "', and so is anything reached through it.";
+
+		case E_StructLitHiddenField:
+			BOOST_ASSERT(arg1 != "\x01" && arg2 != "\x01" && arg3 != "\x01");
+			return "a struct literal of '" + arg1 + "' outside the module defining it cannot set the " + arg3
+			       + " field '" + arg2 + "'.";
+
+		case E_StructLitPositionalHidden:
+			BOOST_ASSERT(arg1 != "\x01");
+			return "'" + arg1 + "' has private or read-only fields: outside the module defining it, a struct "
+			       "literal of it names the fields it sets.";
+
+		case E_StructLitHiddenNoInit:
+			BOOST_ASSERT(arg1 != "\x01" && arg2 != "\x01" && arg3 != "\x01");
+			return "no struct literal of '" + arg1 + "' can be written outside the module defining it: its " + arg3
+			       + " field '" + arg2 + "' has no initializer.";
 
 		default:
 			BOOST_ASSERT(false);

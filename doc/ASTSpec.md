@@ -1,7 +1,7 @@
 Palan Abstract Syntax Tree Json Specification
 ============================================
 
-ver. 0.2.4
+ver. 0.2.5
 
 \* - Required
 
@@ -48,7 +48,8 @@ AST model
 
 Function definition model
 -------------------------
-- name\* - Function name string; an operator function's is its operator: "+" "-" "*" "/" "%"
+- name\* - Function name string; an operator function's is its operator: "+" "-" "*" "/" "%" "==" "<"
+  "<<"; a type's own copy is "->" (SpecAndDesign.md 3.8)
 - func-type\* - Function type string: "palan" "c" "syscall"
 - loc\* - Location Array (palan, syscall only)
 
@@ -58,7 +59,8 @@ Function definition model
      - ret-type - Return variable type (unnamed single return only; omitted for void and named returns)
      - rets - Named return list (Palan parameter, see below; omitted for an unnamed return and void)
      - block\* - Block object (function body; see Block object below). Absent for a function a
-       `.pai` declares (SpecAndDesign.md 3.7)
+       `.pai` declares (SpecAndDesign.md 3.7): an exported one, or a type's `->`, which a `.pai`
+       writes unexported
 
   2. **c** - C function prototype (from `cinclude`)
      - parameters\* - Parameter list (C parameter, see below; empty array when no parameters)
@@ -236,8 +238,8 @@ Used in Palan function `parameters` and `rets`.
 
 - name\* - Variable name string
 - var-type\* - Variable type
-- init - Expression node for the initial value (omitted when not written; SA rejects it on a
-  parameter, since default values are not implemented)
+- init - Expression node for a parameter's default value, or a named return's initial value
+  (omitted when not written)
 
 A parameter or return the grammar parses but the compiler does not implement (`T >> name`, an
 untyped `name = expr`, a type with no declarable form such as `[#]T`) stays in the list as
@@ -301,6 +303,9 @@ Variable type
       - "raw"      — `[expr]type` or `[]type`    raw heap array (C-array equivalent, no count stored)
       - "fixed"    — `[#expr]type` or `[#]type`  heap array with element count in memory header
       - "variable" — `[+expr]type` or `[+]type`  variable-size array (size-expr = initial capacity)
+      - "variadic" — `[...]type`  a variadic parameter, only as the outermost type of the last
+        parameter of a function or a function pointer type (size-expr is always null); gen-ast
+        rejects one followed by another parameter
     - size-expr - Array size expression model
       - non-null: size/capacity determined by this expression
       - null semantics differ by specifier:
@@ -467,10 +472,11 @@ Statement model
   7. struct-def - struct type definition (`type Name { field_decl... }`; consumed by SA, not emitted to sa.json)
     - name\* - Struct name string
     - export - Boolean, true if declared with `export` (omitted when false)
-    - fields\* - Field list (each entry: `name`, `var-type`, `init`)
+    - fields\* - Field list (each entry: `name`, `var-type`, `init`, `access`)
       - name\* - Field name string
       - var-type\* - Field type (same Variable type object format)
       - init - The field's initializer (`int32 y = 7;`), an expression model as written
+      - access - `"private"` or `"readonly"` (`private int32 y;`); omitted for a public field
   8. type-alias - native type alias declaration (`type Name = type_expr;`; consumed by SA, not emitted to sa.json)
     - name\* - Alias name string
     - export - Boolean, true if declared with `export` (omitted when false)
@@ -512,8 +518,8 @@ Statement model
   16. while - while loop statement
     - cond\* - Condition expression model
     - body\* - Statement model list (raw array, no block wrapper)
-  17. for - loop over an array's elements (`for copy a, i in arr { ... }`; SA lowers it to a block
-      holding a while)
+  17. for - loop over an array's elements, or over a struct by its type's `iter` and `next`
+      (`for copy a, i in arr { ... }`; SA lowers it to a block holding a while)
     - elem\* - The loop variable
       - name\* - Variable name string
       - borrow\* - Boolean, true for `@a`/`@!a` (the element itself, read-only or writable) and false for `copy a` (a copy)
@@ -522,7 +528,7 @@ Statement model
     - index - Name string of the index variable (omitted when absent)
     - index-type - Type model of the index written before its name (`for @a, int32 i in arr`);
       omitted when not written, and the index is then `int64`
-    - range\* - The array expression model
+    - range\* - The expression model of the array or struct iterated over
     - body\* - Statement model list (raw array, no block wrapper)
   18. break - exit the innermost while or for loop (no additional fields)
   19. continue - skip to next iteration of innermost while or for loop (no additional fields)
@@ -549,15 +555,17 @@ Statement model
 
 Expression model
 ----------------
-- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "mul" "div" "mod" "neg" "cmp" "call" "cast" "arr-index" "field-access" "member-call" "logical-and" "logical-or" "logical-not" "addr-of" "not-impl" "bitand" "bitor" "bitxor" "shl" "shr" "bitnot" "arr-lit" "dict-lit" "sizeof" "chain-call" "transfer" "call-ptr"
+- expr-type\* - Expression type string: "lit-str" "lit-int" "lit-uint" "lit-flo" "id" "add" "sub" "mul" "div" "mod" "neg" "cmp" "call" "cast" "arr-index" "field-access" "member-call" "logical-and" "logical-or" "logical-not" "addr-of" "not-impl" "bitand" "bitor" "bitxor" "shl" "shr" "append" "bitnot" "arr-lit" "dict-lit" "sizeof" "chain-call" "transfer" "call-ptr"
 - loc\* - Location Array
   1. lit-str - String literal
     - value\* - The bytes as escaped text: printable ASCII and valid UTF-8 characters as they
       are, `\"`, `\\`, `\n`, `\t`, `\r`, and every other byte as `\xHH` (upper-case hex), so
       `"x\xffy"` and the same bytes written raw are both `x\xFFy`
   2. lit-int - Signed integer literal (corresponds to INT token). A character literal (`'a'`)
-    is also emitted as a `lit-int` holding its ASCII code, with no `value-type`; `true`/`false`
-    are emitted as a `bool`-typed `lit-int`
+    is also emitted as a `lit-int` holding its Unicode code point, with no `value-type`;
+    `true`/`false` are emitted as a `bool`-typed `lit-int`
+    - char - `true` for a character literal (omitted otherwise): one of 128 or more takes only
+      an integer type of 32 bits or more, and one with no type to take is an `int32`
     - value\* - Decimal string, optionally with a leading `-` (e.g. "10", "-128"); a macro
       substitute's value may exceed int64 when its `value-type` is `uint64`
     - value-type - Variable type; present only for `true`/`false` (value `"1"`/`"0"`, value-type
@@ -703,6 +711,10 @@ Expression model
       list of several expressions called this way is `not-impl`
     - callee\* - Expression model of a function pointer
     - args\* - Argument expression list
+  35. append - `a << b`, a call of the operator function `<<` (precedence of the shifts);
+      consumed by SA, which makes it a `call` (see SASpec.md "Usual arithmetic conversions")
+    - left\*  - Expression model appended to
+    - right\* - Expression model appended
 
 Note: Unary minus on a `lit-int` without `value-type` is folded into a single `lit-int` with a negative
 `value` (`-42` → `"value":"-42"`), so SA range-checks it as one value. Any other operand (including a

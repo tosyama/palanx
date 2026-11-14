@@ -37,7 +37,7 @@ static string outPath(const string& name)
 static string usesStd()
 {
 	string path = outPath("uses_std.pa");
-	ofstream(path) << "import <std/utf8>;\ncinclude <stdio.h>;\nutf8 s = toUtf8(\"\\xE2\\x82\\xAC\", utf8mode.KEEP_INVALID);\n"
+	ofstream(path) << "import <std/utf8>;\ncinclude <stdio.h>;\nutf8 s = \"\\xE2\\x82\\xAC\";\n"
 		"printf(\"%ld\\n\", s -> byteLen());\n";
 	return path;
 }
@@ -71,6 +71,7 @@ static set<string> expectedFiles()
 		doc + "LICENSE",
 		doc + "doc/ASTSpec.md",
 		doc + "doc/PalanReference.md",
+		doc + "doc/PalanStdLibReference.md",
 		doc + "doc/SASpec.md",
 		doc + "doc/SpecAndDesign.md",
 	};

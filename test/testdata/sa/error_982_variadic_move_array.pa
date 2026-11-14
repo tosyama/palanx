@@ -1,0 +1,4 @@
+func f([...]int32 xs) {
+	[2]int32 y;
+	xs ->> y;
+}

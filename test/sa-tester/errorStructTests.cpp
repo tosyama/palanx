@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 #include "../test-base/testBase.h"
+#include "saTestUtil.h"
 
 using namespace std;
 
@@ -1048,6 +1049,135 @@ TEST(sa_error, expr_rooted_access)
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();
 		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, literal_conversion)
+{
+	const string noCopy = "error: cannot copy '[?]uint8' into 'text'";
+	const string borrowed = "error: a string literal converted to 'text' is a temporary value with no owner to borrow from";
+	const pair<string, string> cases[] = {
+		{"error_987_literal_no_conversion.pa", ":2:1: " + noCopy},
+		{"error_988_literal_conversion_needs_args.pa", ":3:1: " + noCopy},
+		{"error_989_literal_conversion_ambiguous.pa", ":4:10: error: Ambiguous function call 'text': it can mean text(@[]uint8), text(@[]uint8, int32 = 0)."},
+		{"error_990_literal_to_writable.pa", ":4:1: error: cannot convert '[?]uint8' to '@!text'."},
+		{"error_991_literal_as_struct.pa", ":3:10: error: cannot cast to 'text'"},
+		{"error_992_literal_borrowed_var.pa", ":3:11: " + borrowed},
+		{"error_995_literal_borrowed_return.pa", ":3:28: " + borrowed},
+		{"error_996_literal_borrowed_assign.pa", ":5:1: " + borrowed},
+		{"error_993_literal_conversion_overloads.pa", ":7:1: error: Ambiguous function call 'f': it can mean f(@other), f(@text)."},
+		{"error_994_literal_no_conversion_arg.pa", ":8:1: error: cannot convert '[?]uint8' to '@text'."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa, error_copy_func)
+{
+	const string sig = "error: '->' must be 'func ->(@T src, @!T dst)' of one struct T, with no defaults and no return value.";
+	const string place = "error: '->' is part of its type's definition: it is defined at the top level of the module "
+	                     "defining the struct, not of a C struct or of another module's.";
+	const pair<string, string> cases[] = {
+		{"error_1009_copy_func_ret.pa", ":2:1: " + sig},
+		{"error_1010_copy_func_read_only_dst.pa", ":2:1: " + sig},
+		{"error_1011_copy_func_two_types.pa", ":3:1: " + sig},
+		{"error_1050_copy_func_by_value.pa", ":2:1: " + sig},
+		{"error_1051_copy_func_no_params.pa", ":2:1: " + sig},
+		{"error_1052_copy_func_arrays.pa", ":2:1: " + sig},
+		{"error_1012_copy_func_exported.pa", ":2:1: error: '->' is not exported: it comes with its type wherever the type goes."},
+		{"error_1013_copy_func_nested.pa", ":3:2: " + place},
+		{"error_1014_copy_func_c_struct.pa", ":2:1: " + place},
+		{"error_1015_copy_func_other_module.pa", ":2:1: " + place},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		// An import is looked for where the work tree keeps its AST.
+		genModuleAst("../test/testdata/sa/lib_sa_copy_func.pa");
+		string ast_out = moduleAstPath("../test/testdata/sa/" + file);
+		ASSERT_EQ(execTestCommand(
+			"palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa, error_append)
+{
+	const string firstParam = "error: the first parameter of operator function '<<' must be a writable borrow '@!T' of a struct.";
+	const string ret = "error: operator function '<<' must return '@!A', the type of its first parameter, so that '<<' chains.";
+	const string temp = "error: the left operand of '<<' must be a variable, a field or an element, a '@!' borrow, "
+	                    "or a call returning '@!T'";
+	const pair<string, string> cases[] = {
+		{"error_997_append_func_read_only.pa", ":2:1: " + firstParam},
+		{"error_998_append_func_no_struct_first.pa", ":2:1: " + firstParam},
+		{"error_999_append_func_no_ret.pa", ":2:1: " + ret},
+		{"error_1000_append_func_ret_value.pa", ":2:1: " + ret},
+		{"error_1001_append_func_ret_other.pa", ":3:1: " + ret},
+		{"error_1002_append_func_writable_operand.pa",
+		 ":2:1: error: parameter 'x' of operator function '<<' cannot be '@!': an operand is never passed for writing."},
+		{"error_1003_append_read_only.pa", ":5:1: error: '<<' cannot append through a read-only borrow '@T'."},
+		{"error_1004_append_to_returned.pa", ":4:1: " + temp},
+		{"error_1005_append_to_operator_result.pa", ":6:1: " + temp},
+		{"error_1006_append_not_struct.pa", ":4:1: error: '<<' appends to a struct, not to 'int32'; the left shift is '<<<'."},
+		{"error_1007_append_varr.pa", ":4:1: error: '<<' appends to a struct, not to '[+]int32'; the left shift is '<<<'."},
+		{"error_1008_append_no_func.pa", ":3:1: error: No operator function '<<' takes (@!A, int64)."},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		string ast_out = "out/test.ast.json";
+		ASSERT_EQ(execTestCommand(
+			"palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
+		string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");
+		ASSERT_NE(sa.find(expected), string::npos) << file << ": " << sa;
+	}
+}
+
+TEST(sa_error, hidden_fields)
+{
+	const string priv = "error: the field 'secret' of 'box' is private to the module defining 'box'.";
+	auto ro = [](const string& field) {
+		return "error: the field '" + field + "' of 'box' is read-only outside the module defining 'box', "
+		       "and so is anything reached through it.";
+	};
+	auto marker = [](const string& m, const string& field) {
+		return "error: '" + m + "' on the field '" + field + "' needs an exported struct ('export type'): "
+		       "the boundary is the module defining it.";
+	};
+	const pair<string, string> cases[] = {
+		{"error_1030_private_field_read.pa", ":3:11: " + priv},
+		{"error_1031_private_field_write.pa", ":3:1: " + priv},
+		{"error_1032_readonly_field_write.pa", ":3:1: " + ro("n")},
+		{"error_1033_readonly_field_borrow.pa", ":3:15: " + ro("n")},
+		{"error_1034_readonly_field_push.pa", ":3:1: " + ro("items")},
+		{"error_1035_readonly_field_elem.pa", ":3:6: " + ro("items")},
+		{"error_1036_readonly_field_nested.pa", ":3:6: " + ro("at")},
+		{"error_1037_readonly_field_through_ptr.pa", ":3:6: " + ro("p")},
+		{"error_1038_readonly_field_move_out.pa", ":3:16: " + ro("items")},
+		{"error_1039_struct_lit_hidden.pa",
+		 ":3:10: error: a struct literal of 'box' outside the module defining it cannot set the private field 'secret'."},
+		{"error_1040_struct_lit_positional.pa",
+		 ":3:15: error: 'box' has private or read-only fields: outside the module defining it, a struct literal of it names the fields it sets."},
+		{"error_1041_field_access_not_exported.pa", ":1:1: " + marker("private", "x")},
+		{"error_1042_field_access_block_type.pa", ":3:2: " + marker("readonly", "x")},
+		{"error_1043_struct_lit_hidden_no_init.pa",
+		 ":2:9: error: no struct literal of 'box' can be written outside the module defining it: its readonly field 'items' has no initializer."},
+		{"error_1044_readonly_ptr_field_lend.pa", ":4:8: error: cannot bind a read-only pointer '@T' to a mutable pointer '@!T'."},
+		{"error_1045_readonly_field_for_borrow.pa", ":3:12: " + ro("items")},
+	};
+	for (auto& [file, expected] : cases) {
+		cleanTestEnv();
+		genModuleAst("../test/testdata/sa/lib_sa_hidden.pa");
+		string ast_out = moduleAstPath("../test/testdata/sa/" + file);
 		ASSERT_EQ(execTestCommand(
 			"palan-gen-ast ../test/testdata/sa/" + file + " -o " + ast_out), "");
 		string sa = execTestCommand("palan-sa " + ast_out + " -o out/test.sa.json");

@@ -1,0 +1,6 @@
+type bag { [+]int32 v; };
+type bagit { @bag b; int64 pos; };
+func iter(@bag b) -> bagit { bagit r; b -> r.b; return r; }
+func next(@!bagit it) -> bool ok, @int32 c { false -> ok; @it.b.v[0] -> c; }
+bag g;
+for @!c in g { }

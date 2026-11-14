@@ -1024,6 +1024,56 @@ TEST(gen_ast, char_literal) {
 		EXPECT_EQ(init["value"], expected[i]) << i;
 	}
 	ASSERT_EQ(stmts[0]["vars"][0]["init"]["loc"], json::parse("[1, 11, 1, 14]"));
+	ASSERT_EQ(stmts[0]["vars"][0]["init"]["char"], true);
+}
+
+// A character literal is the code point it holds, written as is or as '\u{X}';
+// in a string literal '\u{X}' writes the code point's UTF-8 bytes.
+TEST(gen_ast, code_point_literal) {
+	cleanTestEnv();
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/159_code_point_literal.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	auto& stmts = jout["ast"]["statements"];
+	const char* expected[] = {"233", "128512", "8364", "65"};
+	for (int i = 0; i < 4; i++) {
+		auto& init = stmts[i]["vars"][0]["init"];
+		EXPECT_EQ(init["value"], expected[i]) << i;
+		EXPECT_EQ(init["char"], true) << i;
+	}
+	ASSERT_EQ(stmts[4]["value"]["value"], "x€y😀\\x00");
+	// '\x' without two hex digits, or an unknown escape, is the letter itself.
+	ASSERT_EQ(stmts[5]["value"]["value"], "\\x07\\x08\\n\\r\\t\\x0B\\x00xZqJ");
+}
+
+TEST(gen_ast, copy_func)
+{
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/162_copy_func.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const json& f = jout["ast"]["functions"][0];
+	ASSERT_EQ(f["name"], "->");
+	ASSERT_EQ(f["parameters"].size(), 2u);
+	ASSERT_FALSE(jout.contains("export"));
+}
+
+// '<<' binds as the shifts do: tighter than '->', looser than '+'.
+TEST(gen_ast, append)
+{
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/161_append.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	ASSERT_EQ(jout["ast"]["functions"][0]["name"], "<<");
+	auto& stmts = jout["ast"]["statements"];
+	auto& sum = stmts[0]["body"];
+	ASSERT_EQ(sum["expr-type"], "append");
+	ASSERT_EQ(sum["right"]["expr-type"], "add");
+	ASSERT_EQ(stmts[1]["body"]["expr-type"], "chain-call");
+	ASSERT_EQ(stmts[1]["body"]["value"]["expr-type"], "append");
+	auto& chain = stmts[2]["body"];
+	ASSERT_EQ(chain["left"]["expr-type"], "append");
+	ASSERT_EQ(chain["right"]["name"], "b");
+	ASSERT_EQ(stmts[3]["value"]["expr-type"], "shl");
 }
 
 TEST(gen_ast, bool_literal) {
@@ -1461,4 +1511,19 @@ TEST(gen_ast, str_lit_bytes) {
 	ASSERT_EQ(stmts[1]["value"]["value"], "\\\\\\\"\\n\\t\\r\\x01");
 	// A valid UTF-8 character stays as it is however it was written; a byte written raw is escaped.
 	ASSERT_EQ(stmts[2]["value"]["value"], "€€\\xFFé");
+}
+
+// A marker is a word only before a field's type: 'private' and 'readonly' stay names.
+TEST(gen_ast, hidden_fields)
+{
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/163_hidden_fields.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const json& f = jout["ast"]["statements"][0]["fields"];
+	ASSERT_EQ(f[0]["access"], "private");
+	ASSERT_EQ(f[1]["access"], "readonly");
+	ASSERT_EQ(f[2]["name"], "private");
+	ASSERT_EQ(f[2]["access"], "private");
+	ASSERT_EQ(f[3]["var-type"]["type-name"], "readonly");
+	ASSERT_FALSE(f[3].contains("access"));
 }

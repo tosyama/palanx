@@ -468,8 +468,7 @@ TEST(sa_error, varr)
 		{"error_862_varr_borrow_addr_of.pa", ":4:3: error: 'h' is already a borrow ('@T'/'@[n]T'/'@[+]T'); pass it by name."},
 		{"error_863_len_addr_of_varr_borrow.pa", ":3:15: error: 'h' is already a borrow ('@T'/'@[n]T'/'@[+]T'); pass it by name."},
 		{"error_864_varr_borrow_to_sized_borrow.pa", ":3:1: error: array shape '@[+]int64' does not match the borrowed array type '@[3]int64'."},
-		{"error_737_arr_len_unsized_param.pa", ":2:2: error: 'len' takes a variable-length array or an array of constant size; this array's size is not known at compile time."},
-		{"error_738_arr_len_runtime_size.pa", ":3:11: error: 'len' takes a variable-length array or an array of constant size; this array's size is not known at compile time."},
+		{"error_737_arr_len_unsized_param.pa", ":2:2: error: 'len' cannot tell this array's length: an array declared with its size, or a variable-length array, keeps one, but a '[]T' does not."},
 		{"error_739_varr_len_const.pa", ":2:1: error: const 'N' must be initialized with a compile-time constant."},
 		{"error_740_varr_borrow_push_readonly.pa", ":1:23: error: cannot bind a read-only pointer '@T' to a mutable pointer '@!T'."},
 		{"error_741_varr_borrow_write_readonly.pa", ":1:23: error: cannot write through read-only pointer '@T'; use '@!T' for mutable."},
@@ -541,6 +540,7 @@ TEST(sa_error, varr)
 		{"error_801_arr_named_ret_init.pa", ":1:26: error: named return 'r' of a struct or array type cannot have an initializer."},
 		{"error_802_arr_return_lit_count.pa", ":2:2: error: array '[3]int32' has size 3 but its array literal has 2 elements."},
 		{"error_803_arr_param_lit_count.pa", ":2:3: error: array 'x' has size 3 but its array literal has 2 elements."},
+		{"error_1047_varr_borrow_row_vs_struct.pa", ":5:1: error: array shape '@![+][2]$F' does not match '[+]F': its elements must have the same size and layout, and be owned by both or by neither."},
 	};
 	for (auto& [file, expected] : cases) {
 		cleanTestEnv();

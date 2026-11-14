@@ -89,10 +89,10 @@ enum PlnSaMessageCode {
 	E_VarTypeInferenceNotImpl,	// arg1: variable name
 	E_StmtNotImplemented,
 	E_ExprNotImplemented,
-	E_ParamDefaultNotImpl,	// arg1: parameter name
 	E_ParamNotImplemented,
 	E_RetNotImplemented,
 	E_IntLiteralOutOfRange,	// arg1: the literal as written, arg2: adopted type display name
+	E_WideCharLitNarrowType,	// arg1: code point (U+XXXX), arg2: type display name
 	E_ArrLitContext,
 	E_ArrLitCountMismatch,	// arg1: variable name, arg2: declared size, arg3: literal element count
 	E_ArrLitSizeNotConst,	// arg1: variable name
@@ -120,6 +120,7 @@ enum PlnSaMessageCode {
 	E_NamedRetInitOnStruct,	// arg1: return name
 	E_TransferToNonOwnedField,	// arg1: field name
 	E_ExpiringStructToBorrow,
+	E_ConvertedLiteralToBorrow,	// arg1: type
 	E_TransferFromNonOwner,	// arg1: operator
 	E_TransferNotArg,
 	E_TransferToParam,	// arg1: parameter, arg2: function
@@ -196,8 +197,35 @@ enum PlnSaMessageCode {
 	E_OperatorFuncNoStruct,	// arg1: operator
 	E_OperatorFuncWritableParam,	// arg1: operator, arg2: parameter name
 	E_NoOperatorFunc,	// arg1: operator, arg2: operand types
+	E_CompareFuncRet,	// arg1: operator
 	E_FieldInitNotConst,	// arg1: field name
 	E_FieldInitUnsupported,	// arg1: field name
+	E_ParamDefaultNotConst,	// arg1: parameter name
+	E_ParamDefaultNotLast,	// arg1: parameter name
+	E_OperatorFuncDefault,	// arg1: operator, arg2: parameter name
+	E_VariadicElemType,
+	E_VariadicWithDefault,	// arg1: function name
+	E_OperatorFuncVariadic,	// arg1: operator
+	E_SyscallVariadic,	// arg1: syscall name
+	E_VariadicArgTempBorrow,	// arg1: function name
+	E_AppendFuncFirstParam,
+	E_AppendFuncRet,	// arg1: type of the first parameter
+	E_AppendNotStruct,	// arg1: left operand type
+	E_AppendReadOnly,
+	E_AppendLeftOperand,
+	E_CopyFuncSig,
+	E_CopyFuncPlace,
+	E_CopyFuncExported,
+	E_ForIterShape,		// arg1: struct type display name
+	E_ForIterAmbiguous,	// arg1: struct type display name
+	E_ForNextShape,		// arg1: iterator type display name
+	E_ForElemForm,		// arg1: the loop variable as written ('@c' or '@!c'), arg2: next's element type
+	E_FieldAccessNotExported,	// arg1: "private" or "readonly", arg2: field name
+	E_PrivateField,		// arg1: struct type display name, arg2: field name
+	E_ReadonlyField,	// arg1: struct type display name, arg2: field name
+	E_StructLitHiddenField,	// arg1: struct type display name, arg2: field name, arg3: "private" or "readonly"
+	E_StructLitPositionalHidden,	// arg1: struct type display name
+	E_StructLitHiddenNoInit,	// arg1: struct type display name, arg2: field name, arg3: "private" or "readonly"
 };
 
 class PlnSaMessage
@@ -209,6 +237,7 @@ public:
 	// The program-wide name of an unexported struct/enum, or one declared in
 	// a block. A message shows it as written.
 	static string localTypeName(const string& moduleId, int seq, const string& name);
+	static string writtenTypeName(const string& typeName);
 private:
 	static string format(PlnSaMessageCode msg_code, string arg1, string arg2, string arg3);
 };

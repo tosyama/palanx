@@ -71,7 +71,8 @@ string PlnBuildMgrMessage::getMessage(PlnBuildMgrMessageCode msg_code, string ar
 		case E_LibSymbolMismatch:
 			BOOST_ASSERT(arg1 != "\x01" && arg2 != "\x01");
 			return "palan: the interface of '" + arg1 + "' declares '" + arg2
-				+ "', which its object does not define; a public function may use an alias of a private type of an internal module";
+				+ "', which its object does not define; a public declaration may use a private type of an internal module, through an alias "
+				"or as a type with its own '->'";
 
 		case E_LibraryNotFound:
 			BOOST_ASSERT(arg1 != "\x01" && arg2 != "\x01");

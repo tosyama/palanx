@@ -29,7 +29,7 @@ void PlnAllocShapes::add(const json& sa)
 	}
 }
 
-void writeAllocatorsHeader(ostream& hdr)
+void writeAllocatorsHeader(ostream& hdr, const PlnAllocShapes& shapes)
 {
 	// The struct types of the source are named after the program's own, and a
 	// system header could bring a C type of any of those names into this
@@ -42,6 +42,10 @@ void writeAllocatorsHeader(ostream& hdr)
 	    << "void *memmove(void *dest, const void *src, unsigned long n);\n"
 	    << "void *realloc(void *ptr, unsigned long size);\n"
 	    << "void abort(void);\n";
+	// A type's '->' is a Palan function, called as C calls it.
+	for (auto& shape : shapes.structs)
+		if (shape.contains("copy-func"))
+			hdr << "void " << shape["copy-func"].get<string>() << "(const void *src, void *dst);\n";
 }
 
 void writeAllocatorsSource(ostream& out, const PlnAllocShapes& shapes, const string& library)
@@ -77,6 +81,19 @@ void writeAllocatorsSource(ostream& out, const PlnAllocShapes& shapes, const str
 			+ to_string(struct_by_name.at(name)->at("total-size").get<int64_t>()) + ");";
 	};
 
+	// Writes src into the existing dst, both borrows: by the type's '->', or
+	// by the function that writes the parts of a struct holding types having one.
+	auto structAssigns = [&](const string& name) {
+		auto it = struct_by_name.find(name);
+		return it != struct_by_name.end() && it->second->value("assigns", false);
+	}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+	auto structAssign = [&](const string& name, const string& dst, const string& src) {
+		const json& shape = *struct_by_name.at(name);
+		if (shape.contains("copy-func"))
+			return shape["copy-func"].get<string>() + "(" + src + ", " + dst + ");";
+		return "__pln_assign_" + name + "(" + dst + ", " + src + ");";
+	}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+
 	// Slots are filled with raw C allocations: a borrow slot never takes
 	// ownership, and the array's free function releases the elements.
 	auto structElemBuild = [&](const string& name, const string& slot, const string& indent) {
@@ -104,6 +121,7 @@ void writeAllocatorsSource(ostream& out, const PlnAllocShapes& shapes, const str
 		int depth;         // the levels of a row laid out in place
 		bool owned;
 		bool built;        // built when its slot comes into use: owned, or a struct with initializers
+		bool assigns;      // written into by a type's '->', its own or a part's
 		bool embedded;     // laid out in the slot itself (`[+]$T`, `[+]$[n]T`)
 		string buildElem;  // a slot as the build helper fills it
 		string declElem;   // a slot as a local array declares it
@@ -131,6 +149,7 @@ void writeAllocatorsSource(ostream& out, const PlnAllocShapes& shapes, const str
 			e.leaf = make_shared<const ElemOps>(opsOf(desc["elem"]));
 			const ElemOps& l = *e.leaf;
 			e.embedded = kind == "embed-row";
+			e.assigns = l.assigns;
 			e.value = "[]" + l.slotRun;
 			if (!e.embedded) {
 				// A row is a block of its own, which the slot points at.
@@ -169,6 +188,8 @@ void writeAllocatorsSource(ostream& out, const PlnAllocShapes& shapes, const str
 		e.owned = kind == "struct" || isVarr;
 		e.embedded = kind == "embed-struct";
 		e.built = e.owned || (e.embedded && hasOwned(e.type));
+		e.assigns = isVarr ? opsOf(*varrElemDescs.at(e.inner)).assigns // LCOV_EXCL_BR_LINE
+		          : kind != "prim" && structAssigns(e.type);
 		e.buildElem = "@!" + e.type;
 		e.declElem = e.buildElem;
 		e.ownElem = e.type;
@@ -267,6 +288,23 @@ void writeAllocatorsSource(ostream& out, const PlnAllocShapes& shapes, const str
 	auto borrowed = [](const ElemOps& e, const string& v, bool isMutable = false) {
 		return e.kind == "struct" || e.kind == "varr" ? (isMutable ? "@!" : "@") + v : v;
 	}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+	// As elemSet, into a slot already holding a value: the parts a type's '->'
+	// writes are written by it.
+	auto elemAssign = [&](const ElemOps& e, const string& dst, const string& src, const vector<string>& names) {
+		if (!e.assigns) return elemSet(e, dst, src, names);
+		if (e.kind == "embed-varr")
+			return "__pln_assign_" + e.inner + "(@!" + dst + ", " + src + ".data, " + src + ".len" + lenArgs(names) + ");";
+		if (e.kind == "varr")
+			return "__pln_assign_" + e.inner + "(" + dst + ", " + src + ".data, " + src + ".len" + lenArgs(names) + ");";
+		if (e.kind == "embed-row")
+			return "__pln_assignrun_" + e.key + "(" + dst + " as " + e.data + ", " + src + " as " + e.data + ", 1" + lenArgs(names) + ");";
+		if (e.kind == "row" && !e.leaf->owned)
+			return "__pln_assignrun_" + e.leaf->key + "(" + dst + " as " + e.leaf->data + ", " + src + " as " + e.leaf->run
+				+ ", " + names[0] + lenArgs(names, 1) + ");";
+		if (e.kind == "row")
+			return "__pln_assignrun_" + e.leaf->key + "(" + dst + ", " + src + ", " + names[0] + lenArgs(names, 1) + ");";
+		return structAssign(e.type, dst, src);
+	}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
 	set<string> elemHelpersDone;
 	function<void(const ElemOps&)> emitElemHelpers = [&](const ElemOps& e) {
 		if (!e.built || !elemHelpersDone.insert(e.key).second) return;
@@ -337,6 +375,38 @@ void writeAllocatorsSource(ostream& out, const PlnAllocShapes& shapes, const str
 		    << "}\n";
 	};
 
+	// __pln_assignrun_E writes a run of elements into a run of existing ones.
+	// Elements laid out in place are addressed in their run, as `@!dst[i]`.
+	set<string> assignHelpersDone;
+	function<void(const ElemOps&)> emitAssignHelpers = [&](const ElemOps& e) {
+		if (!e.assigns || !assignHelpersDone.insert(e.key).second) return;
+		if (e.leaf) emitAssignHelpers(*e.leaf);
+		vector<string> names = lenNames(e.nlens);
+		string mp = lenParams(e.nlens), ma = lenArgs(names);
+		string dstRun = e.owned ? "[]" + e.ownElem : e.data;
+		string srcRun = e.owned ? "[]" + e.ownElem : e.run;
+		out << "\nfunc __pln_assignrun_" << e.key << "(" << dstRun << " dst, " << srcRun << " src, int64 n" << mp << ") {\n";
+		if (e.kind == "embed-row") {
+			string n = countOf(e, names);
+			out << "    __pln_assignrun_" << e.leaf->key << "(dst, src, n * " << n << lenArgs(names, e.depth) << ");\n"
+			    << "}\n";
+			return;
+		}
+		out << "    int64 i = 0;\n"
+		    << "    while i < n {\n";
+		if (e.kind == "embed-struct")
+			out << "        " << structAssign(e.type, "@!dst[i]", "@src[i]") << "\n";
+		else
+			out << "        __pln_aset_" << e.key << "(dst, i, " << borrowed(e, "src[i]") << ma << ");\n";
+		out << "        i + 1 -> i;\n"
+		    << "    }\n"
+		    << "}\n";
+		if (e.kind != "embed-struct")
+			out << "func __pln_aset_" << e.key << "([]" << e.ownElem << " slots, int64 i, " << borrowed(e, e.value) << " x" << mp << ") {\n"
+			    << "    " << elemAssign(e, "@!slots[i]", "x", names) << "\n"
+			    << "}\n";
+	}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+
 	// Struct type declarations (leaf-first order from SA).
 	// Only the owned pointer fields are declared, at their original
 	// offsets; every other byte range becomes opaque padding. The
@@ -387,6 +457,16 @@ void writeAllocatorsSource(ostream& out, const PlnAllocShapes& shapes, const str
 				owned_decls.push_back({offset, "$[" + to_string(init["count"].get<int64_t>()) + "]$" + init["name"].get<string>() + " " + slot,
 					init["count"].get<int64_t>() * struct_by_name.at(init["name"])->at("total-size").get<int64_t>()});
 		}
+		// A run of structs a type's '->' writes is declared as their type, so
+		// that their own functions take each.
+		int run_no = 0;
+		for (auto& run : shape.value("runs", json::array())) {
+			string sub = run["name"];
+			int64_t count = run["count"];
+			owned_decls.push_back({run["offset"].get<int64_t>(),
+				"$[" + to_string(count) + "]$" + sub + " __pln_r" + to_string(run_no++),
+				count * struct_by_name.at(sub)->at("total-size").get<int64_t>()});
+		}
 		sort(owned_decls.begin(), owned_decls.end());
 
 		out << "\nexport type " << name << " {";
@@ -407,6 +487,23 @@ void writeAllocatorsSource(ostream& out, const PlnAllocShapes& shapes, const str
 		out << " };\n";
 	}
 
+	// What `stmt` does to each struct of every run, `{}` standing for the run.
+	auto forRuns = [&](const json& shape, const function<string(const string&, const string&)>& stmt) {
+		string s;
+		int run_no = 0;
+		for (auto& run : shape.value("runs", json::array())) {
+			string slot = "__pln_r" + to_string(run_no++) + "[i]";
+			s += "    {\n"
+			     "        int64 i = 0;\n"
+			     "        while i < " + to_string(run["count"].get<int64_t>()) + " {\n"
+			     "            " + stmt(run["name"].get<string>(), slot) + "\n"
+			     "            i + 1 -> i;\n"
+			     "        }\n"
+			     "    }\n";
+		}
+		return s;
+	}; // LCOV_EXCL_LINE -- only exception cleanup is attributed here
+
 	// Struct allocator/free functions, for structs owning fields
 	for (auto& shape : struct_shapes) {
 		if (shape["shape-kind"] == "bytes") continue;
@@ -418,6 +515,8 @@ void writeAllocatorsSource(ostream& out, const PlnAllocShapes& shapes, const str
 			for (auto& len : of["lens"]) f.lens.push_back(to_string(len.get<int64_t>()));
 			if (f.e.kind == "embed-row") emitElemHelpers(f.e);
 			else if (f.e.leaf) emitElemHelpers(*f.e.leaf);
+			if (f.e.kind == "embed-row") emitAssignHelpers(f.e);
+			else if (f.e.leaf) emitAssignHelpers(*f.e.leaf);
 			owned.push_back(move(f));
 		}
 
@@ -440,6 +539,7 @@ void writeAllocatorsSource(ostream& out, const PlnAllocShapes& shapes, const str
 		// a heap one also frees its own block.
 		out << "export func __pln_init_" << name << "(@!" << name << " p) {\n";
 		for (auto& f : owned) out << elemBuild(f.e, "p." + f.slot, "    ", f.lens);
+		out << forRuns(shape, [](const string& sub, const string& slot) { return "__pln_init_" + sub + "(@!p." + slot + ");"; });
 		for (size_t i = 0; i < inits.size(); i++) {
 			const json& init = inits[i];
 			string kind = init["kind"], slot = "p.__pln_i" + to_string(i);
@@ -469,6 +569,7 @@ void writeAllocatorsSource(ostream& out, const PlnAllocShapes& shapes, const str
 		out << "}\n"
 		    << "export func __pln_fini_" << name << "(@!" << name << " p) {\n";
 		for (auto& f : owned) out << "    " << elemDrop(f.e, "p." + f.slot, "    ", f.lens) << "\n";
+		out << forRuns(shape, [](const string& sub, const string& slot) { return "__pln_fini_" + sub + "(@!p." + slot + ");"; });
 		out << "}\n"
 		    << "export func __pln_free_" << name
 		    << "(@!" << name << " p) {\n"
@@ -490,9 +591,31 @@ void writeAllocatorsSource(ostream& out, const PlnAllocShapes& shapes, const str
 			else if (inits[i]["kind"] == "run" || inits[i]["kind"] == "structs")
 				out << "    memcpy(dst." << slot << ", src." << slot << ", " << sizeOfInit(inits[i]) << ");\n";
 		}
+		out << forRuns(shape, [](const string& sub, const string& slot) {
+			return "__pln_copy_" + sub + "(@!dst." + slot + ", @src." + slot + ");";
+		});
 		out << "}\n";
-		// A run of these laid out in place, when they own nothing.
-		if (!inits.empty() && owned.empty())
+		// Into an existing value: as the copy, but for what a type's '->' writes.
+		if (shape.value("assigns", false) && !shape.contains("copy-func")) {
+			out << "export func __pln_assign_" << name << "(@!" << name << " dst, @" << name << " src) {\n";
+			for (auto& [pad, size] : struct_pads[name])
+				out << "    memcpy(dst." << pad << ", src." << pad << ", " << size << ");\n";
+			for (auto& f : owned)
+				out << "    " << elemAssign(f.e, "dst." + f.slot, "src." + f.slot, f.lens) << "\n";
+			for (size_t i = 0; i < inits.size(); i++) {
+				string slot = "__pln_i" + to_string(i);
+				if (inits[i]["kind"] == "prim") out << "    src." << slot << " -> dst." << slot << ";\n";
+				else if (inits[i]["kind"] == "run" || inits[i]["kind"] == "structs")
+					out << "    memcpy(dst." << slot << ", src." << slot << ", " << sizeOfInit(inits[i]) << ");\n";
+			}
+			out << forRuns(shape, [&](const string& sub, const string& slot) {
+				return structAssign(sub, "@!dst." + slot, "@src." + slot);
+			});
+			out << "}\n";
+		}
+		// A run of these laid out in place, when they own nothing: built where
+		// a field initializer or a type's '->' is its own.
+		if (owned.empty())
 			out << "export func __pln_initrun_" << name << "(@!" << name << " run, int64 from, int64 to) {\n"
 			    << "    int64 i = from;\n"
 			    << "    while i < to {\n"
@@ -508,6 +631,14 @@ void writeAllocatorsSource(ostream& out, const PlnAllocShapes& shapes, const str
 		emitElemHelpers(e);
 		vector<string> names = lenNames(e.nlens);
 		string mp = lenParams(e.nlens), ma = lenArgs(names);
+		if (shape["shape-kind"] == "arr" && !e.owned) {
+			// Elements laid out in place, copied as bytes: only written into.
+			emitAssignHelpers(e);
+			out << "\nexport func __pln_assign_" << key << "(" << e.data << " dst, " << e.run << " src, int64 n" << mp << ") {\n"
+			    << "    __pln_assignrun_" << e.key << "(dst, src, n" << ma << ");\n"
+			    << "}\n";
+			continue;
+		}
 		if (shape["shape-kind"] == "arr") {
 			// A fixed array of owned elements, all of them live.
 			string buildRun = "[]" + e.buildElem, ownRun = "[]" + e.ownElem;
@@ -531,6 +662,12 @@ void writeAllocatorsSource(ostream& out, const PlnAllocShapes& shapes, const str
 			    << "export func __pln_copy_" << key << "(" << ownRun << " dst, " << ownRun << " src, int64 n" << mp << ") {\n"
 			    << "    __pln_copyrun_" << e.key << "(dst, src, n" << ma << ");\n"
 			    << "}\n";
+			if (e.assigns) {
+				emitAssignHelpers(e);
+				out << "export func __pln_assign_" << key << "(" << ownRun << " dst, " << ownRun << " src, int64 n" << mp << ") {\n"
+				    << "    __pln_assignrun_" << e.key << "(dst, src, n" << ma << ");\n"
+				    << "}\n";
+			}
 			continue;
 		}
 		// A variable-length array's header {len, cap, data}. Only the
@@ -614,6 +751,37 @@ void writeAllocatorsSource(ostream& out, const PlnAllocShapes& shapes, const str
 			out << "    memmove(h.data, src, n * " << size << ");\n";
 		out << "    n -> h.len;\n"
 		    << "}\n";
+		// The elements h has are written into, and those it gains are copied
+		// whole, as new values; src may be h's own elements, as for the copy.
+		if (e.assigns) {
+			emitAssignHelpers(e);
+			out << "export func __pln_assign_" << key << "(@!" << hdr << " h, " << e.run << " src, int64 n" << mp << ") {\n"
+			    << "    if n > h.cap { __pln_reserve_" << key << "(h, n" << ma << "); }\n"
+			    << "    int64 m = h.len;\n"
+			    << "    if n > m {\n";
+			if (e.built) out << "        __pln_build_" << e.key << "(h.data, m, n" << ma << ");\n";
+			if (e.owned) {
+				// A row laid out in place is no slot of its own, but its elements' slots.
+				bool isRow = e.kind == "embed-row";
+				const ElemOps& s = isRow ? *e.leaf : e;
+				string per = isRow ? " * " + countOf(e, names) : "";
+				out << "        int64 i = m" << per << ";\n"
+				    << "        while i < n" << per << " {\n"
+				    << "            __pln_set_" << s.key << "(h.data, i, " << borrowed(s, "src[i]")
+				    << (isRow ? lenArgs(names, e.depth) : ma) << ");\n"
+				    << "            i + 1 -> i;\n"
+				    << "        }\n";
+			} else
+				out << "        memcpy(" << slotAddr(e, "h.data", "m", names) << ", " << slotAddr(e, "src", "m", names)
+				    << ", (n - m) * " << size << ");\n";
+			out << "    } else {\n";
+			if (e.owned) out << "        __pln_drop_" << e.key << "(h.data, n, m" << ma << ");\n";
+			out << "        n -> m;\n"
+			    << "    }\n"
+			    << "    __pln_assignrun_" << e.key << "(h.data, src, m" << ma << ");\n"
+			    << "    n -> h.len;\n"
+			    << "}\n";
+		}
 		// An owned struct moves out of its block, which return then frees.
 		if (e.kind == "struct") {
 			out << "export func __pln_pop_" << key << "(@!" << hdr << " h" << mp << ") -> " << e.type << " {\n"

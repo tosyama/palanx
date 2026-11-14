@@ -1,0 +1,1 @@
+func f(int32 a, int32 b = 0, int32 c) {}

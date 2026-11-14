@@ -10,6 +10,7 @@ add_executable(palan-sa
 	PlnSaStmt.cpp
 	PlnSaMessage.cpp
 	PlnType.cpp
+	../common/PlnInterface.cpp
 )
 palan_tool(palan-sa)
 

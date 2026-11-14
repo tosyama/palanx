@@ -1,0 +1,2 @@
+import "lib_sa_copy_func.pa";
+func ->(@T src, @!T dst) { }

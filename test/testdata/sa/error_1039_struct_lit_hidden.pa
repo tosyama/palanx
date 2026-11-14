@@ -1,0 +1,3 @@
+import "lib_sa_hidden.pa";
+box b;
+box c = {secret: 1, open: 2};

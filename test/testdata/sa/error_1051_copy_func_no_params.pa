@@ -1,0 +1,2 @@
+type T { int32 a; };
+func ->() { }

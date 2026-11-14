@@ -1,0 +1,4 @@
+export type t { int64 a; };
+{
+	type u { readonly int64 x; };
+}

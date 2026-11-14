@@ -298,6 +298,25 @@ TEST(gen_ast, arr_at_bang_struct) {
 	ASSERT_EQ(vt["base-type"]["base-type"]["type-name"], "Point");
 }
 
+// `[...]E` is an array type of its own, written only last among the
+// parameters of a function or a function pointer type.
+TEST(gen_ast, variadic_param) {
+	cleanTestEnv();
+	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/160_variadic.pa");
+	ASSERT_TRUE(checkerr(output));
+	json jout = json::parse(output);
+	const auto& funcs = jout["ast"]["functions"];
+	const json elem = {{"type-kind","pntr"},{"mutable",false},{"base-type",{{"type-kind","arr"},
+		{"specifier","raw"},{"size-expr",nullptr},{"base-type",{{"type-kind","prim"},{"type-name","uint8"}}}}}};
+	ASSERT_EQ(funcs[0]["parameters"][1]["name"], "xs");
+	ASSERT_EQ(funcs[0]["parameters"][1]["var-type"],
+	          json({{"type-kind","arr"},{"specifier","variadic"},{"size-expr",nullptr},{"base-type",elem}}));
+	ASSERT_EQ(funcs[1]["parameters"].size(), 1);
+	const auto& fp = jout["ast"]["statements"][0]["vars"][0]["var-type"]["base-type"];
+	ASSERT_EQ(fp["parameters"][1]["var-type"]["specifier"], "variadic");
+	ASSERT_EQ(fp["parameters"][1]["var-type"]["base-type"]["type-name"], "int64");
+}
+
 TEST(gen_ast, func_arr_at_struct_param) {
 	cleanTestEnv();
 	string output = execTestCommand("palan-gen-ast ../test/testdata/gen-ast/030_func_arr_at_struct_param.pa");
@@ -1146,6 +1165,8 @@ TEST(gen_ast, interface_text) {
 		"export func g() -> int32 a, int32 b;\n"
 		"export func +(@Shown a, @Shown b) -> int32;\n"
 		"export func h();\n"
+		"export func k(int32 a, int32 b = N + 1, Color c = Color.Green, @[]uint8 s = \"a\\tb\", bool on = true, flo64 d = -1.5) -> int32;\n"
+		"export func va(int32 a, [...]@Shown xs);\n"
 		"export syscall sys(int64 x) -> int64 = 39;\n");
 }
 
@@ -1203,7 +1224,7 @@ TEST(gen_ast, interface_const_values_read_back) {
 		if (s["stmt-type"] == "const-decl") source[s["name"]] = withoutLoc(s["value"]);
 	for (auto& s : paiAst["ast"]["statements"])
 		if (s["stmt-type"] == "const-decl") pai[s["name"]] = withoutLoc(s["value"]);
-	ASSERT_EQ(pai.size(), 18u);
+	ASSERT_EQ(pai.size(), 19u);
 	for (auto& [name, value] : pai) ASSERT_EQ(value, source.at(name)) << name;
 }
 

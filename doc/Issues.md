@@ -115,7 +115,7 @@ A variable-length array (v0.2.1) adds a shorter-lived case: `push` and `resize` 
 
 ## 15. `len` Error Messages
 
-**Summary:** `len` reports a missing length only for an array it recognizes (an array whose size is known only at run time, or a `[]T`). A target containing a call, such as `len(@c[f()])`, is not folded, and a value that is not an array, such as `len(@x)` for an `int32 x`, both report "Undefined function 'len'", which does not say what was given. `len` of a run-time-sized array would need the array to keep its length, which it does not.
+**Summary:** `len` reports a missing length only for an array it recognizes (a `[]T`; an array sized at run time gives the length its variable keeps, v0.2.5). A target containing a call, such as `len(@c[f()])`, is not folded, and a value that is not an array, such as `len(@x)` for an `int32 x`, both report "Undefined function 'len'", which does not say what was given.
 
 ---
 
@@ -127,7 +127,7 @@ A variable-length array (v0.2.1) adds a shorter-lived case: `push` and `resize` 
 
 ## 17. A Row Is Pushed with `@`, a Struct Without
 
-**Summary:** `push` on `[+]S` takes its element as a struct-type parameter, which takes a copy of a struct given by name (`ps.push({x: 5, y: 6})`). On `[+][n]T` it takes a row as `@[n]T`, and a borrowed array must be written with `@` (`vp.push(@[7, 8])`; `vp.push([7, 8])` is an error), because arrays have no parameter form that borrows implicitly: a `[n]T` parameter takes a copy. Taking the row as `[n]T` would allow the plain literal, and a row given away with `>>` would then be taken without a copy. Separately, the message for a struct given to `@T` without `@` names only `@[..]` for a literal, though `@{..}` works too.
+**Summary:** `push` on `[+]S` takes its element as a struct-type parameter, which takes a copy of a struct given by name (`ps.push({x: 5, y: 6})`). On `[+][n]T` it takes a row as `@[n]T`, and a borrowed array must be written with `@` (`vp.push(@[7, 8])`; `vp.push([7, 8])` is an error), because arrays have no parameter form that borrows implicitly: a `[n]T` parameter takes a copy. Taking the row as `[n]T` would allow the plain literal, and a row given away with `>>` would then be taken without a copy. Separately, the message for a struct given to `@T` without `@` names only `@[..]` for a literal, though `@{..}` works too. A `v << x` for pushing (the append operator, v0.2.5) is left until this is settled: it would repeat each of these ways, and `[+]uint8 << "abc"` would not say whether it adds one element or the bytes.
 
 ---
 
@@ -191,12 +191,58 @@ A variable-length array (v0.2.1) adds a shorter-lived case: `push` and `resize` 
 
 ---
 
-## 28. A Type Cannot Hide Its Fields, and Exported Type Names Share One Namespace
+## 28. palan Aborts When `HOME` Is Not Set
 
-**Summary:** Every field of an exported struct can be read and written by any importer, so a library type cannot keep its invariants: writing `bytes` of a `std/utf8` `utf8` can drop the NUL at its end or contradict `hadInvalid`. The library therefore offers functions for everything ordinary use needs, so that the fields can later be hidden without breaking callers. Separately, an exported struct or enum name is shared by the whole program, an alias import included, so library types take a prefix (`utf8mode`) to avoid clashing with others. Both are to be revisited as the standard library grows.
+**Summary:** palan keeps its work files under `$HOME/.palan`, and with `HOME` unset it aborts (constructing a `std::string` from a null `getenv("HOME")` in `src/build-mgr/main.cpp`) instead of reporting it. A package build may run without a home; building `std` is not affected, since CMake passes it `HOME=<build>/std-home`. A clear error, or a work directory that can be given otherwise, would fix it.
 
 ---
 
-## 29. palan Aborts When `HOME` Is Not Set
+## 29. An Array Cannot Be Passed as Variadic Arguments
 
-**Summary:** palan keeps its work files under `$HOME/.palan`, and with `HOME` unset it aborts (constructing a `std::string` from a null `getenv("HOME")` in `src/build-mgr/main.cpp`) instead of reporting it. A package build may run without a home; building `std` is not affected, since CMake passes it `HOME=<build>/std-home`. A clear error, or a work directory that can be given otherwise, would fix it.
+**Summary:** A variadic parameter (`[...]T`, v0.2.5) takes its arguments one by one; an existing array cannot be passed as all of them (Go's `f(xs...)`), so a variadic function cannot pass its own arguments on to another variadic function. The address and count the call already passes would serve it; what is missing is syntax and the rules for struct elements, which the callee owns and an array's owner would keep.
+
+---
+
+## 30. A Variadic Argument Cannot Borrow a Temporary Inside Another Call
+
+**Summary:** A variadic argument that borrows a temporary held inside a call returning a borrow, such as `f(id(@mk()))` for `id(@T p) -> @T`, is rejected (E_VariadicArgTempBorrow). The arguments are laid out in an array by statements before the call, and codegen releases a statement's temporaries at the statement's end, so the temporary would be gone when `f` runs. A statement form keeping its temporaries until the call would lift the restriction.
+
+---
+
+## 31. Exported Type Names Share One Namespace
+
+**Summary:** An exported struct or enum is identified program-wide by its written name, so the same name exported by two modules is `E_DuplicateTypeName`, an alias import included, and library types take a prefix (`utf8mode`) to avoid clashing with others. Identifying it as a non-exported type is, by `__pln_L<module hash>_<Name>`, is not enough on its own: `--lib` writes the exported types of a library's other modules into the main's `.pai` as the main's own, so the reader would identify them by the main's module, and the symbols of public functions using them (`get(@Kept)` with `Kept` from `kept.pa`) would differ from the object's. The `.pai` would need to state the module each such type comes from.
+
+That is to be designed together with hiding a type behind an alias: a type the main publishes as `export type X = U.Y;` would show its users only its name, not its fields or size. Its values would be owned by the library or by a member of another type, and the library would offer only functions lending them or moving their ownership; a value the user receives would be freed through the library's own function. Copying and assignment need deciding with it, since the user does not know the size: an initialization from a value (`X b = a;`), `->` into an existing value, passing or returning it as `T`, and copying a struct holding it by value would each be rejected or left to the library's functions (such as a `->` the type defines), while a move (`->>`) passes only the pointer. This would replace today's error for publishing an alias of another module's private type. A function's symbol holds the type behind the alias, so both need the module stated in the `.pai`. A type of another library is not affected: the `.pai` imports that library (`import <...>`) rather than copying its types.
+
+A type's own `->` links by a symbol made of the type's identity alone (`__pln_cp_4utf8`), so it would take the module too. Until then, a public type holding a private type of an internal module that defines `->` is rejected by `--lib` as such a mismatch: the reader would identify the private type by the main's module.
+
+---
+
+## 32. Compile-Time Evaluation
+
+**Summary:** A string literal converted to a struct (`utf8 s = "abc";`, v0.2.5) calls the conversion function at run time, so the value is allocated, copied and checked as UTF-8 each time, though the result is known when compiling. A general mechanism evaluating such calls at compile time, and keeping the result as data, would remove all three; it is not specific to `utf8`.
+
+---
+
+## 33. Only String Literals Convert to a Struct
+
+**Summary:** A string literal converts to a struct `T` through the function named like the type (v0.2.5); an integer or floating-point literal does not, so a big-number or decimal type cannot be written `big n = 12;`. The same rule would extend to them, once the overload rules decide how a numeric literal fitting a primitive parameter compares with one needing a conversion. An array literal stays out, since it already means a struct value where a struct is expected.
+
+---
+
+## 34. Conversion Between Numbers and Text
+
+**Summary:** `std/utf8` makes no text from a number and reads no number from text; the C library's `printf` family and `strtol` are the way today. It belongs in a module of its own for formatting (such as `std/fmt`), designed with how a format is written and how a parse reports failure.
+
+---
+
+## 35. No Default `==` for Structs
+
+**Summary:** Comparing two structs calls the `==` their type defines, and with none it is a compile error (v0.2.5; before it they compared by address). A field-by-field `==` given by default would have to decide how deep owned fields and arrays compare, whether a borrowed field compares the pointer or the pointee, and what a float `NaN` is.
+
+---
+
+## 36. Grapheme Clusters
+
+**Summary:** `std/utf8` counts and iterates by code point, so `"🇯🇵"` has 2 characters and `e` with a combining accent has 2. Counting or iterating what a reader sees as one character (a grapheme cluster) needs Unicode's segmentation data, and its elements would be `utf8` values rather than code points. Case mapping and normalization need such data too.

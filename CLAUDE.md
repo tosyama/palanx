@@ -146,6 +146,7 @@ doc/
 ├── ASTSpec.md        JSON AST format specification (palan-gen-ast output)
 ├── SASpec.md         SA JSON format specification (palan-sa output)
 ├── PalanReference.md Palan language reference manual
+├── PalanStdLibReference.md Palan standard library reference
 ├── Issues.md         Open issues and topics for future consideration
 localtickets/        Local task management (Markdown, not tracked by git)
 ```

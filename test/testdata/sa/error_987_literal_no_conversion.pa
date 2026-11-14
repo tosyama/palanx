@@ -1,0 +1,2 @@
+type text { [+]uint8 b; };
+text s = "abc";

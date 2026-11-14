@@ -1,0 +1,5 @@
+func <<(@!S s, int32 x) -> @!S { return s; }
+s << a + b;
+s << x -> f();
+s << a << b;
+x <<< 1 -> y;

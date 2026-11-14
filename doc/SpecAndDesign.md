@@ -6,23 +6,27 @@ This document specifies the goals, scope, architecture, and requirements for the
 ## 2. Goals
 - Palan aims to be a simpler, safer, and more enjoyable programming language alternative to C.
 
-### 2.1 Iteration Goal (2026-11-05)
-version: 0.2.4 — the foundation for shipping libraries with Palan
+### 2.1 Iteration Goal (2026-11-10)
+version: 0.2.5 — a library type written as naturally as a built-in one
 
-The goal is the final structure, not a quick `utf8`: a standard library and a third party's are
-built and found the same way, and the build tree, an installation and a release have one layout.
+`std/utf8`'s `utf8` should read like a string type of the language, while staying an ordinary
+library type the compiler knows nothing about. What it lacks is added to the language as general
+features any library type can use, not as special cases for `utf8` (3.8):
 
-- A module's identity belongs to its source (3.7), so its compiled form does not depend on the
-  entry. Any file can be an entry so that its top level can hold tests, and its object is reused
-  by every entry (5.1).
-- A library is compiled once and distributed as interfaces and a static archive (3.7).
-- One layout for the build tree, an installation and a release, with a target attribute (6).
-- `std/utf8`, an ordinary library type the compiler knows nothing about, proves the foundation.
-  Gaps it finds are fixed in the language.
+- A string literal converts to a struct through the function named like the type.
+- A type defines comparison (`==`, `<`), appending (`<<`) and copying into an existing value (`->`).
+- Functions take default arguments and variadic arguments; `len` and `for` read the length of an
+  array sized at run time.
+- A type defines how `for` iterates over it.
+- A character literal may be any Unicode code point, written as is or as `\u{...}`.
+- A type's fields can be hidden or read-only outside its module.
 
-Out of scope: shared libraries; support for a second target (only the attribute is added); how a
-library's source differs by OS; a package manager.
-The ticket list is kept in `localtickets/iteration-2026-11-05-v0240-stdlib.md`.
+`std/utf8` is then reworked on these features (3.9), and the standard library gets a reference of
+its own, moved out of PalanReference.md.
+
+Out of scope: method-form calls (`x.f()`) of functions not taking `@!` first; grapheme clusters
+and other Unicode data (case mapping, normalization); conversion between numbers and text;
+compile-time evaluation of functions.
 
 
 ## 3. Command-line Tools' Responsibilities and Design
@@ -218,7 +222,8 @@ Design:
  operand is analyzed once, and the function chosen decides whether it is borrowed or copied.
  sa.json has no operator form; the call is an ordinary Palan call, and an operator function's
  symbol spells the operator as a name starting with a digit (`0sub`), a valid label that no
- written function name can be.
+ written function name can be. Version 0.2.5 resolves comparisons, `<<` and `->` the same way,
+ and adds literal conversion, default and variadic arguments and `for` over a struct (3.8).
 
 ### 3.5 Code Generator (palan-codegen)
 Responsibility:
@@ -340,8 +345,9 @@ For a shape key `K`, the functions are:
 | `__pln_free_K(p, sizes...)` | releases what `p` owns, then `p`; `p` may be NULL |
 | `__pln_init_K(p, sizes...)` | builds the value in an existing block (a `$` variable) |
 | `__pln_fini_K(p, sizes...)` | releases what `p` owns, but not `p` (a `$` variable) |
-| `__pln_copy_K(dst, src, sizes...)` | copies `src` into `dst`, owned parts included |
-| `__pln_initrun_T(p, from, to)` | builds `p[from]` to `p[to - 1]`, structs `T` laid out in place (only a `T` with initializers owning nothing) |
+| `__pln_copy_K(dst, src, sizes...)` | copies `src` into `dst`, owned parts included: `dst` becomes a new value |
+| `__pln_assign_K(dst, src, sizes...)` | copies `src` into the existing `dst`, the parts of a type with its own `->` (3.8) by it (only a `K` holding one) |
+| `__pln_initrun_T(p, from, to)` | builds `p[from]` to `p[to - 1]`, structs `T` laid out in place (only a `T` owning nothing) |
 
 | Shape | `K` | Functions |
 |-------|-----|-----------|
@@ -386,6 +392,16 @@ since structs of one size no longer build alike. Its elements laid out in place 
 (`__pln_init_T` on each element of a run) when their slots come into use, as an owned element is,
 and copied and freed as bytes. A value taken over (`<<=`, `->>`) or written by a C function is
 not built again.
+A struct holding a type with its own `->` (3.8), itself or in a field or element at any depth,
+has `assigns` in its shape, and the type's shape has the function's symbol (`copy-func`), which
+`__allocators.h` declares. Such a struct is never reduced to `__pln_B<n>` either, even owning
+nothing, since writing into it is no longer copying bytes. A struct of that kind laid out in
+another (a `$T` or `$[n]$T` field) is not merged into it as other structs laid out in place are:
+it is kept whole, a run of them (`runs`), declared as its type and built, freed, copied and
+written by its own functions, so that copying the bytes around it leaves the parts its `->`
+keeps alone. `__pln_assign_K` writes the existing elements through helpers
+`__pln_assignrun/aset_E` beside the copy's; into a `[+]T` it writes the elements it has and
+copies those it gains whole, as `__pln_set_E` does.
 A length may be known only at run time (`[m][k]int32`), so keys leave every length out and every
 `arr_E`/`varr_E` function and helper takes, after its own arguments, one length per array level
 below it, outermost first, through rows and `[+]U` elements alike: `[m][3]int32` and `[+][3]int32`
@@ -522,6 +538,141 @@ written there is linked when the object is), but runs only for an entry.
 An archive's members are named by module identity (`std.utf8.o`, `std.utf8.__allocators.o`), since
 modules may share a file name and every module's allocators do.
 
+### 3.8 Type-Defined Behavior, Default and Variadic Arguments
+
+**Status.** Implemented in 0.2.5. PalanReference.md (§2, §7, §8, §9, §11) states the rules and
+SASpec.md how palan-sa represents them; this section keeps why they are so.
+
+Two rules run through all of it:
+
+- A new value is made whole; an existing value is written by its type. Initialization, a move
+  (`->>`, `>>`, `<<=`), a `T` argument and a returned value copy or move the value as a whole and
+  never call a function of the type; only `x -> v` into an existing value calls the type's `->`.
+  This is C++'s copy constructor versus assignment: a value keeps what it was made with (for
+  `utf8`, its mode) unless written into.
+- An operand is evaluated in the order it is written, also when the function takes it in another
+  position (a derived comparison).
+
+**String literal conversion.** The function named like the type is the conversion, so no syntax is
+added.
+
+- Only a string literal converts implicitly, so an allocation and a copy are never hidden behind a
+  byte array that was not meant to become text. Integer and floating-point literals are left for
+  later (doc/Issues.md #33).
+- The function is chosen by visibility, as an operator function is: a module may add one for a type
+  it imports, and an alias does not hide it, since a conversion is never written qualified.
+- A candidate needing a conversion is considered only when none fits without one, so adding a
+  conversion function never changes which function an existing call chooses.
+- Not for `@!T`, since writing into a temporary is lost. `as` never calls a function.
+
+**Comparison functions.** Only `==` and `<` are defined; the other four are derived, so they agree
+by construction. A three-way comparison was not taken: for text, `==` is answered by the lengths
+alone when they differ, which a three-way comparison cannot use.
+
+- Before 0.2.5 two structs compared by address, silently. Now a struct operand always calls a
+  function, a C struct included, and with none it is an error; a default field-by-field `==` would
+  have to decide how deep owned fields compare and what `NaN` is (doc/Issues.md #35).
+- A comparison with `NULL` stays a pointer comparison, since the generated allocators (3.6) and C
+  interop code test borrows against it. Whether two borrows point to the same value is
+  `int64(a) == int64(b)`; no operator is added for it.
+
+**Append operator `<<`.** The function must return `@!T` of its own `T`, so `s << a << b` always
+chains; that it returns `s` itself is a contract the compiler cannot check (doc/Issues.md #1). The
+left operand is what a method-form receiver may be, or a call returning `@!T`: appending to a
+temporary would be lost. `[+]T` gets none (doc/Issues.md #17): `push` passes elements in several ways
+a second spelling would have to repeat, and `[+]uint8 << "abc"` would not say whether it adds one
+element or the bytes.
+
+**Copy function `->`.** It is part of the type, not an operator function. An operator function is
+found among the functions visible where it is written, but `->` is also called where nothing is
+written (a field of a struct copied into), and a module can hold a `T` while seeing none of `T`'s
+module's functions (`T` a field of a type it imports). Choosing it by visibility would make one copy
+behave differently by module, while the generated allocators share one function per shape (3.6).
+Carrying every operator function with its type was not taken either: a function of two struct
+operands would need a rule for which type it goes with, and an operator would reach a module by two
+paths.
+
+- So it is defined only in `T`'s module, not exported, and the StructDef carries its symbol
+  (`copyFunc`) to every module `T` reaches. The symbol is named by the type's identity alone
+  (`__pln_cp_4utf8`, SASpec.md's Symbol names) and is a global C identifier, since the generated
+  allocators call it.
+- The source is the same type only: a `->` from another type would be an implicit conversion under
+  another name.
+- palan-sa tells each copy as into a new value or an existing one (the rule above). Into an
+  existing value of a type holding one, nested or as elements, it calls the generated
+  `__pln_assign_K` (3.6), so `p -> q` and `p.name -> q.name` agree.
+
+**Default arguments.** A default is a constant, not an expression evaluated per call, which in a
+library's interface could name what the library does not publish. palan-sa fills it in at the call,
+so a function's symbol does not change and a changed default reaches callers when they are compiled
+again, which a changed import already causes (5.1). When several candidates fit and one needs a
+default, the call is ambiguous rather than ranked, so the reader follows no further ranking rule.
+An operator function has none (its operands are fixed), nor a function pointer type, so functions
+with different defaults share a pointer type.
+
+**Variadic arguments.** `[...]E` is written as an array because the body sees one.
+
+- The caller lays the arguments out in a temporary array in its frame and passes its address and
+  its count (NULL and 0 for none). A header like a `[+]T`'s was not taken: nothing needs it until
+  arrays can be spread into a call (doc/Issues.md #29), and the address and count serve that too.
+- In the body it has the representation of a local array sized at run time (4), the count being
+  its length, rather than one of its own. Struct elements are the callee's, as a `T` parameter is; the array stays the
+  caller's.
+- Defaults and a variadic parameter together are an error: in `f(1, 2)` for
+  `f(int32 a, int32 b = 0, [...]int32 xs)`, `2` could be either. A candidate fitting through its
+  variadic parameter is ambiguous with another, as for defaults.
+- An element borrowing a temporary held inside another call is an error, since the statements
+  laying out the array would release it before the call (doc/Issues.md #30).
+- It is unrelated to C's `...`, and a Palan variadic function cannot be a C callback.
+
+**Iteration with `for`.** `iter` gives an iterator and `next` advances it. An iterator type, rather
+than an `int64` position, lets the state be anything (a tree's path, a file's buffer); an
+index-based protocol was not taken, since indexing `utf8` by character costs a scan each time. The
+iterator is a struct returned by value and `next` is chosen by it, so the iterations of unrelated
+types do not compete for one `next(@!int64)`. `iter` and `next` are found as operator functions
+are, an alias not hiding them, since `for` never writes their names.
+
+**Character literals.** A literal is its code point. One of 128 or more adopts only an integer type
+of 32 bits or more: UTF-8 text never holds it as a byte, so `buf[i] == 'é'` on a `[]uint8` would be
+silently false. A character of several code points is an error suggesting a string literal; the
+characters of `std/utf8` are code points, grapheme clusters being left for later (doc/Issues.md
+#36).
+
+**Hidden and read-only fields.** The boundary is the module, as for `export`. Unmarked fields stay
+public, since most exported structs are plain data (`samples/raytracer/vecmath.pa`'s `vec3`).
+`private` and `readonly` are not reserved words, so no existing name breaks. `readonly` covers a
+borrowed pointee too: it is not part of the value, but leaving it writable would let any module
+change what the type's module chose to expose read only; a module wanting it changed from outside
+provides a function. A `.pai` keeps `private` fields, since the layout and the allocators need them,
+and generated modules (the allocators) are exempt.
+
+### 3.9 std/utf8
+
+**Status.** Implemented in 0.2.5; PalanStdLibReference.md states what it does.
+
+`utf8` stays an ordinary library type, built only on the features of 3.8. A character is a code
+point and positions count characters, so a position is reached by a scan (O(n)); that is what a
+text type means by a position, rather than bytes.
+
+- `mode` decides how invalid bytes are taken in. `EMPTY_ON_INVALID` of 0.2.4 is replaced by
+  `DELETE_INVALID`: emptying the whole text for one bad part, and keeping it empty, is rarely
+  wanted, and whoever wants it checks `hadInvalid`.
+- A new value keeps its own mode (3.8's first rule); `x -> s` takes `x` in by `s`'s mode, which is
+  why `replaced` of 0.2.4 goes (`utf8 r; s -> r;`).
+- `hadInvalid` is ORed from every text something was made from, and never cleared: through a mode
+  other than `KEEP_INVALID` no invalid bytes remain, so judging by the bytes would lose that one was
+  replaced or deleted. A sequence cut at the end of what was added thus stays counted when later
+  bytes complete it (0.2.4 checked the whole text again); a function checking again can be added
+  when wanted.
+- A function taking text takes `@utf8`, a literal converting to it, except `+`, `<<`, `append` and
+  the comparisons, which also take a literal or `@[]uint8` as it is: converting made
+  `s == "abc"` about 15 times slower.
+- The functions changing `s` return `@!utf8` because each was decided to chain; it is not a rule of
+  the library. A character is not appended with `<<`, since `s << n` for an integer would do it.
+- Left out: functions doing what a shorter form does (`isEmpty`, `clear`), `trimStart`/`trimEnd`, a
+  copying or counted `replace`, case mapping and normalization (Unicode data, doc/Issues.md #36),
+  conversion with numbers (doc/Issues.md #34), compound assignment, `[]` indexing.
+
 ## 4. Expression Value Categories
 
 palan-sa marks an expression whose value has, or needs, an owner with a `category`:
@@ -579,11 +730,14 @@ palan-sa marks an expression whose value has, or needs, an owner with a `categor
   free or a copy uses the lengths of the owner receiving or releasing the value, and a size
   known only at run time on either side matches any size; that the sizes agree is the
   programmer's responsibility. A borrowed `[]T` has no lengths to copy by, and a signature's
-  sizes stay constant.
+  sizes stay constant. Until 0.2.4 `len` and `for` rejected such an array; from 0.2.5 they read
+  the same lengths (`len(@a)` of a local `[n]int32 a`, `for copy x in m[i]`), which a variadic
+  parameter (3.8) also keeps.
 - `T b <<= v;` initializes `b` with what `v` owns: an owned `v` (set to NULL) or an
   `owner-view` moves into it, and a call result is taken over as with `=`.
 - `v -> target` with an owned array or struct `target` and a non-expiring `v` copies the contents
-  (owned parts included); neither side's ownership changes.
+  (owned parts included); neither side's ownership changes. From 0.2.5, a type with a `->`
+  function has its parts copied by that function (3.8).
 
 ## 5. Working Directory and Output Files
 ### 5.1 Working Directory

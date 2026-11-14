@@ -38,6 +38,10 @@ inline json wrapConvert(const json& expr, const json& to_type) {
 }
 // LCOV_EXCL_BR_STOP
 
+inline json strLitType() {
+	return {{"type-kind", "pntr"}, {"base-type", {{"type-kind", "prim"}, {"type-name", "uint8"}}}}; // LCOV_EXCL_BR_LINE
+} // LCOV_EXCL_BR_LINE
+
 // True if `t` is a non-float primitive type (int8..uint64). Shared by every
 // operator that requires integer operands (logical &&/||/!, bitwise &/|/^/~)
 // so the "not a float, and not a pointer/struct" check has one definition.
@@ -206,6 +210,12 @@ inline bool isPtrBorrow(const json& vt)
 	return vt.value("type-kind","") == "pntr" && vt.contains("mutable")
 	    && !vt.contains("arr-size") && !vt.contains("unsized");
 }
+// NULL, as gen-ast folds the C macro.
+inline bool isNullPtrLit(const json& expr)
+{
+	return expr.value("expr-type", "") == "lit-int" && expr.contains("value-type") // LCOV_EXCL_BR_LINE
+	    && expr["value-type"].value("type-kind", "") == "pntr"; // LCOV_EXCL_BR_LINE
+}
 inline bool isAggregateLit(const json& expr)
 {
 	string et = expr.value("expr-type", "");
@@ -216,6 +226,7 @@ inline bool isAggregateLit(const json& expr)
 inline bool isFuncSigType(const json& vt)
 {
 	string tk = vt.value("type-kind","");
+	if (vt.value("variadic", false)) return isFuncSigType(vt["base-type"]);
 	return (tk == "prim" && vt.value("type-name","") != "void") || (tk == "pntr" && vt.contains("mutable"))
 	    || isOwnedBlock(vt);
 }
@@ -229,6 +240,16 @@ inline bool isStructStorage(const json& vt) { return isStructPntr(vt) && !vt.con
 inline bool isVarrAstType(const json& t)
 {
 	return t.value("type-kind","") == "arr" && t.value("specifier","") == "variable";
+}
+inline bool isVariadicAstType(const json& t)
+{
+	return t.value("type-kind","") == "arr" && t.value("specifier","") == "variadic"; // LCOV_EXCL_BR_LINE
+}
+// The `[...]E` parameter of a Palan signature, which only the last one can be.
+inline const json* palanVariadicParam(const json& params)
+{
+	if (params.empty() || !params.back().contains("var-type")) return nullptr;
+	return params.back()["var-type"].value("variadic", false) ? &params.back() : nullptr;
 }
 // A `[+]T` value: one word pointing at its {len, cap, data} header.
 inline bool isVarrPntr(const json& vt)
@@ -369,7 +390,7 @@ inline bool hasCall(const json& e)
 {
 	if (e.is_object()) {
 		string et = e.value("expr-type", "");
-		if (et == "call" || et == "member-call" || et == "chain-call" || et == "call-ptr") return true;
+		if (et == "call" || et == "member-call" || et == "chain-call" || et == "call-ptr" || et == "append") return true;
 		for (auto& [k, v] : e.items())
 			if (hasCall(v)) return true;
 	} else if (e.is_array()) {
@@ -657,6 +678,8 @@ inline string typeDisplayName(const json& t) {
 		return unrepresentableTypeName(t);
 	if (!t.contains("base-type")) return "malformed type"; // LCOV_EXCL_LINE -- no real producer emits this
 	auto perm = [](const json& p) { return string(isWritableThrough(p) ? "@!" : "@"); };
+	if (t.value("variadic", false))
+		return "[...]" + typeDisplayName(t["base-type"]);
 	if (isVarrPntr(t))
 		return (isVarrStorage(t) ? "" : perm(t)) + "[+]" + (isVarrEmbedded(t) ? "$" : "")
 		     + typeDisplayName(t["base-type"]["base-type"]);
@@ -715,7 +738,7 @@ inline bool elemShapeMatch(const json& from, const json& to) {
 	if (isVarrPntr(from) && isVarrPntr(to)) {
 		const json& fe = from["base-type"]["base-type"];
 		const json& te = to["base-type"]["base-type"];
-		if (isArrLevel(te)) return from["base-type"] == to["base-type"];
+		if (isArrLevel(te) || isArrLevel(fe)) return from["base-type"] == to["base-type"];
 		if (isPtrBorrow(te)) return isPtrBorrow(fe) && arrShapeMatch(fe, te, isWritableThrough(to));
 	}
 	if (to.value("type-kind","") != "pntr" || to.contains("arr-size") || !isArrLevel(from))
@@ -754,6 +777,9 @@ inline json astTypeOf(const json& saType)
 		return {{"type-kind","prim"},{"type-name",saType["base-type"]["type-name"]}};
 	} else if (saType.value("type-kind","") == "prim") {
 		return saType;
+	} else if (isPtrBorrow(saType)) {
+		out = {{"type-kind","pntr"},{"mutable",saType["mutable"]}};
+		elem = astTypeOf(saType["base-type"]);
 	}
 	if (elem.is_null())
 		return nullptr;

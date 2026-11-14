@@ -1315,6 +1315,41 @@ TEST(sa, for_loop_index_type)
 	ASSERT_EQ(head["init"]["src"]["name"], counter);
 }
 
+// A struct is iterated by its type's 'iter' and 'next': the iterator is held
+// in the loop's block, and '@!c' is the element 'next' returns a borrow of.
+// The body may read the struct and write its fields.
+// Outside its module a type's read-only fields are read, and whole values are copied and lent.
+TEST(sa, hidden_fields)
+{
+	cleanTestEnv();
+	genModuleAst("../test/testdata/sa/lib_sa_hidden.pa");
+	json jout = run_sa("../test/testdata/sa/345_hidden_fields.pa");
+	ASSERT_TRUE(jout.is_object());
+}
+
+TEST(sa, for_struct)
+{
+	cleanTestEnv();
+	json jout = run_sa("../test/testdata/sa/344_for_struct.pa");
+	ASSERT_TRUE(jout.is_object());
+	const auto& b = jout["statements"][1]["body"];
+	string it = b[0]["vars"][0]["name"];
+	ASSERT_EQ(b[1]["body"]["args"][0]["name"], "g");
+	ASSERT_EQ(b[2]["vars"][0]["name"], "i");
+	ASSERT_EQ(b[3]["stmt-type"], "while");
+	ASSERT_EQ(b[3]["cond"]["value"], "1");
+	const auto& w = b[3]["body"];
+	ASSERT_EQ(w[0]["stmt-type"], "tapple-decl");
+	ASSERT_EQ(w[0]["value"]["args"][0]["name"], it);
+	string e = w[0]["vars"][1]["var-name"];
+	ASSERT_EQ(w[1]["stmt-type"], "if");
+	ASSERT_EQ(w[1]["then"]["body"].back()["stmt-type"], "break");
+	ASSERT_EQ(w[2]["target"]["array"]["name"], e);
+	ASSERT_EQ(w[2]["target"]["index"]["value"], "0");
+	ASSERT_EQ(w[3]["stmt-type"], "field-assign");
+	ASSERT_EQ(b[4]["body"]["args"][0]["name"], it);
+}
+
 // Changes that leave the iterated array's storage and length alone: its
 // elements, deeper arrays, read-only borrows, a fixed-length array in place,
 // and rebinding a borrow.
@@ -1403,4 +1438,202 @@ TEST(sa, operator_func_overload_arg)
 	for (auto& s : jout["statements"])
 		if (s["stmt-type"] == "expr") names.push_back(s["body"]["name"]);
 	ASSERT_EQ(names, vector<string>({gVec2, gVec2, "_331_operator_func_overload_arg..g.int32"}));
+}
+
+// A character literal of 128 or more takes an integer type of 32 bits or
+// more; an ASCII one also a byte, and one with no type to take is an int.
+TEST(sa, code_point_literal)
+{
+	cleanTestEnv();
+	json jout = written(run_sa("../test/testdata/sa/338_code_point_literal.pa"));
+	ASSERT_TRUE(jout.is_object());
+	const auto& stmts = jout["statements"];
+	const char* types[] = {"int32", "uint32", "uint8", "int64"};
+	for (int i = 0; i < 4; i++)
+		ASSERT_EQ(stmts[i]["vars"][0]["init"]["value-type"]["type-name"], types[i]) << i;
+	const auto& args = stmts[4]["body"]["args"];
+	ASSERT_EQ(args[1]["value-type"]["type-name"], "int32");
+	ASSERT_EQ(args[2]["value-type"]["type-name"], "int32");
+}
+
+// An omitted argument is the default, typed by its parameter, wherever the
+// call is written; a string default gets a label only when a call uses it.
+TEST(sa, param_default)
+{
+	cleanTestEnv();
+	json jout = written(run_sa("../test/testdata/sa/339_param_default.pa"));
+	ASSERT_TRUE(jout.is_object());
+	for (auto& f : jout["functions"])
+		for (auto& p : f["parameters"]) {
+			ASSERT_FALSE(p.contains("init")) << f["name"];
+			ASSERT_FALSE(p.contains("default")) << f["name"];
+		}
+	ASSERT_EQ(jout["str-literals"], json::parse(R"([{"label": ".str0", "value": "hi"}, {"label": ".str1", "value": "x"}])"));
+	vector<json> calls;
+	for (auto& s : jout["statements"])
+		if (s["stmt-type"] == "expr") calls.push_back(s["body"]);
+	ASSERT_EQ(calls.size(), 5u);
+	for (size_t i : {0, 3}) {
+		const auto& args = calls[i]["args"];
+		ASSERT_EQ(args.size(), 5u) << i;
+		ASSERT_EQ(args[1]["value"], "8") << i;
+		ASSERT_EQ(args[1]["value-type"]["type-name"], "int64") << i;
+		ASSERT_EQ(args[2]["value"], "1") << i;
+		ASSERT_TRUE(args[2]["value-type"].contains("enum")) << i;
+		ASSERT_EQ(args[3]["value-type"]["type-name"], "flo64") << i;
+		ASSERT_EQ(args[4]["label"], ".str0") << i;
+	}
+	ASSERT_EQ(calls[1]["args"][1]["value"], "5");
+	ASSERT_EQ(calls[2]["args"][1]["value"], "3");
+	// `b = 2` after `int32 a` takes a's type.
+	ASSERT_EQ(calls[4]["args"][1]["value-type"]["type-name"], "int32");
+}
+
+// A length known only at run time is read from the variable the array's
+// declaration keeps it in; a row's own length is in its type.
+TEST(sa, runtime_len)
+{
+	cleanTestEnv();
+	json jout = written(run_sa("../test/testdata/sa/340_runtime_len.pa"));
+	ASSERT_TRUE(jout.is_object());
+	map<string, json> init;
+	for (auto& s : jout["statements"])
+		if (s["stmt-type"] == "var-decl") init[s["vars"][0]["name"]] = s["vars"][0]["init"];
+	ASSERT_EQ(init["n"]["expr-type"], "convert");
+	ASSERT_EQ(init["n"]["src"]["name"], "__a_d0");
+	ASSERT_EQ(init["r"]["expr-type"], "lit-int");
+	ASSERT_EQ(init["r"]["value"], "2");
+}
+
+// A variadic parameter is two: the array sized at run time and its length.
+// A call lays its arguments out in a frame array (NULL with none) and passes
+// their count; struct elements are copies the callee finalizes, not frees.
+TEST(sa, variadic)
+{
+	cleanTestEnv();
+	json jout = written(run_sa("../test/testdata/sa/341_variadic.pa"));
+	ASSERT_TRUE(jout.is_object());
+	const auto& sum = jout["functions"][0];
+	ASSERT_EQ(sum["name"].get<string>().substr(sum["name"].get<string>().rfind("..")), "..sum.int32.Xint64");
+	ASSERT_EQ(sum["parameters"].size(), 3u);
+	ASSERT_EQ(sum["parameters"][1]["var-type"]["run-size"], true);
+	ASSERT_EQ(sum["parameters"][2]["name"], "__xs_d0");
+	ASSERT_EQ(sum["body"].back()["values"][0]["src"]["name"], "__xs_d0");
+	const auto& fini = jout["functions"][1]["body"].back()["body"];
+	ASSERT_NE(fini["name"].get<string>().find("fini"), string::npos);
+
+	vector<json> calls;
+	for (auto& st : jout["statements"])
+		if (st["stmt-type"] == "expr") calls.push_back(st["body"]);
+	const auto& three = calls[0]["args"];
+	ASSERT_EQ(three.size(), 3u);
+	ASSERT_EQ(three[1]["expr-type"], "temp");
+	ASSERT_EQ(three[1]["body"][0]["vars"][0]["init"]["expr-type"], "frame-alloc");
+	ASSERT_EQ(three[1]["body"][0]["vars"][0]["init"]["size"], 16);
+	ASSERT_EQ(three[1]["body"][2]["value"]["value-type"]["type-name"], "int64");
+	ASSERT_EQ(three[2]["value"], "2");
+	const auto& none = calls[1]["args"];
+	ASSERT_EQ(none[1]["value"], "0");
+	ASSERT_EQ(none[1]["value-type"]["type-kind"], "pntr");
+	ASSERT_EQ(none[2]["value"], "0");
+	// The copy of `p` is the callee's: the caller releases nothing.
+	ASSERT_TRUE(calls[2]["args"][0]["release"].empty());
+}
+
+// '==' and '<' are called for struct operands; the other comparisons are
+// derived from them, and a comparison with NULL stays a pointer comparison.
+TEST(sa, compare_func)
+{
+	cleanTestEnv();
+	json jout = written(run_sa("../test/testdata/sa/337_compare_func.pa"));
+	ASSERT_TRUE(jout.is_object());
+	const auto& fs = jout["functions"];
+	const string eq = fs[0]["name"], lt = fs[1]["name"], ltInt = fs[2]["name"];
+	ASSERT_EQ(eq.rfind("_337_compare_func..0eq.", 0), 0u);
+	ASSERT_EQ(lt.rfind("_337_compare_func..0lt.", 0), 0u);
+	map<string, json> init;
+	for (auto& s : jout["statements"])
+		if (s["stmt-type"] == "var-decl") init[s["vars"][0]["name"]] = s["vars"][0]["init"];
+
+	// The function called, whether its result is negated, and the operands passed.
+	auto check = [&](const string& var, const string& func, bool negated, const string& first, const string& second) {
+		json call = init[var];
+		ASSERT_EQ(call["expr-type"] == "logical-not", negated) << var;
+		if (negated) call = call["operand"];
+		ASSERT_EQ(call["name"], func) << var;
+		ASSERT_EQ(call["args"][0]["name"], first) << var;
+		ASSERT_EQ(call["args"][1]["name"], second) << var;
+	};
+	check("r1", eq, false, "a", "b");
+	check("r2", eq, true, "a", "b");
+	check("r3", lt, false, "a", "b");
+	check("r4", lt, false, "b", "a");
+	check("r5", lt, true, "b", "a");
+	check("r6", lt, true, "a", "b");
+	// 2 > a: the literal typed by the parameter it is passed to.
+	ASSERT_EQ(init["r7"]["name"], ltInt);
+	ASSERT_EQ(init["r7"]["args"][1]["value-type"]["type-name"], "int32");
+	ASSERT_EQ(init["r8"]["expr-type"], "cmp");
+	ASSERT_EQ(init["r9"]["expr-type"], "cmp");
+	// next(@!a) > b: next() is evaluated into a temp before b.
+	const auto& ahead = init["r10"];
+	ASSERT_EQ(ahead["expr-type"], "temp");
+	ASSERT_EQ(ahead["body"][0]["vars"][0]["init"]["name"], fs[3]["name"]);
+	ASSERT_EQ(ahead["value"]["name"], lt);
+	ASSERT_EQ(ahead["value"]["args"][0]["name"], "b");
+	ASSERT_EQ(ahead["value"]["args"][1]["name"], ahead["body"][0]["vars"][0]["name"]);
+}
+
+// The left operand of '<<' is passed as a method-form receiver is, and a
+// nested '<<' passes on the borrow its call returns.
+TEST(sa, append)
+{
+	cleanTestEnv();
+	json jout = written(run_sa("../test/testdata/sa/338_append.pa"));
+	ASSERT_TRUE(jout.is_object());
+	const auto& fs = jout["functions"];
+	const string appInt = fs[0]["name"], appAcc = fs[1]["name"], get = fs[2]["name"];
+	ASSERT_EQ(appInt.rfind("_338_append..0app.", 0), 0u);
+	const auto& st = jout["statements"];
+	size_t n = st.size();
+	auto call = [&](size_t fromEnd) -> const json& { return st[n - fromEnd]["body"]; };
+	// a << 1
+	ASSERT_EQ(call(5)["name"], appInt);
+	ASSERT_EQ(call(5)["args"][0]["name"], "a");
+	ASSERT_EQ(call(5)["args"][1]["value-type"]["type-name"], "int64");
+	// a << b: the overload taking '@Acc'
+	ASSERT_EQ(call(4)["name"], appAcc);
+	// p << 2 << 3
+	ASSERT_EQ(call(3)["args"][0]["name"], appInt);
+	ASSERT_EQ(call(3)["args"][0]["args"][0]["name"], "p");
+	// bx.acc << 4
+	ASSERT_EQ(call(2)["args"][0]["expr-type"], "field-access");
+	// get(@!a) << 5
+	ASSERT_EQ(call(1)["args"][0]["name"], get);
+}
+
+// Copying into an existing value calls the type's '->', or the generated
+// function writing the parts of a struct holding one; initializing does not.
+TEST(sa, copy_func)
+{
+	cleanTestEnv();
+	json jout = written(run_sa("../test/testdata/sa/343_copy_func.pa"));
+	ASSERT_TRUE(jout.is_object());
+	const json& f = jout["functions"][0];
+	const string copyFunc = f["name"];
+	ASSERT_EQ(copyFunc.rfind("__pln_cp_", 0), 0u);
+	ASSERT_TRUE(f["export"].get<bool>());
+	const auto& st = jout["statements"];
+	// a -> b
+	ASSERT_EQ(st[2]["body"]["name"], copyFunc);
+	ASSERT_EQ(st[2]["body"]["args"][0]["name"], "a");
+	ASSERT_EQ(st[2]["body"]["args"][1]["name"], "b");
+	// T c = a
+	ASSERT_EQ(st[4]["body"]["name"], "memcpy");
+	// p -> q
+	ASSERT_EQ(st[7]["body"]["name"].get<string>().rfind("__allocators..__pln_assign_", 0), 0u);
+	const auto& shapes = jout["alloc-shapes"];
+	ASSERT_EQ(shapes[0]["copy-func"], copyFunc);
+	ASSERT_TRUE(shapes[1]["assigns"].get<bool>());
+	ASSERT_FALSE(shapes[1].contains("copy-func"));
 }

@@ -1,0 +1,21 @@
+type text { [+]uint8 b; };
+func text(@[]uint8 cs, int32 pad = 0) -> text t { }
+func show(@text t) { }
+func own(text t) { }
+func bytes(@[]uint8 cs) -> int32 { return 1; }
+func bytes(@text t) -> int32 { return 2; }
+func many([...]@text ts) { }
+func ret() -> text { return "r"; }
+func ==(@text a, @text b) -> bool { return true; }
+type pair { text a; int32 n; };
+text s = "init";
+"copy" -> s;
+show("borrow");
+own("owned");
+int32 k = bytes("plain");
+many("v1", "v2");
+bool e = "x" == s;
+pair p = ["field", 1];
+type words { [+]uint8 b; };
+func words([...]@[]uint8 ws) -> words w { }
+words w = "a";

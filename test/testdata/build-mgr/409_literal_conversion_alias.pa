@@ -1,0 +1,4 @@
+import "lib_text.pa" as T;
+T.text s = "alias";
+T.show(@s);
+T.show("arg");

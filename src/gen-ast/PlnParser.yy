@@ -199,6 +199,14 @@ struct BodyList {
 			for (auto& child : node) rejectCIncludeExport(child, file);
 	}
 
+	// Defining one would let it disagree with the operator it is derived from.
+	[[noreturn]] static void derivedCompare(const PlnLexer& lexer, const palan::PlnParser::location_type& loc,
+	                                        const string& op, const string& base)
+	{
+		throw runtime_error(PlnGenAstMessage::locatedError(lexer.inputFile, loc.begin.line, loc.begin.column,
+			PlnGenAstMessage::getMessage(E_DerivedCompareFunc, op, base)));
+	}
+
 	static json libraryImport(json pathInf, const string& file, const palan::PlnParser::location_type& loc)
 	{
 		if (pathInf["path-type"] == "inc" && !isLibraryImportPath(pathInf["path"]))
@@ -244,6 +252,21 @@ struct BodyList {
 				PlnGenAstMessage::getMessage(E_ExpectedInKeyword, word)));
 	}
 
+	static string fieldAccess(const string& file, const string& word,
+	                          const palan::PlnParser::location_type& loc)
+	{
+		if (word != "private" && word != "readonly")
+			throw runtime_error(PlnGenAstMessage::locatedError(file, loc.begin.line, loc.begin.column,
+				PlnGenAstMessage::getMessage(E_UnknownFieldMarker, word)));
+		return word;
+	}
+
+	[[noreturn]] static void variadicNotLast(PlnLexer& lexer, const palan::PlnParser::location_type& loc)
+	{
+		throw runtime_error(PlnGenAstMessage::locatedError(lexer.inputFile, loc.begin.line, loc.begin.column,
+			PlnGenAstMessage::getMessage(E_VariadicNotLast)));
+	}
+
 	// A parameter or return the compiler does not implement stays in the
 	// signature as is, so SA can reject the function where it is defined.
 	static json funcDecl(json& ast, bool exported, json fn, const vector<json>& params, const json& ret,
@@ -281,6 +304,7 @@ struct BodyList {
 %define parse.error	verbose
 
 %token <string>	INT	"integer"
+%token <string>	CHAR_LIT	"character literal"
 %token <string>	UINT	"unsigned integer"
 %token <string>	FLO	"float"
 %token <string>	STRING	"string"
@@ -317,6 +341,7 @@ struct BodyList {
 %token DBL_GRTR	">>"
 %token OPE_SHL	"<<<"
 %token OPE_SHR	">>>"
+%token OPE_APPEND	"<<"
 %token ARROW	"->"
 %token DBL_ARROW	"->>"
 %token OPE_TAKE	"<<="
@@ -326,6 +351,7 @@ struct BodyList {
 %token OPE_NE	"!="
 %token OPE_AND	"&&"
 %token OPE_OR	"||"
+%token ELLIPSIS	"..."
 
 %type <PList<NodeRef>>	statements block
 %type <NodeRef>	block_stmt
@@ -342,6 +368,7 @@ struct BodyList {
 %type <PList<json>>	array_rows array_items dict_items
 %type <json>	type_expr fptr_ret
 %type <PList<json>>	fptr_params fptr_param_list
+%type <json>	variadic_type variadic_param
 %type <json>	var_declaration inherit_var_decl
 %type <PList<json>>	var_declarations global_funcs
 %type <json>	global_func
@@ -367,7 +394,7 @@ struct BodyList {
 %left OPE_EQ OPE_NE
 %left '<' '>' OPE_LE OPE_GE
 %left ARROW DBL_ARROW
-%left OPE_SHL OPE_SHR
+%left OPE_SHL OPE_SHR OPE_APPEND
 %left '+' '-'
 %left '*' '/' '%' '&' '|' '^'
 %left KW_AS
@@ -935,6 +962,10 @@ type_member: type_expr ID ';'
 	{ $$ = {{"name", move($2)}, {"var-type", move($1)}}; } // LCOV_EXCL_BR_LINE
 	| type_expr ID '=' expression ';'
 	{ $$ = {{"name", move($2)}, {"var-type", move($1)}, {"init", move($4)}}; } // LCOV_EXCL_BR_LINE
+	| ID type_expr ID ';'
+	{ $$ = {{"name", move($3)}, {"var-type", move($2)}, {"access", fieldAccess(lexer.inputFile, $1, @1)}}; } // LCOV_EXCL_BR_LINE
+	| ID type_expr ID '=' expression ';'
+	{ $$ = {{"name", move($3)}, {"var-type", move($2)}, {"init", move($5)}, {"access", fieldAccess(lexer.inputFile, $1, @1)}}; } // LCOV_EXCL_BR_LINE
 	| KW_FUNC long_func_name '(' paramaters ')' return_def block
 	{ $$ = {{"not-impl", true}}; } // LCOV_EXCL_BR_LINE
 	;
@@ -980,6 +1011,8 @@ expression: term
 	{ $$ = {{"expr-type", "shl"}, {"left", $1}, {"right", $3}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| expression OPE_SHR expression
 	{ $$ = {{"expr-type", "shr"}, {"left", $1}, {"right", $3}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
+	| expression OPE_APPEND expression
+	{ $$ = {{"expr-type", "append"}, {"left", $1}, {"right", $3}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| expression KW_AS type_expr
 	{ $$ = {{"expr-type", "cast"}, {"target-type", move($3)}, {"src", move($1)}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| '~' expression %prec UNARY_MINUS
@@ -1078,6 +1111,8 @@ expression: term
 
 term: INT
 	{ $$ = {{"expr-type", "lit-int"}, {"value", move($1)}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
+	| CHAR_LIT
+	{ $$ = {{"expr-type", "lit-int"}, {"value", move($1)}, {"char", true}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| UINT
 	{ $$ = {{"expr-type", "lit-uint"}, {"value", move($1)}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
 	| FLO
@@ -1301,6 +1336,14 @@ func_def: KW_FUNC func_name '(' paramaters ')' return_def block_obj
 				PlnGenAstMessage::getMessage(E_InterfaceOnly, "a function without a body")));
 		$$ = leafNode(funcDecl(ast, true, {{"name", $3}, {"func-type", "palan"}}, $5, $7, @$)); // LCOV_EXCL_BR_LINE
 	}
+	// A type's '->', which comes with the type rather than being exported.
+	| KW_FUNC func_name '(' paramaters ')' return_def ';'
+	{
+		if (!isInterfaceFile(lexer.inputFile))
+			throw runtime_error(PlnGenAstMessage::locatedError(lexer.inputFile, @$.begin.line, @$.begin.column,
+				PlnGenAstMessage::getMessage(E_InterfaceOnly, "a function without a body")));
+		$$ = leafNode(funcDecl(ast, false, {{"name", $2}, {"func-type", "palan"}}, $4, $6, @$)); // LCOV_EXCL_BR_LINE
+	}
 	;
 
 func_name: ID
@@ -1314,6 +1357,14 @@ op_func_name: '+' { $$ = "+"; }
 	| '*' { $$ = "*"; }
 	| '/' { $$ = "/"; }
 	| '%' { $$ = "%"; }
+	| OPE_EQ { $$ = "=="; }
+	| '<' { $$ = "<"; }
+	| OPE_APPEND { $$ = "<<"; }
+	| ARROW { $$ = "->"; }
+	| OPE_NE { derivedCompare(lexer, @$, "!=", "=="); }
+	| '>' { derivedCompare(lexer, @$, ">", "<"); }
+	| OPE_LE { derivedCompare(lexer, @$, "<=", "<"); }
+	| OPE_GE { derivedCompare(lexer, @$, ">=", "<"); }
 	;
 
 func_item: func_def
@@ -1340,6 +1391,22 @@ paramaters: /* empty */
 	{ }
 	| var_declarations
 	{ $$ = $1.toVector(); }
+	| variadic_param
+	{ $$ = {move($1)}; } // LCOV_EXCL_BR_LINE
+	| var_declarations ',' variadic_param
+	{ $$ = $1.push(move($3)).toVector(); }
+	| variadic_param ',' var_declarations
+	{ variadicNotLast(lexer, @1); }
+	| var_declarations ',' variadic_param ',' var_declarations
+	{ variadicNotLast(lexer, @3); }
+	;
+
+variadic_param: variadic_type ID
+	{ $$ = {{"name", move($2)}, {"var-type", move($1)}}; LOC($$, @$); } // LCOV_EXCL_BR_LINE
+	;
+
+variadic_type: '[' ELLIPSIS ']' type_expr
+	{ $$ = {{"type-kind","arr"},{"specifier","variadic"},{"size-expr",nullptr},{"base-type",move($4)}}; } // LCOV_EXCL_BR_LINE
 	;
 
 return_def: /* empty */
@@ -1515,6 +1582,14 @@ fptr_params: /* empty */
 	{ }
 	| fptr_param_list
 	{ $$ = $1; }
+	| variadic_type
+	{ $$ = PList<json>().push({{"var-type", move($1)}}); } // LCOV_EXCL_BR_LINE
+	| fptr_param_list ',' variadic_type
+	{ $$ = $1.push({{"var-type", move($3)}}); } // LCOV_EXCL_BR_LINE
+	| variadic_type ',' fptr_param_list
+	{ variadicNotLast(lexer, @1); }
+	| fptr_param_list ',' variadic_type ',' fptr_param_list
+	{ variadicNotLast(lexer, @3); }
 	;
 
 fptr_param_list: type_expr

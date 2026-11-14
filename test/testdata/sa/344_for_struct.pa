@@ -1,0 +1,7 @@
+type bag { [+]int32 v; int64 n; };
+type bagit { @!bag b; int64 pos; };
+func iter(@!bag b) -> bagit { bagit r; b -> r.b; return r; }
+func next(@!bagit it) -> bool ok, @!int32 c { false -> ok; @!it.b.v[0] -> c; }
+func count(@bag b) -> int64 { return b.n; }
+bag g;
+for @!c, i in g { c + 1 -> c; i -> g.n; count(@g); }

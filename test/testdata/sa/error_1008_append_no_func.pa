@@ -1,0 +1,3 @@
+type A { int64 s; };
+A a;
+a << 1;

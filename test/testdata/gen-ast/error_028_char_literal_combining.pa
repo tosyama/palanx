@@ -1,0 +1,2 @@
+// A character made of several code points is rejected.
+int32 c = 'é';

@@ -1,0 +1,9 @@
+export type span { int64 from; int64 to; };
+export type spanit { int64 cur; int64 to; };
+export func iter(@span s) -> spanit { return [s.from, s.to]; }
+export func next(@!spanit it) -> bool ok, int64 v
+{
+	(it.cur < it.to) -> ok;
+	it.cur -> v;
+	it.cur + 1 -> it.cur;
+}
