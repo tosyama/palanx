@@ -26,7 +26,7 @@ tar -xzf "$archive" -C "$tmp/prefix"
 cat > "$tmp/uses_std.pa" <<'EOF'
 cinclude <stdio.h>;
 import <std/utf8>;
-utf8 s = toUtf8("h\xC3\xA9\xFF", utf8mode.KEEP_INVALID);
+utf8 s = utf8("h\xC3\xA9\xFF", utf8mode.KEEP_INVALID);
 printf("%ld %ld %d\n", s -> byteLen(), s -> charCount(), s.hadInvalid);
 EOF
 expected="4 3 1"
