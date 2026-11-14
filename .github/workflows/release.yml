@@ -43,8 +43,10 @@ jobs:
       - name: build and test
         run: make
 
+      # Explicitly bash, so pipefail keeps a failing check from passing through tee.
       - name: pack and check
         id: pack
+        shell: bash
         run: |
           .github/scripts/release.sh build dist | tee pack.log
           echo "archive=$(tail -1 pack.log)" >> "$GITHUB_OUTPUT"
